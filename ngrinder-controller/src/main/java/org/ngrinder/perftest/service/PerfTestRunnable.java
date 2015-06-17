@@ -253,7 +253,6 @@ public class PerfTestRunnable implements ControllerConstants {
 		if(dynamicAgentHandler.isInAddingStatus()){
 			return;
 		}
-		dynamicAgentHandler.setIsInAddingStatus(true);
 		int requiredAgents = test.getAgentCount();
 		if(dynamicType.contentEquals("EC2")){
 			String identity = config.getEc2Identity();
@@ -265,8 +264,9 @@ public class PerfTestRunnable implements ControllerConstants {
 			Runnable addEc2AgentRunnable = new Runnable() {
 				@Override
 				public void run() {
+					dynamicAgentHandler.setIsInAddingStatus(true);
 					dynamicAgentHandler.dynamicAgentCommand("add");
-					dynamicAgentHandler.setScriptName("/agent_dynamic_provision_script/turnrun.sh");
+					dynamicAgentHandler.setScriptName("/agent_dynamic_provision_script/jclouds_op_ec2_template.sh");
 					dynamicAgentHandler.dynamicAgentCommand("run");
 					dynamicAgentHandler.setIsInAddingStatus(false);
 					dynamicAgentNeedsCleaning = true;
@@ -283,6 +283,7 @@ public class PerfTestRunnable implements ControllerConstants {
 
 	private void createOneEc2InstanceByDefault(){
 		String dynamicType = config.getAgentDynamicType();
+		LOG.info(dynamicType);
 		dynamicAgentHandler.setIsInAddingStatus(true);
 		if(dynamicType.contentEquals("EC2")){
 			String identity = config.getEc2Identity();
@@ -294,8 +295,11 @@ public class PerfTestRunnable implements ControllerConstants {
 			Runnable addEc2AgentRunnable = new Runnable() {
 				@Override
 				public void run() {
+					LOG.info("adding ec2 agent runnable ...");
 					dynamicAgentHandler.setIsInAddingStatus(true);
 					dynamicAgentHandler.dynamicAgentCommand("add");
+					dynamicAgentHandler.setScriptName("/agent_dynamic_provision_script/jclouds_op_ec2_template.sh");
+					dynamicAgentHandler.dynamicAgentCommand("run");
 					dynamicAgentHandler.setIsInAddingStatus(false);
 				}
 			};

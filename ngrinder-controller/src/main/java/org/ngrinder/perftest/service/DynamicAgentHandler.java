@@ -24,7 +24,10 @@ import org.jclouds.compute.ComputeService;
 import org.jclouds.compute.ComputeServiceContext;
 import org.jclouds.compute.RunNodesException;
 import org.jclouds.compute.RunScriptOnNodesException;
-import org.jclouds.compute.domain.*;
+import org.jclouds.compute.domain.ComputeMetadata;
+import org.jclouds.compute.domain.ExecResponse;
+import org.jclouds.compute.domain.NodeMetadata;
+import org.jclouds.compute.domain.Template;
 import org.jclouds.domain.LoginCredentials;
 import org.jclouds.ec2.domain.InstanceType;
 import org.jclouds.enterprise.config.EnterpriseConfigurationModule;
@@ -35,12 +38,14 @@ import org.slf4j.LoggerFactory;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
 
-import java.io.File;
-import java.io.IOException;
-import java.util.Map;
+import javax.annotation.PostConstruct;
+import javax.management.*;
+import java.io.*;
+import java.lang.management.ManagementFactory;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
+import java.util.*;
 import java.util.Map.Entry;
-import java.util.Properties;
-import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 import static com.google.common.base.Charsets.UTF_8;
@@ -108,8 +113,11 @@ public class DynamicAgentHandler {
     private String provider = "aws-ec2";
     private String identity = null;
     private String credential = null;
-    private String groupName = "autoagent";
+    private String groupName = "agents";
     private String scriptName = null;
+
+    private String containerIP = "";
+    private String containerPort = "";
 
     public void setProvider(String provider) {
         this.provider = provider;
@@ -147,17 +155,62 @@ public class DynamicAgentHandler {
         this.isInAddingStatus = isInAddingStatus;
     }
 
-    public synchronized ComputeService initComputeService(String provider, String identity, String credential) {
+    @PostConstruct
+    public void init(){
+        MBeanServer mbServer = ManagementFactory.getPlatformMBeanServer();
+        HashSet<ObjectName> objs = null;
+        try {
+            objs = (HashSet<ObjectName>) mbServer.queryNames(new ObjectName("*:type=Connector,*"),
+                    Query.match(Query.attr("protocol"), Query.value("HTTP/1.1")));
+        } catch (MalformedObjectNameException e) {
+            LOG.info("MBeanServer query failed: " + e.getMessage());
+        }
+        String hostname = "";
+        try {
+            hostname = InetAddress.getLocalHost().getHostName();
+        } catch (UnknownHostException e) {
+            LOG.info("InetAddress get host name failed: " + e.getMessage());
+        }
+        InetAddress[] addresses = null;
+        try {
+            addresses = InetAddress.getAllByName(hostname);
+        } catch (UnknownHostException e) {
+            LOG.info("InetAddress get host address by name failed: " + e.getMessage());
+        }
+        ArrayList<String> endPoints = new ArrayList<String>();
+        for (Iterator<ObjectName> i = objs.iterator(); i.hasNext();) {
+            ObjectName obj = i.next();
+            String scheme = null;
+            try {
+                scheme = mbServer.getAttribute(obj, "scheme").toString();
+            } catch (AttributeNotFoundException e) {
+                LOG.info("MBeanServer get host scheme AttributeNotFoundException: " + e.getMessage());
+            } catch (InstanceNotFoundException e) {
+                LOG.info("MBeanServer get host scheme InstanceNotFoundException: " + e.getMessage());
+            } catch (MBeanException e) {
+                LOG.info("MBeanServer get host scheme MBeanException: " + e.getMessage());
+            } catch (ReflectionException e) {
+                LOG.info("MBeanServer get host scheme ReflectionException: " + e.getMessage());
+            }
+            String port = obj.getKeyProperty("port");
+            for (InetAddress addr : addresses) {
+                containerIP = addr.getHostAddress();
+                containerPort = port;
+                LOG.info("Container IP: " + containerIP + ", Container PORT: " + containerPort);
+            }
+        }
+    }
 
-        // example of specific properties, in this case optimizing image list to
-        // only amazon supplied
+    private ComputeService initComputeService(String provider, String identity, String credential) {
+
+        // specific properties, in this case optimizing image list to only amazon supplied
         Properties properties = new Properties();
         properties.setProperty(PROPERTY_EC2_AMI_QUERY, "owner-id=137112412989;state=available;image-type=machine");
         properties.setProperty(PROPERTY_EC2_CC_AMI_QUERY, "");
         long scriptTimeout = TimeUnit.MILLISECONDS.convert(20, TimeUnit.MINUTES);
         properties.setProperty(TIMEOUT_SCRIPT_COMPLETE, scriptTimeout + "");
 
-        // example of injecting a ssh implementation
+        // inject a ssh implementation
         Iterable<Module> modules = ImmutableSet.<Module> of(
                 new SshjSshClientModule(),
                 new SLF4JLoggingModule(),
@@ -174,7 +227,7 @@ public class DynamicAgentHandler {
         return builder.buildView(ComputeServiceContext.class).getComputeService();
     }
 
-    public LoginCredentials getLoginViaKeyForCommandExecution() {
+    private LoginCredentials getLoginViaKeyForCommandExecution() {
         try {
             String user = "ec2-user";
             String privateKey = Files.toString(new File("/home/ec2-user/.ssh/id_rsa"), UTF_8);
@@ -186,10 +239,17 @@ public class DynamicAgentHandler {
         }
     }
 
+    /**
+     * Major operation, according to the action which is enum value.
+     *
+     * @param actionCmd
+     */
     public void dynamicAgentCommand(String actionCmd) {
 
-        checkNotNull(identity);
-        checkNotNull(credential);
+        LOG.info(actionCmd);
+
+        checkNotNull(identity, "identity can not be null or empty");
+        checkNotNull(credential, "credential can not be null or empty");
 
         Action action = Action.valueOf(actionCmd.toUpperCase());
 
@@ -336,6 +396,7 @@ public class DynamicAgentHandler {
                         System.out.printf("<<     %s%n", response.getValue());
                     }
                     break;
+
                 case DESTROY:
                     LOG.info(">> destroying nodes in group " + groupName);
                     System.out.printf(">> destroying nodes in group %s%n", groupName);
@@ -344,6 +405,7 @@ public class DynamicAgentHandler {
                     LOG.info("<< destroyed nodes %s%n" + destroyed);
                     System.out.printf("<< destroyed nodes %s%n", destroyed);
                     break;
+
                 case LISTNODES:
                     Set<? extends ComputeMetadata> nodes = compute.listNodes();
                     System.out.printf(">> No of nodes/instances %d%n", nodes.size());
@@ -366,5 +428,64 @@ public class DynamicAgentHandler {
         } finally {
             compute.getContext().close();
         }
+    }
+
+    /**
+     * Script file generator based on the script template
+     *
+     * @param ctrl_IP, ngrinder controller IP
+     * @param ctrl_port, ngrinder controller PORT
+     * @param agent_docker_repo, the docker image repository name
+     * @param agent_docker_tag, the docker image tag
+     * @param cmd, the operation command, such as ADD, RUN, TURN ON, TURN OFF
+     *
+     * @return void
+     */
+    public void generateScriptBasedOnTemplate(String ctrl_IP, String ctrl_port, String agent_docker_repo,
+                                              String agent_docker_tag, String cmd) throws IOException {
+        /*
+         * the must parameters in the target script
+         */
+        String AGENT_CTRL_IP="AGENT_CTRL_IP=";
+        String AGENT_CTRL_PORT="AGENT_CTRL_PORT=";
+        String AGENT_IMG_REPO="AGENT_IMG_REPO=";
+        String AGENT_IMG_TAG="AGENT_IMG_TAG=";
+        String AGENT_WORK_MODE="AGENT_WORK_MODE=";
+
+        LOG.info("Ctrl IP: " + ctrl_IP + ", Ctrl Port: " + ctrl_port + ", docker repo: " + agent_docker_repo
+                    + ", docker tag: " + agent_docker_tag + ", operation: " + cmd);
+
+        String newFileName = "";
+        if(cmd.equalsIgnoreCase("run")) {
+            newFileName = "run.sh";
+        }else if(cmd.equalsIgnoreCase("turnon")){
+            newFileName = "on.sh";
+        }else if(cmd.equalsIgnoreCase("turnoff")){
+            newFileName = "off.sh";
+        }else{
+            return;
+        }
+
+        File newFile = new File("/agent_dynamic_provision_script/" + newFileName, "w");
+        StringBuffer sb = new StringBuffer();
+        sb.append("#!/bin/bash + \n");
+        sb.append("\n");
+        sb.append(AGENT_CTRL_IP  + ctrl_IP   + "\n");
+        sb.append(AGENT_CTRL_PORT + ctrl_port + "\n");
+        sb.append(AGENT_IMG_REPO + agent_docker_repo  + "\n");
+        sb.append(AGENT_IMG_TAG + agent_docker_tag + "\n");
+        sb.append(AGENT_WORK_MODE + cmd + "\n");
+        sb.append("\n");
+        FileReader fr = new FileReader("/agent_dynamic_provision_script/jclouds_op_ec2_template.sh");
+        BufferedReader br = new BufferedReader(fr);
+        String line = null;
+        while((line = br.readLine()) != null){
+            sb.append(line + "\n");
+        }
+        FileWriter fw = new FileWriter(newFile);
+        BufferedWriter bw = new BufferedWriter(fw);
+        bw.write(sb.toString());
+        bw.close();
+        fw.close();
     }
 }
