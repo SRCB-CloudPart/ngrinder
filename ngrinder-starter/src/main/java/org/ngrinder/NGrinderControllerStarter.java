@@ -186,6 +186,14 @@ public class NGrinderControllerStarter {
 	@Parameter(names = {"-help", "-?", "-h"}, description = "prints this message")
 	private Boolean help = false;
 
+	@Parameter(names = {"-da", "--dynamic-agent"}, description = "the dynamic type to deploy agent, can be EC2 and mesos")
+	private String dynamic_type = null;
+
+	@Parameter(names = {"-aid", "--aws-identity"}, description = "aws identity when agent dynamic type is EC2")
+	private String aws_identity = null;
+
+	@Parameter(names = {"-acr", "--aws-credential"}, description = "aws credential when agent dynamic type is EC2")
+	private String aws_credential = null;
 
 	@DynamicParameter(names = "-D", description = "Dynamic parameters", hidden = true)
 	private Map<String, String> params = new HashMap<String, String>();
@@ -300,6 +308,22 @@ public class NGrinderControllerStarter {
 		if (server.exHome != null) {
 			System.setProperty("ngrinder.ex.home", server.exHome);
 		}
+		if(server.dynamic_type != null) {
+			System.setProperty("agent.dynamic_type", server.dynamic_type);
+			if (server.aws_identity != null) {
+				System.setProperty("agent.dynamic_aws_identity", server.aws_identity);
+			}else{
+				commander.usage();
+				System.exit(0);
+			}
+			if (server.aws_credential != null) {
+				System.setProperty("agent.dynamic_aws_credential", server.aws_credential);
+			}else{
+				commander.usage();
+				System.exit(0);
+			}
+		}
+
 		final List<String> unknownOptions = commander.getUnknownOptions();
 		final ClusterMode clusterMode = ClusterMode.valueOf(server.clusterMode);
 		clusterMode.parseArgs(unknownOptions.toArray(new String[unknownOptions.size()]));

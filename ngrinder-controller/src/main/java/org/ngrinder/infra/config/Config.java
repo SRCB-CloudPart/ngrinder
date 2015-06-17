@@ -22,6 +22,7 @@ import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.StringUtils;
+import org.ngrinder.common.constant.AgentDynamicConstants;
 import org.ngrinder.common.constant.ClusterConstants;
 import org.ngrinder.common.constant.ControllerConstants;
 import org.ngrinder.common.constants.InternalConstants;
@@ -59,7 +60,7 @@ import static org.ngrinder.common.util.Preconditions.checkNotNull;
  * @since 3.0
  */
 @Component
-public class Config extends AbstractConfig implements ControllerConstants, ClusterConstants {
+public class Config extends AbstractConfig implements ControllerConstants, ClusterConstants, AgentDynamicConstants  {
 	private static final String NGRINDER_DEFAULT_FOLDER = ".ngrinder";
 	private static final String NGRINDER_EX_FOLDER = ".ngrinder_ex";
 	private static final Logger LOG = LoggerFactory.getLogger(Config.class);
@@ -69,6 +70,7 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
 	private PropertiesWrapper controllerProperties;
 	private PropertiesWrapper databaseProperties;
 	private PropertiesWrapper clusterProperties;
+	private PropertiesWrapper agentDynamicProperties;
 	private String announcement = "";
 	private Date announcementDate;
 	private boolean verbose;
@@ -82,6 +84,7 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
 	protected PropertiesKeyMapper databasePropertiesKeyMapper = PropertiesKeyMapper.create("database-properties.map");
 	protected PropertiesKeyMapper controllerPropertiesKeyMapper = PropertiesKeyMapper.create("controller-properties.map");
 	protected PropertiesKeyMapper clusterPropertiesKeyMapper = PropertiesKeyMapper.create("cluster-properties.map");
+	protected PropertiesKeyMapper agentDynamicPropertiesKeyMapper = PropertiesKeyMapper.create("agentDynamic-properties.map");
 
 	@SuppressWarnings("SpringJavaAutowiringInspection")
 	@Autowired
@@ -395,6 +398,7 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
 		// Override if exists
 		controllerProperties = new PropertiesWrapper(properties, controllerPropertiesKeyMapper);
 		clusterProperties = new PropertiesWrapper(properties, clusterPropertiesKeyMapper);
+		agentDynamicProperties = new PropertiesWrapper(properties, agentDynamicPropertiesKeyMapper);
 	}
 
 	/**
@@ -691,5 +695,59 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
 	 */
 	public long getInactiveClientTimeOut() {
 		return getControllerProperties().getPropertyLong(PROP_CONTROLLER_INACTIVE_CLIENT_TIME_OUT);
+	}
+
+	/**
+	 * Get the agent dynamic properties.
+	 *
+	 * @return {@link PropertiesWrapper} which is loaded from system.conf.
+	 */
+	public PropertiesWrapper getAgentDynamicProperties() {
+		return checkNotNull(agentDynamicProperties);
+	}
+
+	/**
+	 * Get the configured dynamic agent type, it may be EC2 or MESOS
+	 *
+	 * @return dynamic type
+	 */
+	public String getAgentDynamicType(){
+		return getAgentDynamicProperties().getProperty(PROP_AGENT_DYNAMIC_TYPE);
+	}
+
+	/**
+	 * Get the configured max EC2 instance node
+	 *
+	 * @return node max
+	 */
+	public int getAgentDynamicNodeMax(){
+		return getAgentDynamicProperties().getPropertyInt(PROP_AGENT_DYNAMIC_MAX);
+	}
+
+	/**
+	 * Get the configured EC2 credential id, it may be username or access key
+	 *
+	 * @return credential username/access key
+	 */
+	public String getEc2Identity(){
+		return getAgentDynamicProperties().getProperty(PROP_AGENT_DYNAMIC_AWS_IDENTITY);
+	}
+
+	/**
+	 * Get the configured EC2 credential key, it may be password or secret key
+	 *
+	 * @return credential password/secret key
+	 */
+	public String getEc2Credential(){
+		return getAgentDynamicProperties().getProperty(PROP_AGENT_DYNAMIC_AWS_CREDENTIAL);
+	}
+
+	/**
+	 * Get the configured guard time which is used to prevent VM created but not to use in long time
+	 *
+	 * @return guard time
+	 */
+	public int getGuardTime(){
+		return getAgentDynamicProperties().getPropertyInt(PROP_AGENT_DYNAMIC_GUARD_TIME);
 	}
 }

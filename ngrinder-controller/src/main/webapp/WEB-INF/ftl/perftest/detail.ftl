@@ -733,7 +733,7 @@ function bindEvent() {
 
 	$("#save_schedule_btn").click(function() {		
 		$("#agent_count").rules("add", {
-			min:1
+			min:0
 		}); 
 		if (!validateForm()) {
 			return false;

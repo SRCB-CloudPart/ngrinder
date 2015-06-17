@@ -41,6 +41,14 @@
 		<appender-ref ref="log-file"/>
 	</logger>
 
+	<logger name="jclouds.compute" level="ERROR">
+		<appender-ref ref="log-file"/>
+	</logger>
+
+	<logger name="net.schmizz" level="warn">
+		<appender-ref ref="log-file"/>
+	</logger>
+
 	<root>
 		<level value="WARN"/>
 		<appender-ref ref="log-file"/>

@@ -1,0 +1,5 @@
+agent.dynamic_type,EC2,
+agent.dynamic_aws_identity,AKIAIJLRS4YZLKWNWCYQ,
+agent.dynamic_aws_credential,WGBNzMKsdUE5fVRm4gNotjWtz99v3Std76uPgUkf,
+agent.dynamic_max,10,
+agent.dynamic_guard_time,30,

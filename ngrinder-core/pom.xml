@@ -4,7 +4,7 @@
 	<parent>
 		<artifactId>ngrinder</artifactId>
 		<groupId>org.ngrinder</groupId>
-		<version>3.3.1</version>
+		<version>3.3.2</version>
 	</parent>
 	<artifactId>ngrinder-core</artifactId>
 	<name>ngrinder-core</name>
@@ -142,36 +142,40 @@
 			</resource>
 		</resources>
 
-		<plugins>
-			<plugin>
-				<groupId>org.apache.maven.plugins</groupId>
-				<artifactId>maven-surefire-plugin</artifactId>
-				<version>2.15</version>
-				<configuration>
-					<useSystemClassLoader>true</useSystemClassLoader>
-				</configuration>
-			</plugin>
-			<plugin>
-				<groupId>org.apache.maven.plugins</groupId>
-				<artifactId>maven-dependency-plugin</artifactId>
-				<version>2.8</version>
-				<executions>
-					<execution>
-						<id>dependency_creation</id>
-						<phase>generate-sources</phase>
-						<configuration>
-							<fileSeparator>/</fileSeparator>
-							<pathSeparator>;</pathSeparator>
-							<includeScope>runtime</includeScope>
-							<outputFile>${project.basedir}/target/classes/dependencies.txt</outputFile>
-						</configuration>
-						<goals>
-							<goal>build-classpath</goal>
-						</goals>
-					</execution>
-				</executions>
-			</plugin>
-		</plugins>
+		<!--  added by shihuc -->
+		<pluginManagement>
+			<plugins>
+				<plugin>
+					<groupId>org.apache.maven.plugins</groupId>
+					<artifactId>maven-surefire-plugin</artifactId>
+					<version>2.15</version>
+					<configuration>
+						<useSystemClassLoader>true</useSystemClassLoader>
+					</configuration>
+				</plugin>
+				<plugin>
+					<groupId>org.apache.maven.plugins</groupId>
+					<artifactId>maven-dependency-plugin</artifactId>
+					<version>2.8</version>
+					<executions>
+						<execution>
+							<id>dependency_creation</id>
+							<phase>generate-sources</phase>
+							<configuration>
+								<fileSeparator>/</fileSeparator>
+								<pathSeparator>;</pathSeparator>
+								<includeScope>runtime</includeScope>
+								<outputFile>${project.basedir}/target/classes/dependencies.txt</outputFile>
+							</configuration>
+							<goals>
+								<goal>build-classpath</goal>
+							</goals>
+						</execution>
+					</executions>
+				</plugin>
+			</plugins>
+			<!--  end of shihuc for pluginManagement tag-->
+		</pluginManagement>
 	</build>
 
 </project>

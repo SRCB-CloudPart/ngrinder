@@ -6,35 +6,39 @@
 	<groupId>org.ngrinder</groupId>
 	<artifactId>ngrinder-sh</artifactId>
 	<name>ngrinder-sh</name>
-	<version>3.3.1</version>
+	<version>3.3.2</version>
 
 	<packaging>jar</packaging>
 	<build>
-		<plugins>
-			<plugin>
-				<groupId>org.apache.maven.plugins</groupId>
-				<artifactId>maven-antrun-plugin</artifactId>
-				<executions>
-					<execution>
-						<id>convert_cr_lf</id>
-						<phase>generate-resources</phase>
-						<configuration>
-							<tasks>
-								<mkdir dir="${project.basedir}/target/classes"/>
-								<fixcrlf srcdir="${project.basedir}/src/main/shell"
-										 destdir="${project.basedir}/target/classes" includes="**/*.sh"
-										 eol="unix"/>
-								<fixcrlf srcdir="${project.basedir}/src/main/shell"
-										 destdir="${project.basedir}/target/classes" includes="**/*.bat"
-										 eol="dos"/>
-							</tasks>
-						</configuration>
-						<goals>
-							<goal>run</goal>
-						</goals>
-					</execution>
-				</executions>
-			</plugin>
-		</plugins>
+		<!--  added by shihuc for pluginManagement -->
+		<pluginManagement>
+			<plugins>
+				<plugin>
+					<groupId>org.apache.maven.plugins</groupId>
+					<artifactId>maven-antrun-plugin</artifactId>
+					<executions>
+						<execution>
+							<id>convert_cr_lf</id>
+							<phase>generate-resources</phase>
+							<configuration>
+								<tasks>
+									<mkdir dir="${project.basedir}/target/classes"/>
+									<fixcrlf srcdir="${project.basedir}/src/main/shell"
+											 destdir="${project.basedir}/target/classes" includes="**/*.sh"
+											 eol="unix"/>
+									<fixcrlf srcdir="${project.basedir}/src/main/shell"
+											 destdir="${project.basedir}/target/classes" includes="**/*.bat"
+											 eol="dos"/>
+								</tasks>
+							</configuration>
+							<goals>
+								<goal>run</goal>
+							</goals>
+						</execution>
+					</executions>
+				</plugin>
+			</plugins>
+		</pluginManagement>
+		<!--  end of shihuc for pluginManagement tag -->
 	</build>
 </project>
