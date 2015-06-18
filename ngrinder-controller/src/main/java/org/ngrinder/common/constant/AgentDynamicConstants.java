@@ -24,4 +24,6 @@ public interface AgentDynamicConstants {
 	public static final String PROP_AGENT_DYNAMIC_AWS_CREDENTIAL = "agent.dynamic_aws_credential";
 	public static final String PROP_AGENT_DYNAMIC_MAX = "agent.dynamic_max";
 	public static final String PROP_AGENT_DYNAMIC_GUARD_TIME = "agent.dynamic_guard_time";
+	public static final String PROP_AGENT_DYNAMIC_DOCKER_REPO = "agent.dynamic_docker_repo";
+	public static final String PROP_AGENT_DYNAMIC_DOCKER_TAG = "agent.dynamic_docker_tag";
 }

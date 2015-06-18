@@ -24,7 +24,6 @@ import org.jclouds.compute.ComputeService;
 import org.jclouds.compute.ComputeServiceContext;
 import org.jclouds.compute.RunNodesException;
 import org.jclouds.compute.RunScriptOnNodesException;
-import org.jclouds.compute.domain.ComputeMetadata;
 import org.jclouds.compute.domain.ExecResponse;
 import org.jclouds.compute.domain.NodeMetadata;
 import org.jclouds.compute.domain.Template;
@@ -33,8 +32,10 @@ import org.jclouds.ec2.domain.InstanceType;
 import org.jclouds.enterprise.config.EnterpriseConfigurationModule;
 import org.jclouds.logging.slf4j.config.SLF4JLoggingModule;
 import org.jclouds.sshj.config.SshjSshClientModule;
+import org.ngrinder.infra.config.Config;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
 
@@ -52,7 +53,6 @@ import static com.google.common.base.Charsets.UTF_8;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Predicates.not;
 import static com.google.common.collect.Iterables.concat;
-import static com.google.common.collect.Iterables.getOnlyElement;
 import static org.jclouds.aws.ec2.reference.AWSEC2Constants.PROPERTY_EC2_AMI_QUERY;
 import static org.jclouds.aws.ec2.reference.AWSEC2Constants.PROPERTY_EC2_CC_AMI_QUERY;
 import static org.jclouds.compute.config.ComputeServiceProperties.TIMEOUT_SCRIPT_COMPLETE;
@@ -88,10 +88,28 @@ public class DynamicAgentHandler {
 
     private static final Logger LOG = LoggerFactory.getLogger(DynamicAgentHandler.class);
 
+    @Autowired
+    private Config config;
+
+    private final String scriptTemplateFile = "/agent_dynamic_provision_script/jclouds_op_ec2_template.sh";
     /*
-     * Record the count of EC2 nodes added to the specified group
+     * Record the total count of EC2 nodes added to the specified group
      */
     private int added_node_count = 0;
+
+    public synchronized int getAddedNodeCount(){
+        return this.added_node_count;
+    }
+
+    /*
+     * number of EC2 node to add to the group for each add operation
+     */
+    private int adding_nodes = 1;
+
+    public synchronized void setAddingNodes(int adding_nodes) {
+        this.adding_nodes = adding_nodes;
+        this.added_node_count += adding_nodes;
+    }
 
     /*
      * Flag to check whether there is EC2 instance is in status of adding. Because create EC2 VM will cost several minutes time.
@@ -100,8 +118,16 @@ public class DynamicAgentHandler {
      */
     private boolean isInAddingStatus = false;
 
+    public synchronized boolean isInAddingStatus() {
+        return isInAddingStatus;
+    }
+
+    public synchronized  void setIsInAddingStatus(boolean isInAddingStatus) {
+        this.isInAddingStatus = isInAddingStatus;
+    }
+
     public enum Action {
-        ADD, RUN, TURNON, TURNOFF, DESTROY, LISTIMAGES, LISTNODES
+        ADD, RUN, ON, OFF, DESTROY
     }
 
     //public final Map<String, ApiMetadata> allApis = Maps.uniqueIndex(Apis.viewableAs(ComputeServiceContext.class),Apis.idFunction());
@@ -110,14 +136,31 @@ public class DynamicAgentHandler {
 
     //public final Set<String> allKeys = ImmutableSet.copyOf(Iterables.concat(appProviders.keySet(), allApis.keySet()));
 
+    private String containerIP = "";
+    private String containerPort = "";
+
+    public String getContainerIP() {
+        return containerIP;
+    }
+
+    public void setContainerIP(String containerIP) {
+        this.containerIP = containerIP;
+    }
+
+    public String getContainerPort() {
+        return containerPort;
+    }
+
+    public void setContainerPort(String containerPort) {
+        this.containerPort = containerPort;
+    }
+
     private String provider = "aws-ec2";
     private String identity = null;
     private String credential = null;
     private String groupName = "agents";
+    private String scriptTemplatePath = null;
     private String scriptName = null;
-
-    private String containerIP = "";
-    private String containerPort = "";
 
     public void setProvider(String provider) {
         this.provider = provider;
@@ -136,27 +179,43 @@ public class DynamicAgentHandler {
     }
 
     public void setScriptName(String scriptName) {
-        this.scriptName = scriptName;
-    }
-
-    public synchronized int getAddedNodeCount(){
-        return added_node_count;
-    }
-
-    public synchronized void increaseAddedNodeCount(int cnt){
-        added_node_count += cnt ;
-    }
-
-    public synchronized boolean isInAddingStatus() {
-        return isInAddingStatus;
-    }
-
-    public synchronized  void setIsInAddingStatus(boolean isInAddingStatus) {
-        this.isInAddingStatus = isInAddingStatus;
+        this.scriptName = this.scriptTemplatePath + "/" + scriptName;
     }
 
     @PostConstruct
     public void init(){
+        ClassPathResource cpr = new ClassPathResource(this.scriptTemplateFile);
+        try {
+            this.scriptTemplatePath = cpr.getFile().getParent();
+        } catch (IOException e) {
+            LOG.info(e.getMessage());
+        }
+        String dynamicType = config.getAgentDynamicType();
+        if(dynamicType.equalsIgnoreCase("EC2")) {
+            achieveWebContainerAddress();
+            getEnvToGenerateScript("run");
+            String identity = config.getEc2Identity();
+            String credential = config.getEc2Credential();
+            setProvider("aws-ec2");
+            setIdentity(identity);
+            setCredential(credential);
+            setAddingNodes(1);
+            setIsInAddingStatus(true);
+            setScriptName("run.sh");
+            dynamicAgentCommand("run");
+            setIsInAddingStatus(false);
+        }
+    }
+
+    protected void getEnvToGenerateScript(String cmd){
+        String dockerImageRepo = config.getDockerRepo();
+        String dockerImageTag = config.getDockerTag();
+        generateScriptBasedOnTemplate(containerIP, containerPort, dockerImageRepo, dockerImageTag, cmd);
+        LOG.info("Container IP: " + containerIP + ", Container Port: " + containerPort +
+                ", Repo: " + dockerImageRepo + ", Tag: " + dockerImageTag);
+    }
+
+    private void achieveWebContainerAddress(){
         MBeanServer mbServer = ManagementFactory.getPlatformMBeanServer();
         HashSet<ObjectName> objs = null;
         try {
@@ -193,9 +252,9 @@ public class DynamicAgentHandler {
                 LOG.info("MBeanServer get host scheme ReflectionException: " + e.getMessage());
             }
             String port = obj.getKeyProperty("port");
+            setContainerPort(port);
             for (InetAddress addr : addresses) {
-                containerIP = addr.getHostAddress();
-                containerPort = port;
+                setContainerIP(addr.getHostAddress());
                 LOG.info("Container IP: " + containerIP + ", Container PORT: " + containerPort);
             }
         }
@@ -253,13 +312,13 @@ public class DynamicAgentHandler {
 
         Action action = Action.valueOf(actionCmd.toUpperCase());
 
-        if ((action == Action.RUN || action == Action.TURNON || action == Action.TURNOFF) && scriptName == null) {
+        if ((action == Action.RUN || action == Action.ON || action == Action.OFF) && scriptName == null) {
             LOG.debug("please pass the local file to run as the last parameter");
             throw new IllegalArgumentException("please pass the local file to run as the last parameter");
         }
 
         File file = null;
-        if (action == Action.RUN || action == Action.TURNOFF || action == Action.TURNON) {
+        if (action == Action.RUN || action == Action.OFF || action == Action.ON) {
             try {
                 file = new ClassPathResource(scriptName).getFile();
             } catch (IOException e) {
@@ -278,7 +337,7 @@ public class DynamicAgentHandler {
 
         try {
             switch (action) {
-                case ADD:
+                case RUN:
                     LOG.info(">> adding node to group " + groupName);
                     System.out.printf(">> adding node to group %s%n", groupName);
 
@@ -290,9 +349,11 @@ public class DynamicAgentHandler {
                     template.getOptions().as(AWSEC2TemplateOptions.class)
                             .authorizePublicKey(Files.toString(new File("/home/ec2-user/.ssh/id_rsa.pub"), Charsets.UTF_8));
 
-                    NodeMetadata node = getOnlyElement(compute.createNodesInGroup(groupName, 1, template));
-                    LOG.info("<< node " + node.getId() + "[" + concat(node.getPrivateAddresses(), node.getPublicAddresses()) + "]");
-                    System.out.printf("<< node %s: %s%n", node.getId(), concat(node.getPrivateAddresses(), node.getPublicAddresses()));
+                    Set<? extends NodeMetadata> nodes = compute.createNodesInGroup(groupName, adding_nodes, template);
+                    for (NodeMetadata node: nodes) {
+                        LOG.info("<< node " + node.getId() + "[" + concat(node.getPrivateAddresses(), node.getPublicAddresses()) + "]");
+                        System.out.printf("<< node %s: %s%n", node.getId(), concat(node.getPrivateAddresses(), node.getPublicAddresses()));
+                    }
 
                     // init to run docker daemon installation
                     LOG.info(">> run command: 'sudo wget -qO- https://get.docker.com/ | sh' with account: "  + login.identity);
@@ -311,9 +372,7 @@ public class DynamicAgentHandler {
                         LOG.info("<<     " + response.getValue());
                         System.out.printf("<<     %s%n", response.getValue());
                     }
-                    break;
 
-                case RUN:
                     String info = ">> running [" + scriptName + "] on group " + groupName + " as " + login.identity;
                     LOG.info(info);
                     System.out.printf(">> running [%s] on group %s as %s%n", file, groupName, checkNotNull(login).identity);
@@ -338,11 +397,11 @@ public class DynamicAgentHandler {
                     }
                     break;
 
-                case TURNOFF:
+                case OFF:
         	 	    //before to do turn off the VMs, do stop and remove docker container
-                    String infof = ">> turnoff [" + scriptName + "] on group " + groupName + " as " + login.identity;
+                    String infof = ">> turn off [" + scriptName + "] on group " + groupName + " as " + login.identity;
                     LOG.info(infof);
-                    System.out.printf(">> turnoff [%s] on group %s as %s%n", scriptName, groupName, checkNotNull(login).identity);
+                    System.out.printf(">> turn off [%s] on group %s as %s%n", scriptName, groupName, checkNotNull(login).identity);
                     Map<? extends NodeMetadata, ExecResponse> stopandremove = compute.runScriptOnNodesMatching(//
                             inGroup(groupName),
                             Files.toString(file, Charsets.UTF_8),   // passing in a string with the contents of the file
@@ -364,19 +423,19 @@ public class DynamicAgentHandler {
 
                     // you can use predicates to select which nodes you wish to turn off.
                     Set<? extends NodeMetadata> turnoffs = compute.suspendNodesMatching(Predicates.and(RUNNING, inGroup(groupName)));
-                    LOG.info("<< turnoff nodes " + turnoffs);
-                    System.out.printf("<< turnoff nodes %s%n", turnoffs);
-
+                    LOG.info("<< turn off nodes " + turnoffs);
+                    System.out.printf("<< turn off nodes %s%n", turnoffs);
                     break;
-                case TURNON:
+
+                case ON:
                     String infoo = ">> turnon [" + scriptName + "] on group " + groupName + " as " + login.identity;
                     LOG.info(infoo);
-                    System.out.printf(">> turnon [%s] on group %s as %s%n", scriptName, groupName, checkNotNull(login).identity);
+                    System.out.printf(">> turn on [%s] on group %s as %s%n", scriptName, groupName, checkNotNull(login).identity);
 
                     // you can use predicates to select which nodes you wish to turn on.
                     Set<? extends NodeMetadata> turnons = compute.resumeNodesMatching(Predicates.and(SUSPENDED, inGroup(groupName)));
-                    LOG.info("<< turnon nodes " + turnons);
-                    System.out.printf("<< turnon nodes %s%n", turnons);
+                    LOG.info("<< turn on nodes " + turnons);
+                    System.out.printf("<< turn on nodes %s%n", turnons);
 
              		//after nodes are turned on, to start new docker container
                     Map<? extends NodeMetadata, ExecResponse> turnonrun = compute.runScriptOnNodesMatching(//
@@ -406,13 +465,6 @@ public class DynamicAgentHandler {
                     System.out.printf("<< destroyed nodes %s%n", destroyed);
                     break;
 
-                case LISTNODES:
-                    Set<? extends ComputeMetadata> nodes = compute.listNodes();
-                    System.out.printf(">> No of nodes/instances %d%n", nodes.size());
-                    for (ComputeMetadata nodeData : nodes) {
-                        System.out.println(">>>>  " + nodeData);
-                    }
-                    break;
                 default:
                     break;
             }
@@ -441,8 +493,8 @@ public class DynamicAgentHandler {
      *
      * @return void
      */
-    public void generateScriptBasedOnTemplate(String ctrl_IP, String ctrl_port, String agent_docker_repo,
-                                              String agent_docker_tag, String cmd) throws IOException {
+    protected void generateScriptBasedOnTemplate(String ctrl_IP, String ctrl_port, String agent_docker_repo,
+                                                 String agent_docker_tag, String cmd)  {
         /*
          * the must parameters in the target script
          */
@@ -458,15 +510,14 @@ public class DynamicAgentHandler {
         String newFileName = "";
         if(cmd.equalsIgnoreCase("run")) {
             newFileName = "run.sh";
-        }else if(cmd.equalsIgnoreCase("turnon")){
+        }else if(cmd.equalsIgnoreCase("on")){
             newFileName = "on.sh";
-        }else if(cmd.equalsIgnoreCase("turnoff")){
+        }else if(cmd.equalsIgnoreCase("off")){
             newFileName = "off.sh";
         }else{
             return;
         }
 
-        File newFile = new File("/agent_dynamic_provision_script/" + newFileName, "w");
         StringBuffer sb = new StringBuffer();
         sb.append("#!/bin/bash + \n");
         sb.append("\n");
@@ -474,18 +525,37 @@ public class DynamicAgentHandler {
         sb.append(AGENT_CTRL_PORT + ctrl_port + "\n");
         sb.append(AGENT_IMG_REPO + agent_docker_repo  + "\n");
         sb.append(AGENT_IMG_TAG + agent_docker_tag + "\n");
-        sb.append(AGENT_WORK_MODE + cmd + "\n");
+        sb.append(AGENT_WORK_MODE + cmd.toUpperCase() + "\n");
         sb.append("\n");
-        FileReader fr = new FileReader("/agent_dynamic_provision_script/jclouds_op_ec2_template.sh");
+
+        FileReader fr = null;
+        String templateFile =  this.scriptTemplatePath + "/jclouds_op_ec2_template.sh";
+        try {
+            fr = new FileReader(templateFile);
+        } catch (IOException e) {
+            LOG.debug(e.getMessage());
+        }
+
+        File newFile = null;
         BufferedReader br = new BufferedReader(fr);
         String line = null;
-        while((line = br.readLine()) != null){
-            sb.append(line + "\n");
+        try {
+            newFile = new File(this.scriptTemplatePath + "/" + newFileName);
+            while((line = br.readLine()) != null){
+                sb.append(line + "\n");
+            }
+        } catch (IOException e) {
+            LOG.debug(e.getMessage());
         }
-        FileWriter fw = new FileWriter(newFile);
-        BufferedWriter bw = new BufferedWriter(fw);
-        bw.write(sb.toString());
-        bw.close();
-        fw.close();
+        FileWriter fw = null;
+        try {
+            fw = new FileWriter(newFile);
+            BufferedWriter bw = new BufferedWriter(fw);
+            bw.write(sb.toString());
+            bw.close();
+            fw.close();
+        } catch (IOException e) {
+            LOG.debug(e.getMessage());
+        }
     }
 }

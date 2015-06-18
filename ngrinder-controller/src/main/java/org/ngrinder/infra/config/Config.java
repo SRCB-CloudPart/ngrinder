@@ -750,4 +750,23 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
 	public int getGuardTime(){
 		return getAgentDynamicProperties().getPropertyInt(PROP_AGENT_DYNAMIC_GUARD_TIME);
 	}
+
+	/**
+	 * Get the docker image repository which will used to pull the wanted docker image to run agent
+	 *
+	 * @return docker image repo
+	 */
+	public String getDockerRepo(){
+		return getAgentDynamicProperties().getProperty(PROP_AGENT_DYNAMIC_DOCKER_REPO);
+	}
+
+
+	/**
+	 * Get the docker image tag which will used to pull the wanted docker image to run agent
+	 *
+	 * @return docker image tag
+	 */
+	public String getDockerTag(){
+		return getAgentDynamicProperties().getProperty(PROP_AGENT_DYNAMIC_DOCKER_TAG);
+	}
 }

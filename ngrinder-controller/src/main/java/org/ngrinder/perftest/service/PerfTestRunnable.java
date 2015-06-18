@@ -128,14 +128,13 @@ public class PerfTestRunnable implements ControllerConstants {
 			}
 		};
 		scheduledTaskService.addFixedDelayedScheduledTask(agentRunnable, PERFTEST_RUN_FREQUENCY_MILLISECONDS);
-
-		createOneEc2InstanceByDefault();
 	}
 
 	@PreDestroy
 	public void destroy() {
 		scheduledTaskService.removeScheduledJob(this.startRunnable);
 		scheduledTaskService.removeScheduledJob(this.finishRunnable);
+		scheduledTaskService.removeScheduledJob(this.agentRunnable);
 	}
 
 	/**
@@ -198,8 +197,9 @@ public class PerfTestRunnable implements ControllerConstants {
 				@Override
 				public void run() {
 					dynamicAgentHandler.setIsInAddingStatus(true);
-					dynamicAgentHandler.setScriptName("/agent_dynamic_provision_script/turnoff.sh");
-					dynamicAgentHandler.dynamicAgentCommand("turnoff");
+					dynamicAgentHandler.getEnvToGenerateScript("off");
+					dynamicAgentHandler.setScriptName("off.sh");
+					dynamicAgentHandler.dynamicAgentCommand("off");
 					dynamicAgentHandler.setIsInAddingStatus(false);
 					dynamicAgentNeedsCleaning = false;
 				}
@@ -219,8 +219,9 @@ public class PerfTestRunnable implements ControllerConstants {
 			public void run() {
 			if(dynamicAgentHandler.getAddedNodeCount() > 0){
 				dynamicAgentHandler.setIsInAddingStatus(true);
-				dynamicAgentHandler.setScriptName("/agent_dynamic_provision_script/turnon.sh");
-				dynamicAgentHandler.dynamicAgentCommand("turnon");
+				dynamicAgentHandler.getEnvToGenerateScript("on");
+				dynamicAgentHandler.setScriptName("on.sh");
+				dynamicAgentHandler.dynamicAgentCommand("on");
 				dynamicAgentHandler.setIsInAddingStatus(false);
 				dynamicAgentNeedsCleaning = true;
 			}
@@ -260,13 +261,13 @@ public class PerfTestRunnable implements ControllerConstants {
 			dynamicAgentHandler.setProvider("aws-ec2");
 			dynamicAgentHandler.setIdentity(identity);
 			dynamicAgentHandler.setCredential(credential);
-			dynamicAgentHandler.increaseAddedNodeCount(requiredAgents);
+			dynamicAgentHandler.setAddingNodes(requiredAgents);
 			Runnable addEc2AgentRunnable = new Runnable() {
 				@Override
 				public void run() {
 					dynamicAgentHandler.setIsInAddingStatus(true);
-					dynamicAgentHandler.dynamicAgentCommand("add");
-					dynamicAgentHandler.setScriptName("/agent_dynamic_provision_script/jclouds_op_ec2_template.sh");
+					dynamicAgentHandler.getEnvToGenerateScript("run");
+					dynamicAgentHandler.setScriptName("run.sh");
 					dynamicAgentHandler.dynamicAgentCommand("run");
 					dynamicAgentHandler.setIsInAddingStatus(false);
 					dynamicAgentNeedsCleaning = true;
@@ -281,7 +282,10 @@ public class PerfTestRunnable implements ControllerConstants {
 		}
 	}
 
-	private void createOneEc2InstanceByDefault(){
+
+
+	private void initFirstOneEc2Instance(){
+
 		String dynamicType = config.getAgentDynamicType();
 		LOG.info(dynamicType);
 		dynamicAgentHandler.setIsInAddingStatus(true);
@@ -291,14 +295,14 @@ public class PerfTestRunnable implements ControllerConstants {
 			dynamicAgentHandler.setProvider("aws-ec2");
 			dynamicAgentHandler.setIdentity(identity);
 			dynamicAgentHandler.setCredential(credential);
-			dynamicAgentHandler.increaseAddedNodeCount(1);
+			dynamicAgentHandler.setAddingNodes(1);
 			Runnable addEc2AgentRunnable = new Runnable() {
 				@Override
 				public void run() {
 					LOG.info("adding ec2 agent runnable ...");
 					dynamicAgentHandler.setIsInAddingStatus(true);
-					dynamicAgentHandler.dynamicAgentCommand("add");
-					dynamicAgentHandler.setScriptName("/agent_dynamic_provision_script/jclouds_op_ec2_template.sh");
+					dynamicAgentHandler.getEnvToGenerateScript("run");
+					dynamicAgentHandler.setScriptName("run.sh");
 					dynamicAgentHandler.dynamicAgentCommand("run");
 					dynamicAgentHandler.setIsInAddingStatus(false);
 				}
