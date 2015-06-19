@@ -290,6 +290,8 @@ public class NGrinderControllerStarter {
 				server.port = 8080;
 			}
 			validator.validate("-p / --port", server.port);
+			//which will be used when dynamic agent feature is enabled
+			System.setProperty("controller-server-port", String.valueOf(server.port));
 		} catch (Exception e) {
 			System.err.println(e.getMessage());
 			commander.usage();

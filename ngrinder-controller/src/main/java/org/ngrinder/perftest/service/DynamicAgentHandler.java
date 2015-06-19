@@ -19,7 +19,6 @@ import com.google.common.collect.ImmutableSet;
 import com.google.common.io.Files;
 import com.google.inject.Module;
 import org.jclouds.ContextBuilder;
-import org.jclouds.aws.ec2.compute.AWSEC2TemplateOptions;
 import org.jclouds.compute.ComputeService;
 import org.jclouds.compute.ComputeServiceContext;
 import org.jclouds.compute.RunNodesException;
@@ -27,10 +26,13 @@ import org.jclouds.compute.RunScriptOnNodesException;
 import org.jclouds.compute.domain.ExecResponse;
 import org.jclouds.compute.domain.NodeMetadata;
 import org.jclouds.compute.domain.Template;
+import org.jclouds.compute.domain.TemplateBuilder;
 import org.jclouds.domain.LoginCredentials;
 import org.jclouds.ec2.domain.InstanceType;
 import org.jclouds.enterprise.config.EnterpriseConfigurationModule;
 import org.jclouds.logging.slf4j.config.SLF4JLoggingModule;
+import org.jclouds.scriptbuilder.domain.Statement;
+import org.jclouds.scriptbuilder.statements.login.AdminAccess;
 import org.jclouds.sshj.config.SshjSshClientModule;
 import org.ngrinder.infra.config.Config;
 import org.slf4j.Logger;
@@ -58,6 +60,7 @@ import static org.jclouds.aws.ec2.reference.AWSEC2Constants.PROPERTY_EC2_CC_AMI_
 import static org.jclouds.compute.config.ComputeServiceProperties.TIMEOUT_SCRIPT_COMPLETE;
 import static org.jclouds.compute.options.TemplateOptions.Builder.overrideLoginCredentials;
 import static org.jclouds.compute.predicates.NodePredicates.*;
+import static org.jclouds.ec2.compute.options.EC2TemplateOptions.Builder.runScript;
 import static org.jclouds.scriptbuilder.domain.Statements.exec;
 
 /**
@@ -83,7 +86,7 @@ import static org.jclouds.scriptbuilder.domain.Statements.exec;
  * @author shihuc
  * @since 3.4
  */
-@Component
+@Component("dyanmicAgent")
 public class DynamicAgentHandler {
 
     private static final Logger LOG = LoggerFactory.getLogger(DynamicAgentHandler.class);
@@ -91,7 +94,6 @@ public class DynamicAgentHandler {
     @Autowired
     private Config config;
 
-    private final String scriptTemplateFile = "/agent_dynamic_provision_script/jclouds_op_ec2_template.sh";
     /*
      * Record the total count of EC2 nodes added to the specified group
      */
@@ -130,7 +132,7 @@ public class DynamicAgentHandler {
         ADD, RUN, ON, OFF, DESTROY
     }
 
-    //public final Map<String, ApiMetadata> allApis = Maps.uniqueIndex(Apis.viewableAs(ComputeServiceContext.class),Apis.idFunction());
+    //public final Map<String, ApiMetadata> allApis = Maps.uniqueIndex(Apis.viewableAs(ComputeServiceContext.class), Apis.idFunction());
 
     //public final Map<String, ProviderMetadata> appProviders = Maps.uniqueIndex(Providers.viewableAs(ComputeServiceContext.class), Providers.idFunction());
 
@@ -147,7 +149,7 @@ public class DynamicAgentHandler {
         this.containerIP = containerIP;
     }
 
-    public String getContainerPort() {
+    private String getContainerPort() {
         return containerPort;
     }
 
@@ -184,15 +186,25 @@ public class DynamicAgentHandler {
 
     @PostConstruct
     public void init(){
-        ClassPathResource cpr = new ClassPathResource(this.scriptTemplateFile);
+        initEnvironment();
+    }
+
+    private void initEnvironment(){
+        String scriptTemplateFile = "/agent_dynamic_provision_script/jclouds_op_ec2_template.sh";
+        ClassPathResource cpr = new ClassPathResource(scriptTemplateFile);
         try {
             this.scriptTemplatePath = cpr.getFile().getParent();
         } catch (IOException e) {
             LOG.info(e.getMessage());
         }
+        achieveWebContainerAddress();
+        registerShutdownHook();
+    }
+
+    public void initFirstOneEc2Instance(){
         String dynamicType = config.getAgentDynamicType();
-        if(dynamicType.equalsIgnoreCase("EC2")) {
-            achieveWebContainerAddress();
+        if(dynamicType.equalsIgnoreCase("EC2"))
+        {
             getEnvToGenerateScript("run");
             String identity = config.getEc2Identity();
             String credential = config.getEc2Credential();
@@ -207,6 +219,27 @@ public class DynamicAgentHandler {
         }
     }
 
+    private void registerShutdownHook(){
+        String dynamicType = config.getAgentDynamicType();
+        if(dynamicType.equalsIgnoreCase("EC2")) {
+            String identity = config.getEc2Identity();
+            String credential = config.getEc2Credential();
+            setProvider("aws-ec2");
+            setIdentity(identity);
+            setCredential(credential);
+
+            Thread thread = new Thread(){
+                @Override
+                public void run() {
+
+                    dynamicAgentCommand("destroy");
+                }
+            };
+            LOG.info("Begin to destroy the created EC2 instance when controller daemon shut down...");
+            Runtime.getRuntime().addShutdownHook(thread);
+        }
+    }
+
     protected void getEnvToGenerateScript(String cmd){
         String dockerImageRepo = config.getDockerRepo();
         String dockerImageTag = config.getDockerTag();
@@ -215,7 +248,7 @@ public class DynamicAgentHandler {
                 ", Repo: " + dockerImageRepo + ", Tag: " + dockerImageTag);
     }
 
-    private void achieveWebContainerAddress(){
+    public void achieveWebContainerAddress(){
         MBeanServer mbServer = ManagementFactory.getPlatformMBeanServer();
         HashSet<ObjectName> objs = null;
         try {
@@ -227,17 +260,24 @@ public class DynamicAgentHandler {
         String hostname = "";
         try {
             hostname = InetAddress.getLocalHost().getHostName();
+            LOG.info("hostname: " + hostname);
         } catch (UnknownHostException e) {
             LOG.info("InetAddress get host name failed: " + e.getMessage());
         }
         InetAddress[] addresses = null;
         try {
             addresses = InetAddress.getAllByName(hostname);
+            for(InetAddress add: addresses){
+                LOG.info("IP: " + add.getHostAddress());
+                containerIP = add.getHostAddress();
+            }
         } catch (UnknownHostException e) {
             LOG.info("InetAddress get host address by name failed: " + e.getMessage());
         }
-        ArrayList<String> endPoints = new ArrayList<String>();
+
+        boolean isJetty = true;
         for (Iterator<ObjectName> i = objs.iterator(); i.hasNext();) {
+            isJetty = false;
             ObjectName obj = i.next();
             String scheme = null;
             try {
@@ -256,7 +296,11 @@ public class DynamicAgentHandler {
             for (InetAddress addr : addresses) {
                 setContainerIP(addr.getHostAddress());
                 LOG.info("Container IP: " + containerIP + ", Container PORT: " + containerPort);
+                System.out.println("Container IP: " + containerIP + ", Container PORT: " + containerPort);
             }
+        }
+        if(isJetty){
+            containerPort = System.getProperty("controller-server-port");
         }
     }
 
@@ -275,6 +319,7 @@ public class DynamicAgentHandler {
                 new SLF4JLoggingModule(),
                 new EnterpriseConfigurationModule());
 
+        LOG.info("provider: " + provider + ", identity: " + identity + ", credential: " + credential);
         ContextBuilder builder = ContextBuilder.newBuilder(provider)
                 .credentials(identity, credential)
                 .modules(modules)
@@ -286,11 +331,25 @@ public class DynamicAgentHandler {
         return builder.buildView(ComputeServiceContext.class).getComputeService();
     }
 
+//    private LoginCredentials getLoginViaKeyForCommandExecution() {
+//        try {
+//            String user = "ec2-user";
+//            String privateKey = Files.toString(new File("/home/ec2-user/.ssh/id_rsa"), UTF_8);
+//            return LoginCredentials.builder().user(user).privateKey(privateKey).build();
+//        } catch (Exception e) {
+//            System.err.println("error reading ssh key " + e.getMessage());
+//            LOG.debug("error reading ssh key " + e.getMessage());
+//            return null;
+//        }
+//    }
+
     private LoginCredentials getLoginViaKeyForCommandExecution() {
         try {
-            String user = "ec2-user";
-            String privateKey = Files.toString(new File("/home/ec2-user/.ssh/id_rsa"), UTF_8);
-            return LoginCredentials.builder().user(user).privateKey(privateKey).build();
+            String user = System.getProperty("user.name");
+            String privateKey = Files.toString(
+                    new File(System.getProperty("user.home"), "/.ssh/id_rsa"), UTF_8);
+            return LoginCredentials.builder().
+                    user(user).privateKey(privateKey).build();
         } catch (Exception e) {
             System.err.println("error reading ssh key " + e.getMessage());
             LOG.debug("error reading ssh key " + e.getMessage());
@@ -317,16 +376,7 @@ public class DynamicAgentHandler {
             throw new IllegalArgumentException("please pass the local file to run as the last parameter");
         }
 
-        File file = null;
-        if (action == Action.RUN || action == Action.OFF || action == Action.ON) {
-            try {
-                file = new ClassPathResource(scriptName).getFile();
-            } catch (IOException e) {
-                e.printStackTrace();
-                LOG.debug("file must exist! " + e.getMessage());
-                throw new IllegalArgumentException("file must exist! " + scriptName);
-            }
-        }
+        File file = new File(scriptName);
 
         // note that you can check if a provider is present ahead of time
         //checkArgument(contains(allKeys, provider), "provider %s not in supported list: %s", provider, allKeys);
@@ -341,13 +391,21 @@ public class DynamicAgentHandler {
                     LOG.info(">> adding node to group " + groupName);
                     System.out.printf(">> adding node to group %s%n", groupName);
 
-                    Template template = compute.templateBuilder()
-                            .locationId("ap-southeast-1")
-                            .hardwareId(InstanceType.M1_MEDIUM)
-                            .build();
+//                    Template template = compute.templateBuilder()
+//                            .locationId("ap-southeast-1")
+//                            .hardwareId(InstanceType.M1_MEDIUM)
+//                            .build();
+//
+//                    template.getOptions().as(AWSEC2TemplateOptions.class)
+//                            .authorizePublicKey(Files.toString(new File("/home/ec2-user/.ssh/id_rsa.pub"), Charsets.UTF_8));
 
-                    template.getOptions().as(AWSEC2TemplateOptions.class)
-                            .authorizePublicKey(Files.toString(new File("/home/ec2-user/.ssh/id_rsa.pub"), Charsets.UTF_8));
+                    TemplateBuilder templateBuilder = compute.templateBuilder()
+                            .locationId("ap-southeast-1").hardwareId(InstanceType.M1_MEDIUM);
+
+                    Statement bootInstructions = AdminAccess.standard();
+
+                    templateBuilder.options(runScript(bootInstructions));
+                    Template template = templateBuilder.build();
 
                     Set<? extends NodeMetadata> nodes = compute.createNodesInGroup(groupName, adding_nodes, template);
                     for (NodeMetadata node: nodes) {
@@ -357,7 +415,8 @@ public class DynamicAgentHandler {
 
                     // init to run docker daemon installation
                     LOG.info(">> run command: 'sudo wget -qO- https://get.docker.com/ | sh' with account: "  + login.identity);
-                    Map<? extends NodeMetadata, ExecResponse> responses = compute.runScriptOnNodesMatching(//
+                    System.out.println(">> run command: 'sudo wget -qO- https://get.docker.com/ | sh' with account: "  + login.identity);
+                    Map<? extends NodeMetadata, ExecResponse> responses = compute.runScriptOnNodesMatching(
                             inGroup(groupName),                                     // predicate used to select nodes
                             exec("sudo wget -qO- https://get.docker.com/ | sh"),    // what you actually intend to run
                             overrideLoginCredentials(login)                         // use my local user & ssh key
@@ -365,10 +424,6 @@ public class DynamicAgentHandler {
                                     .wrapInInitScript(false));                      // run command directly
 
                     for (Entry<? extends NodeMetadata, ExecResponse> response : responses.entrySet()) {
-                        LOG.info("<< node " + response.getKey().getId() + ": " +
-                                "[" + concat(response.getKey().getPrivateAddresses(), response.getKey().getPublicAddresses()) + "]");
-                        System.out.printf("<< node %s: %s%n", response.getKey().getId(),
-                                concat(response.getKey().getPrivateAddresses(), response.getKey().getPublicAddresses()));
                         LOG.info("<<     " + response.getValue());
                         System.out.printf("<<     %s%n", response.getValue());
                     }
@@ -380,18 +435,13 @@ public class DynamicAgentHandler {
                     // which is to fork a background process.
                     Map<? extends NodeMetadata, ExecResponse> responserun = compute.runScriptOnNodesMatching(//
                             inGroup(groupName),
-                            Files.toString(file, Charsets.UTF_8), // passing in a string with the contents of the file
+                            Files.toString(file, Charsets.UTF_8),
                             overrideLoginCredentials(login)
                                     .runAsRoot(false)
-                                    .wrapInInitScript(true) // do not display script content when from jclouds API return result
                                     .nameTask("_" + file.getName().replaceAll("\\..*", "")));   // ensuring task name isn't
                                                                                                 // the same as the file so status checking works properly
 
                     for (Entry<? extends NodeMetadata, ExecResponse> response : responserun.entrySet()) {
-                        LOG.info("<< node " + response.getKey().getId() + ": " +
-                                "[" + concat(response.getKey().getPrivateAddresses(), response.getKey().getPublicAddresses()) + "]");
-                        System.out.printf("<< node %s: %s%n", response.getKey().getId(),
-                                concat(response.getKey().getPrivateAddresses(), response.getKey().getPublicAddresses()));
                         LOG.info("<<     " + response.getValue());
                         System.out.printf("<<     %s%n", response.getValue());
                     }
@@ -402,12 +452,11 @@ public class DynamicAgentHandler {
                     String infof = ">> turn off [" + scriptName + "] on group " + groupName + " as " + login.identity;
                     LOG.info(infof);
                     System.out.printf(">> turn off [%s] on group %s as %s%n", scriptName, groupName, checkNotNull(login).identity);
-                    Map<? extends NodeMetadata, ExecResponse> stopandremove = compute.runScriptOnNodesMatching(//
+                    Map<? extends NodeMetadata, ExecResponse> stopandremove = compute.runScriptOnNodesMatching(
                             inGroup(groupName),
                             Files.toString(file, Charsets.UTF_8),   // passing in a string with the contents of the file
                             overrideLoginCredentials(login)
                                     .runAsRoot(false)
-                                    .wrapInInitScript(true)         // do not display script content when from jclouds API return result
                                     .nameTask("_" + file.getName().replaceAll("\\..*", ""))); // ensuring task name isn't
                     // the same as the file so status checking works properly
                     for (Entry<? extends NodeMetadata, ExecResponse> response : stopandremove.entrySet()) {
@@ -438,13 +487,13 @@ public class DynamicAgentHandler {
                     System.out.printf("<< turn on nodes %s%n", turnons);
 
              		//after nodes are turned on, to start new docker container
-                    Map<? extends NodeMetadata, ExecResponse> turnonrun = compute.runScriptOnNodesMatching(//
+                    Map<? extends NodeMetadata, ExecResponse> turnonrun = compute.runScriptOnNodesMatching(
                             inGroup(groupName),
                             Files.toString(file, Charsets.UTF_8), // passing in a string with the contents of the file
                             overrideLoginCredentials(login)
                                     .runAsRoot(false)
-                                    .wrapInInitScript(true) // do not display script content when from jclouds API return result
                                     .nameTask("_" + file.getName().replaceAll("\\..*", ""))); // ensuring task name isn't
+
                     // the same as the file so status checking works properly
                     for (Entry<? extends NodeMetadata, ExecResponse> response : turnonrun.entrySet()) {
                         LOG.info("<< node " + response.getKey().getId() + ": " +
@@ -519,7 +568,7 @@ public class DynamicAgentHandler {
         }
 
         StringBuffer sb = new StringBuffer();
-        sb.append("#!/bin/bash + \n");
+        sb.append("#!/bin/bash\n");
         sb.append("\n");
         sb.append(AGENT_CTRL_IP  + ctrl_IP   + "\n");
         sb.append(AGENT_CTRL_PORT + ctrl_port + "\n");

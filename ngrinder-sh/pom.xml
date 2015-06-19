@@ -11,7 +11,7 @@
 	<packaging>jar</packaging>
 	<build>
 		<!--  added by shihuc for pluginManagement -->
-		<pluginManagement>
+		<!--<pluginManagement>-->
 			<plugins>
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
@@ -38,7 +38,7 @@
 					</executions>
 				</plugin>
 			</plugins>
-		</pluginManagement>
+		<!--</pluginManagement>-->
 		<!--  end of shihuc for pluginManagement tag -->
 	</build>
 </project>

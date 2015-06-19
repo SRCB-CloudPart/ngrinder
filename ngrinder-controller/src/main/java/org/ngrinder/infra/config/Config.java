@@ -769,4 +769,5 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
 	public String getDockerTag(){
 		return getAgentDynamicProperties().getProperty(PROP_AGENT_DYNAMIC_DOCKER_TAG);
 	}
+
 }

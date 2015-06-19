@@ -33,6 +33,7 @@ import org.ngrinder.infra.logger.CoreLogger;
 import org.ngrinder.infra.spring.RemainedPath;
 import org.ngrinder.model.*;
 import org.ngrinder.perftest.service.AgentManager;
+import org.ngrinder.perftest.service.DynamicAgentHandler;
 import org.ngrinder.perftest.service.PerfTestService;
 import org.ngrinder.perftest.service.TagService;
 import org.ngrinder.region.service.RegionService;
@@ -108,6 +109,9 @@ public class PerfTestController extends BaseController {
 	private RegionService regionService;
 
 	private Gson fileEntryGson;
+
+	@Autowired
+	private DynamicAgentHandler dynamicAgentHandler;
 
 	/**
 	 * Initialize.
@@ -314,6 +318,7 @@ public class PerfTestController extends BaseController {
 	@RequestMapping(value = "/new", method = RequestMethod.POST)
 	public String saveOne(User user, PerfTest perfTest,
 	                      @RequestParam(value = "isClone", required = false, defaultValue = "false") boolean isClone, ModelMap model) {
+
 
 		validate(user, null, perfTest);
 		// Point to the head revision

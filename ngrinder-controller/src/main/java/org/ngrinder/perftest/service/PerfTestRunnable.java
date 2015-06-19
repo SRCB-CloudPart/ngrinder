@@ -128,6 +128,15 @@ public class PerfTestRunnable implements ControllerConstants {
 			}
 		};
 		scheduledTaskService.addFixedDelayedScheduledTask(agentRunnable, PERFTEST_RUN_FREQUENCY_MILLISECONDS);
+
+		scheduledTaskService.runAsync(
+			new Runnable() {
+				@Override
+				public void run() {
+					dynamicAgentHandler.initFirstOneEc2Instance();
+				}
+			}
+		);
 	}
 
 	@PreDestroy
