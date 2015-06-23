@@ -33,6 +33,7 @@ import org.jclouds.enterprise.config.EnterpriseConfigurationModule;
 import org.jclouds.logging.slf4j.config.SLF4JLoggingModule;
 import org.jclouds.scriptbuilder.domain.Statement;
 import org.jclouds.scriptbuilder.statements.login.AdminAccess;
+import org.jclouds.scriptbuilder.statements.login.AdminAccessBuilderSpec;
 import org.jclouds.sshj.config.SshjSshClientModule;
 import org.ngrinder.infra.config.Config;
 import org.slf4j.Logger;
@@ -231,7 +232,6 @@ public class DynamicAgentHandler {
             Thread thread = new Thread(){
                 @Override
                 public void run() {
-
                     dynamicAgentCommand("destroy");
                 }
             };
@@ -325,25 +325,25 @@ public class DynamicAgentHandler {
                 .modules(modules)
                 .overrides(properties);
 
-        System.out.printf(">> initializing %s%n", builder.getApiMetadata());
         LOG.info(">> initializing " + builder.getApiMetadata());
 
         return builder.buildView(ComputeServiceContext.class).getComputeService();
     }
 
-//    private LoginCredentials getLoginViaKeyForCommandExecution() {
-//        try {
-//            String user = "ec2-user";
-//            String privateKey = Files.toString(new File("/home/ec2-user/.ssh/id_rsa"), UTF_8);
-//            return LoginCredentials.builder().user(user).privateKey(privateKey).build();
-//        } catch (Exception e) {
-//            System.err.println("error reading ssh key " + e.getMessage());
-//            LOG.debug("error reading ssh key " + e.getMessage());
-//            return null;
-//        }
-//    }
+    private LoginCredentials getAgentLoginForCommandExecution() {
+        try {
+            String user = "agent";
+            File priFile = new File("/home/agent/.ssh/id_rsa");
+            checkNotNull(priFile, "private ssh key file id_rsa of user 'agent' is not existing.");
+            String privateKey = Files.toString(priFile, UTF_8);
+            return LoginCredentials.builder().user(user).privateKey(privateKey).build();
+        } catch (Exception e) {
+            LOG.debug("error reading ssh key " + e.getMessage());
+            return null;
+        }
+    }
 
-    private LoginCredentials getLoginViaKeyForCommandExecution() {
+    private LoginCredentials getUserLoginForCommandExecution() {
         try {
             String user = System.getProperty("user.name");
             String privateKey = Files.toString(
@@ -351,10 +351,62 @@ public class DynamicAgentHandler {
             return LoginCredentials.builder().
                     user(user).privateKey(privateKey).build();
         } catch (Exception e) {
-            System.err.println("error reading ssh key " + e.getMessage());
             LOG.debug("error reading ssh key " + e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * According to the current user to do different login operation. Because AdminAccess in jclouds does not allow
+     * 'root' user to login the EC2 VM if the AMI is default from Amazon provider.
+     *
+     * @return login credential
+     */
+    private LoginCredentials getLoginCredential(){
+        String user = System.getProperty("user.name");
+        LoginCredentials tempLogin = null;
+        if(user.equalsIgnoreCase("root")){
+            tempLogin = getAgentLoginForCommandExecution();
+        }else{
+            tempLogin = getUserLoginForCommandExecution();
+        }
+        return tempLogin;
+    }
+
+    /**
+     * According to current user whether it is 'root' to do different behavior to create AdminAccess.
+     * If current user is 'root', ngrinder user should create 'agent' user and generate RSA type ssh key
+     * without passphrase.
+     *
+     * @return statement
+     */
+    private Statement createAdminAccess(){
+        String user = System.getProperty("user.name");
+        Statement bootInstruction = null;
+        if(user.equalsIgnoreCase("root")) {
+            File pubFile = new File("/home/agent/.ssh/id_rsa.pub");
+            File priFile = new File("/home/agent/.ssh/id_rsa");
+            checkNotNull(pubFile, "public ssh key file id_rsa.pub of user 'agent' not exist");
+            checkNotNull(priFile, "private ssh key file id_rsa of user 'agent' not exist");
+            /*
+             * Attention: public and private keys both should be provided else AdminAccess will use the default ssh keys.
+             *            please refer to the scenario of public AdminAccess init(Configuration configuration) {...}
+             */
+            AdminAccessBuilderSpec spec = AdminAccessBuilderSpec.parse(
+                    "adminUsername=agent,"
+                    + "adminHome=/home/agent,"
+                    + "adminPublicKeyFile=/home/agent/.ssh/id_rsa.pub,"
+                    + "adminPrivateKeyFile=/home/agent/.ssh/id_rsa");
+            bootInstruction = AdminAccess.builder().from(spec).build();
+        }else{
+            String home = System.getProperty("user.home");
+            File pubFile = new File(home, "/.ssh/id_rsa.pub");
+            File priFile = new File(home, "/.ssh/id_rsa");
+            checkNotNull(pubFile, "public ssh key file id_rsa.pub of user '" + user + "' not exist");
+            checkNotNull(priFile, "private ssh key file id_rsa of user '" + user + "' not exist");
+            bootInstruction = AdminAccess.standard();
+        }
+        return bootInstruction;
     }
 
     /**
@@ -371,17 +423,12 @@ public class DynamicAgentHandler {
 
         Action action = Action.valueOf(actionCmd.toUpperCase());
 
-        if ((action == Action.RUN || action == Action.ON || action == Action.OFF) && scriptName == null) {
-            LOG.debug("please pass the local file to run as the last parameter");
-            throw new IllegalArgumentException("please pass the local file to run as the last parameter");
+        if (action == Action.RUN || action == Action.ON || action == Action.OFF) {
+            checkNotNull(scriptName, "please pass the local file to run as the last parameter");
         }
 
         File file = new File(scriptName);
-
-        // note that you can check if a provider is present ahead of time
-        //checkArgument(contains(allKeys, provider), "provider %s not in supported list: %s", provider, allKeys);
-
-        LoginCredentials login =  (action != Action.DESTROY) ? getLoginViaKeyForCommandExecution() : null;
+        LoginCredentials login =  (action != Action.DESTROY) ? getLoginCredential() : null;
 
         ComputeService compute = initComputeService(provider, identity, credential);
 
@@ -389,33 +436,21 @@ public class DynamicAgentHandler {
             switch (action) {
                 case RUN:
                     LOG.info(">> adding node to group " + groupName);
-                    System.out.printf(">> adding node to group %s%n", groupName);
-
-//                    Template template = compute.templateBuilder()
-//                            .locationId("ap-southeast-1")
-//                            .hardwareId(InstanceType.M1_MEDIUM)
-//                            .build();
-//
-//                    template.getOptions().as(AWSEC2TemplateOptions.class)
-//                            .authorizePublicKey(Files.toString(new File("/home/ec2-user/.ssh/id_rsa.pub"), Charsets.UTF_8));
 
                     TemplateBuilder templateBuilder = compute.templateBuilder()
                             .locationId("ap-southeast-1").hardwareId(InstanceType.M1_MEDIUM);
 
-                    Statement bootInstructions = AdminAccess.standard();
-
+                    Statement bootInstructions = createAdminAccess();
                     templateBuilder.options(runScript(bootInstructions));
                     Template template = templateBuilder.build();
 
                     Set<? extends NodeMetadata> nodes = compute.createNodesInGroup(groupName, adding_nodes, template);
                     for (NodeMetadata node: nodes) {
                         LOG.info("<< node " + node.getId() + "[" + concat(node.getPrivateAddresses(), node.getPublicAddresses()) + "]");
-                        System.out.printf("<< node %s: %s%n", node.getId(), concat(node.getPrivateAddresses(), node.getPublicAddresses()));
                     }
 
                     // init to run docker daemon installation
                     LOG.info(">> run command: 'sudo wget -qO- https://get.docker.com/ | sh' with account: "  + login.identity);
-                    System.out.println(">> run command: 'sudo wget -qO- https://get.docker.com/ | sh' with account: "  + login.identity);
                     Map<? extends NodeMetadata, ExecResponse> responses = compute.runScriptOnNodesMatching(
                             inGroup(groupName),                                     // predicate used to select nodes
                             exec("sudo wget -qO- https://get.docker.com/ | sh"),    // what you actually intend to run
@@ -425,12 +460,10 @@ public class DynamicAgentHandler {
 
                     for (Entry<? extends NodeMetadata, ExecResponse> response : responses.entrySet()) {
                         LOG.info("<<     " + response.getValue());
-                        System.out.printf("<<     %s%n", response.getValue());
                     }
 
                     String info = ">> running [" + scriptName + "] on group " + groupName + " as " + login.identity;
                     LOG.info(info);
-                    System.out.printf(">> running [%s] on group %s as %s%n", file, groupName, checkNotNull(login).identity);
                     // when running a sequence of commands, you probably want to have jclouds use the default behavior,
                     // which is to fork a background process.
                     Map<? extends NodeMetadata, ExecResponse> responserun = compute.runScriptOnNodesMatching(//
@@ -443,15 +476,12 @@ public class DynamicAgentHandler {
 
                     for (Entry<? extends NodeMetadata, ExecResponse> response : responserun.entrySet()) {
                         LOG.info("<<     " + response.getValue());
-                        System.out.printf("<<     %s%n", response.getValue());
                     }
                     break;
 
                 case OFF:
         	 	    //before to do turn off the VMs, do stop and remove docker container
-                    String infof = ">> turn off [" + scriptName + "] on group " + groupName + " as " + login.identity;
-                    LOG.info(infof);
-                    System.out.printf(">> turn off [%s] on group %s as %s%n", scriptName, groupName, checkNotNull(login).identity);
+                    LOG.info(">> turn off [" + scriptName + "] on group " + groupName + " as " + login.identity);
                     Map<? extends NodeMetadata, ExecResponse> stopandremove = compute.runScriptOnNodesMatching(
                             inGroup(groupName),
                             Files.toString(file, Charsets.UTF_8),   // passing in a string with the contents of the file
@@ -462,29 +492,21 @@ public class DynamicAgentHandler {
                     for (Entry<? extends NodeMetadata, ExecResponse> response : stopandremove.entrySet()) {
                         LOG.info("<< node " + response.getKey().getId() + ": " +
                                 "[" + concat(response.getKey().getPrivateAddresses(), response.getKey().getPublicAddresses()) + "]");
-                        System.out.printf("<< node %s: %s%n", response.getKey().getId(),
-                                concat(response.getKey().getPrivateAddresses(), response.getKey().getPublicAddresses()));
                         LOG.info("<<     " + response.getValue());
-                        System.out.printf("<<     %s%n", response.getValue());
                     }
                     LOG.info(">> turn off nodes in group " + groupName);
-                    System.out.printf(">> turn off nodes in group %s%n", groupName);
 
                     // you can use predicates to select which nodes you wish to turn off.
                     Set<? extends NodeMetadata> turnoffs = compute.suspendNodesMatching(Predicates.and(RUNNING, inGroup(groupName)));
                     LOG.info("<< turn off nodes " + turnoffs);
-                    System.out.printf("<< turn off nodes %s%n", turnoffs);
                     break;
 
                 case ON:
-                    String infoo = ">> turnon [" + scriptName + "] on group " + groupName + " as " + login.identity;
-                    LOG.info(infoo);
-                    System.out.printf(">> turn on [%s] on group %s as %s%n", scriptName, groupName, checkNotNull(login).identity);
 
+                    LOG.info(">> turnon [" + scriptName + "] on group " + groupName + " as " + login.identity);
                     // you can use predicates to select which nodes you wish to turn on.
                     Set<? extends NodeMetadata> turnons = compute.resumeNodesMatching(Predicates.and(SUSPENDED, inGroup(groupName)));
                     LOG.info("<< turn on nodes " + turnons);
-                    System.out.printf("<< turn on nodes %s%n", turnons);
 
              		//after nodes are turned on, to start new docker container
                     Map<? extends NodeMetadata, ExecResponse> turnonrun = compute.runScriptOnNodesMatching(
@@ -498,20 +520,15 @@ public class DynamicAgentHandler {
                     for (Entry<? extends NodeMetadata, ExecResponse> response : turnonrun.entrySet()) {
                         LOG.info("<< node " + response.getKey().getId() + ": " +
                                 "[" + concat(response.getKey().getPrivateAddresses(), response.getKey().getPublicAddresses()) + "]");
-                        System.out.printf("<< node %s: %s%n", response.getKey().getId(),
-                                concat(response.getKey().getPrivateAddresses(), response.getKey().getPublicAddresses()));
                         LOG.info("<<     " + response.getValue());
-                        System.out.printf("<<     %s%n", response.getValue());
                     }
                     break;
 
                 case DESTROY:
                     LOG.info(">> destroying nodes in group " + groupName);
-                    System.out.printf(">> destroying nodes in group %s%n", groupName);
                     // you can use predicates to select which nodes you wish to destroy.
                     Set<? extends NodeMetadata> destroyed = compute.destroyNodesMatching(Predicates.and(not(TERMINATED), inGroup(groupName)));
                     LOG.info("<< destroyed nodes %s%n" + destroyed);
-                    System.out.printf("<< destroyed nodes %s%n", destroyed);
                     break;
 
                 default:
@@ -519,13 +536,10 @@ public class DynamicAgentHandler {
             }
         } catch (RunNodesException e) {
             LOG.debug("error adding node to group " + groupName + ": " + e.getMessage());
-            System.err.println("error adding node to group " + groupName + ": " + e.getMessage());
         } catch (RunScriptOnNodesException e) {
             LOG.debug("error executing command" + " on group " + groupName + ": " + e.getMessage());
-            System.err.println("error executing command" + " on group " + groupName + ": " + e.getMessage());
         } catch (Exception e) {
             LOG.debug("error: " + e.getMessage());
-            System.err.println("error: " + e.getMessage());
         } finally {
             compute.getContext().close();
         }
