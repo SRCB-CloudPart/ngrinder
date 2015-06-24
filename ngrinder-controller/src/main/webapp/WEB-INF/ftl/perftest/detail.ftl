@@ -320,11 +320,13 @@ ${vuserCalcScript};
 
 var objTimer;
 var durationMap = [];
+var isDynamicAgentEnabled = false;
 
 $(document).ready(function () {
 	$.ajaxSetup({
 		cache : false //close AJAX cache
 	});
+    getDynamicAgentEnabledStatus();
 	initTags();
 	initDuration();
 	initScheduleDate();
@@ -705,6 +707,19 @@ function getBrowserTimeApplyingTimezone(time) {
 	}
 }	
 
+function getDynamicAgentEnabledStatus(){
+	var ajaxObj = new AjaxObj("/perftest/dynamicAgentType", {});
+	ajaxObj.async = false;
+	ajaxObj.success = function(enabled){
+		var en = eval(enabled);
+		if(en == "true"){
+			isDynamicAgentEnabled = true;
+		}else{
+			isDynamicAgentEnabled = false;
+		}
+	}
+	ajaxObj.call();
+}
 
 function bindEvent() {
 	$("#script_name").change(function() {
@@ -731,9 +746,14 @@ function bindEvent() {
 		}
 	});
 
-	$("#save_schedule_btn").click(function() {		
+	$("#save_schedule_btn").click(function() {
+		var minVal = 0;
+        if(isDynamicAgentEnabled == false) {
+			minVal = 1;
+        }
+
 		$("#agent_count").rules("add", {
-			min:0
+			min:minVal
 		}); 
 		if (!validateForm()) {
 			return false;
@@ -757,8 +777,13 @@ function bindEvent() {
 
 
 	$("#save_test_btn").click(function() {
+        var minVal = 0;
+        if(isDynamicAgentEnabled == false) {
+            minVal = 1;
+        }
+
 		$("#agent_count").rules("add", {
-			min:0
+			min:minVal
 		});
 
 		if (!validateForm()) {
@@ -957,10 +982,13 @@ function changeAgentMaxCount(region, isValid) {
 	}
 	$("#maxAgentCount").text(count);
 
-	var $agentCountObj = $("#agent_count");
-	$agentCountObj.rules("add", {
-		max: count
-	});
+	if(isDynamicAgentEnabled == false) {
+        var $agentCountObj = $("#agent_count");
+
+        $agentCountObj.rules("add", {
+            max: count
+        });
+    }
 
 	if (isValid) {
 		$agentCountObj.valid();

@@ -43,13 +43,11 @@ import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
 
 import javax.annotation.PostConstruct;
-import javax.management.*;
 import java.io.*;
-import java.lang.management.ManagementFactory;
-import java.net.InetAddress;
-import java.net.UnknownHostException;
-import java.util.*;
+import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Properties;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 import static com.google.common.base.Charsets.UTF_8;
@@ -133,35 +131,9 @@ public class DynamicAgentHandler {
         ADD, RUN, ON, OFF, DESTROY
     }
 
-    //public final Map<String, ApiMetadata> allApis = Maps.uniqueIndex(Apis.viewableAs(ComputeServiceContext.class), Apis.idFunction());
-
-    //public final Map<String, ProviderMetadata> appProviders = Maps.uniqueIndex(Providers.viewableAs(ComputeServiceContext.class), Providers.idFunction());
-
-    //public final Set<String> allKeys = ImmutableSet.copyOf(Iterables.concat(appProviders.keySet(), allApis.keySet()));
-
-    private String containerIP = "";
-    private String containerPort = "";
-
-    public String getContainerIP() {
-        return containerIP;
-    }
-
-    public void setContainerIP(String containerIP) {
-        this.containerIP = containerIP;
-    }
-
-    private String getContainerPort() {
-        return containerPort;
-    }
-
-    public void setContainerPort(String containerPort) {
-        this.containerPort = containerPort;
-    }
-
     private String provider = "aws-ec2";
     private String identity = null;
     private String credential = null;
-    private String groupName = "agents";
     private String scriptTemplatePath = null;
     private String scriptName = null;
 
@@ -177,12 +149,21 @@ public class DynamicAgentHandler {
         this.credential = credential;
     }
 
-    public void setGroupName(String groupName) {
-        this.groupName = groupName;
-    }
-
     public void setScriptName(String scriptName) {
         this.scriptName = this.scriptTemplatePath + "/" + scriptName;
+    }
+
+    /**
+     * In order to ensure the group name is unique, use the controller IP as seed to generate the group name.
+     * group name format: "agt" as the prefix, and use IP removed dot as suffix.
+     *
+     * @return group name
+     */
+    public String generateUniqueGroupName(){
+        String groupName = "agt";
+        String ctrl_ip = config.getAgentDynamicControllerIP();
+        ctrl_ip = ctrl_ip.replaceAll("\\.", "");
+        return groupName + ctrl_ip;
     }
 
     @PostConstruct
@@ -198,110 +179,90 @@ public class DynamicAgentHandler {
         } catch (IOException e) {
             LOG.info(e.getMessage());
         }
-        achieveWebContainerAddress();
+
+        getEnvToGenerateScript();
+
         registerShutdownHook();
     }
 
+    private void setProviderIdCredentialForEc2(){
+        String identity = config.getAgentDynamicEc2Identity();
+        String credential = config.getAgentDynamicEc2Credential();
+        setProvider("aws-ec2");
+        setIdentity(identity);
+        setCredential(credential);
+    }
+
     public void initFirstOneEc2Instance(){
-        String dynamicType = config.getAgentDynamicType();
-        if(dynamicType.equalsIgnoreCase("EC2"))
-        {
-            getEnvToGenerateScript("run");
-            String identity = config.getEc2Identity();
-            String credential = config.getEc2Credential();
-            setProvider("aws-ec2");
-            setIdentity(identity);
-            setCredential(credential);
-            setAddingNodes(1);
+        if(config.isAgentDynamicEc2Enabled()) {
             setIsInAddingStatus(true);
+            setProviderIdCredentialForEc2();
+            setAddingNodes(1);
             setScriptName("run.sh");
             dynamicAgentCommand("run");
             setIsInAddingStatus(false);
         }
     }
 
-    private void registerShutdownHook(){
-        String dynamicType = config.getAgentDynamicType();
-        if(dynamicType.equalsIgnoreCase("EC2")) {
-            String identity = config.getEc2Identity();
-            String credential = config.getEc2Credential();
-            setProvider("aws-ec2");
-            setIdentity(identity);
-            setCredential(credential);
+    public void addDynamicEc2Instance(int requiredNum){
+        if(config.isAgentDynamicEc2Enabled()) {
+            setIsInAddingStatus(true);
+            setProviderIdCredentialForEc2();
+            setAddingNodes(requiredNum);
+            setScriptName("run.sh");
+            dynamicAgentCommand("run");
+            setIsInAddingStatus(false);
+        }
+    }
 
+    public void turnOnEc2Instance(){
+        if(config.isAgentDynamicEc2Enabled()) {
+            if (getAddedNodeCount() > 0) {
+                setIsInAddingStatus(true);
+                setProviderIdCredentialForEc2();
+                setScriptName("on.sh");
+                dynamicAgentCommand("on");
+                setIsInAddingStatus(false);
+            }
+        }
+    }
+
+    public void turnOffEc2Instance(){
+        if(config.isAgentDynamicEc2Enabled()) {
+            setIsInAddingStatus(true);
+            setProviderIdCredentialForEc2();
+            setScriptName("off.sh");
+            dynamicAgentCommand("off");
+            setIsInAddingStatus(false);
+        }
+    }
+
+    private void registerShutdownHook(){
+        if(config.isAgentDynamicEc2Enabled()) {
+            setProviderIdCredentialForEc2();
             Thread thread = new Thread(){
                 @Override
                 public void run() {
                     dynamicAgentCommand("destroy");
                 }
             };
-            LOG.info("Begin to destroy the created EC2 instance when controller daemon shut down...");
+            LOG.info("Register shutdown hook to destroy the created EC2 instance when controller daemon shut down...");
             Runtime.getRuntime().addShutdownHook(thread);
         }
     }
 
-    protected void getEnvToGenerateScript(String cmd){
-        String dockerImageRepo = config.getDockerRepo();
-        String dockerImageTag = config.getDockerTag();
-        generateScriptBasedOnTemplate(containerIP, containerPort, dockerImageRepo, dockerImageTag, cmd);
-        LOG.info("Container IP: " + containerIP + ", Container Port: " + containerPort +
+    protected void getEnvToGenerateScript(){
+        String dockerImageRepo = config.getAgentDynamicDockerRepo();
+        String dockerImageTag = config.getAgentDynamicDockerTag();
+        String controllerIP = config.getAgentDynamicControllerIP();
+        String controllerPort = config.getAgentDynamicControllerPort();
+
+        generateScriptBasedOnTemplate(controllerIP, controllerPort, dockerImageRepo, dockerImageTag, "run");
+        generateScriptBasedOnTemplate(controllerIP, controllerPort, dockerImageRepo, dockerImageTag, "off");
+        generateScriptBasedOnTemplate(controllerIP, controllerPort, dockerImageRepo, dockerImageTag, "on");
+
+        LOG.info("Container IP: " + controllerIP + ", Container Port: " + controllerPort +
                 ", Repo: " + dockerImageRepo + ", Tag: " + dockerImageTag);
-    }
-
-    public void achieveWebContainerAddress(){
-        MBeanServer mbServer = ManagementFactory.getPlatformMBeanServer();
-        HashSet<ObjectName> objs = null;
-        try {
-            objs = (HashSet<ObjectName>) mbServer.queryNames(new ObjectName("*:type=Connector,*"),
-                    Query.match(Query.attr("protocol"), Query.value("HTTP/1.1")));
-        } catch (MalformedObjectNameException e) {
-            LOG.info("MBeanServer query failed: " + e.getMessage());
-        }
-        String hostname = "";
-        try {
-            hostname = InetAddress.getLocalHost().getHostName();
-            LOG.info("hostname: " + hostname);
-        } catch (UnknownHostException e) {
-            LOG.info("InetAddress get host name failed: " + e.getMessage());
-        }
-        InetAddress[] addresses = null;
-        try {
-            addresses = InetAddress.getAllByName(hostname);
-            for(InetAddress add: addresses){
-                LOG.info("IP: " + add.getHostAddress());
-                containerIP = add.getHostAddress();
-            }
-        } catch (UnknownHostException e) {
-            LOG.info("InetAddress get host address by name failed: " + e.getMessage());
-        }
-
-        boolean isJetty = true;
-        for (Iterator<ObjectName> i = objs.iterator(); i.hasNext();) {
-            isJetty = false;
-            ObjectName obj = i.next();
-            String scheme = null;
-            try {
-                scheme = mbServer.getAttribute(obj, "scheme").toString();
-            } catch (AttributeNotFoundException e) {
-                LOG.info("MBeanServer get host scheme AttributeNotFoundException: " + e.getMessage());
-            } catch (InstanceNotFoundException e) {
-                LOG.info("MBeanServer get host scheme InstanceNotFoundException: " + e.getMessage());
-            } catch (MBeanException e) {
-                LOG.info("MBeanServer get host scheme MBeanException: " + e.getMessage());
-            } catch (ReflectionException e) {
-                LOG.info("MBeanServer get host scheme ReflectionException: " + e.getMessage());
-            }
-            String port = obj.getKeyProperty("port");
-            setContainerPort(port);
-            for (InetAddress addr : addresses) {
-                setContainerIP(addr.getHostAddress());
-                LOG.info("Container IP: " + containerIP + ", Container PORT: " + containerPort);
-                System.out.println("Container IP: " + containerIP + ", Container PORT: " + containerPort);
-            }
-        }
-        if(isJetty){
-            containerPort = System.getProperty("controller-server-port");
-        }
     }
 
     private ComputeService initComputeService(String provider, String identity, String credential) {
@@ -432,6 +393,8 @@ public class DynamicAgentHandler {
 
         ComputeService compute = initComputeService(provider, identity, credential);
 
+        String groupName = generateUniqueGroupName();
+
         try {
             switch (action) {
                 case RUN:
@@ -459,7 +422,7 @@ public class DynamicAgentHandler {
                                     .wrapInInitScript(false));                      // run command directly
 
                     for (Entry<? extends NodeMetadata, ExecResponse> response : responses.entrySet()) {
-                        LOG.info("<<     " + response.getValue());
+                        LOG.info("<< " + response.getValue());
                     }
 
                     String info = ">> running [" + scriptName + "] on group " + groupName + " as " + login.identity;
@@ -475,7 +438,7 @@ public class DynamicAgentHandler {
                                                                                                 // the same as the file so status checking works properly
 
                     for (Entry<? extends NodeMetadata, ExecResponse> response : responserun.entrySet()) {
-                        LOG.info("<<     " + response.getValue());
+                        LOG.info("<< " + response.getValue());
                     }
                     break;
 
@@ -492,7 +455,7 @@ public class DynamicAgentHandler {
                     for (Entry<? extends NodeMetadata, ExecResponse> response : stopandremove.entrySet()) {
                         LOG.info("<< node " + response.getKey().getId() + ": " +
                                 "[" + concat(response.getKey().getPrivateAddresses(), response.getKey().getPublicAddresses()) + "]");
-                        LOG.info("<<     " + response.getValue());
+                        LOG.info("<< " + response.getValue());
                     }
                     LOG.info(">> turn off nodes in group " + groupName);
 
@@ -502,7 +465,6 @@ public class DynamicAgentHandler {
                     break;
 
                 case ON:
-
                     LOG.info(">> turnon [" + scriptName + "] on group " + groupName + " as " + login.identity);
                     // you can use predicates to select which nodes you wish to turn on.
                     Set<? extends NodeMetadata> turnons = compute.resumeNodesMatching(Predicates.and(SUSPENDED, inGroup(groupName)));
@@ -520,7 +482,7 @@ public class DynamicAgentHandler {
                     for (Entry<? extends NodeMetadata, ExecResponse> response : turnonrun.entrySet()) {
                         LOG.info("<< node " + response.getKey().getId() + ": " +
                                 "[" + concat(response.getKey().getPrivateAddresses(), response.getKey().getPublicAddresses()) + "]");
-                        LOG.info("<<     " + response.getValue());
+                        LOG.info("<< " + response.getValue());
                     }
                     break;
 
@@ -528,7 +490,7 @@ public class DynamicAgentHandler {
                     LOG.info(">> destroying nodes in group " + groupName);
                     // you can use predicates to select which nodes you wish to destroy.
                     Set<? extends NodeMetadata> destroyed = compute.destroyNodesMatching(Predicates.and(not(TERMINATED), inGroup(groupName)));
-                    LOG.info("<< destroyed nodes %s%n" + destroyed);
+                    LOG.info("<< destroyed nodes: " + destroyed);
                     break;
 
                 default:

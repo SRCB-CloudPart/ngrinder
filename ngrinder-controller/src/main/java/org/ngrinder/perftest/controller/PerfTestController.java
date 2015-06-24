@@ -291,6 +291,23 @@ public class PerfTestController extends BaseController {
 	}
 
 	/**
+	 * Get the current ngrinder controller dynamic agent type status, enabled or not.
+	 *
+	 * @param user       user
+	 * @return perftest/detail
+	 */
+	@RestAPI
+	@RequestMapping("/dynamicAgentType")
+	public HttpEntity<String> getQuickStart(User user){
+
+		String enabled = "false";
+		if(getConfig().isAgentDynamicEc2Enabled()){
+			enabled = "true";
+		}
+		return toJsonHttpEntity(toJson(enabled));
+	}
+
+	/**
 	 * Create a new test from quick start mode.
 	 *
 	 * @param user       user
@@ -318,7 +335,6 @@ public class PerfTestController extends BaseController {
 	@RequestMapping(value = "/new", method = RequestMethod.POST)
 	public String saveOne(User user, PerfTest perfTest,
 	                      @RequestParam(value = "isClone", required = false, defaultValue = "false") boolean isClone, ModelMap model) {
-
 
 		validate(user, null, perfTest);
 		// Point to the head revision
@@ -358,11 +374,17 @@ public class PerfTestController extends BaseController {
 		Map<String, MutableInt> agentCountMap = agentManagerService.getAvailableAgentCountMap(user);
 		MutableInt agentCountObj = agentCountMap.get(isClustered() ? newOne.getRegion() : Config.NONE_REGION);
 		checkNotNull(agentCountObj, "region should be within current region list");
-		int agentMaxCount = agentCountObj.intValue();
-		checkArgument(newOne.getAgentCount() <= agentMaxCount, "test agent should be equal to or less than %s",
-				agentMaxCount);
-		if (newOne.getStatus().equals(Status.READY)) {
-			checkArgument(newOne.getAgentCount() >= 1, "agentCount should be more than 1 when it's READY status.");
+
+		/*
+		 * If dynamic agent provision feature is enabled, bypass the validation
+		 */
+		if(!getConfig().isAgentDynamicEc2Enabled()) {
+			int agentMaxCount = agentCountObj.intValue();
+			checkArgument(newOne.getAgentCount() <= agentMaxCount, "test agent should be equal to or less than %s",
+					agentMaxCount);
+			if (newOne.getStatus().equals(Status.READY)) {
+				checkArgument(newOne.getAgentCount() >= 1, "agentCount should be more than 1 when it's READY status.");
+			}
 		}
 
 		checkArgument(newOne.getVuserPerAgent() <= agentManager.getMaxVuserPerAgent(),

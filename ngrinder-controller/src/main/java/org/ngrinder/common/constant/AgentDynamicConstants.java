@@ -26,4 +26,6 @@ public interface AgentDynamicConstants {
 	public static final String PROP_AGENT_DYNAMIC_GUARD_TIME = "agent.dynamic_guard_time";
 	public static final String PROP_AGENT_DYNAMIC_DOCKER_REPO = "agent.dynamic_docker_repo";
 	public static final String PROP_AGENT_DYNAMIC_DOCKER_TAG = "agent.dynamic_docker_tag";
+	public static final String PROP_AGENT_DYNAMIC_CONTROLLER_IP = "agent.dynamic_controller_ip";
+	public static final String PROP_AGENT_DYNAMIC_CONTROLLER_PORT = "agent.dynamic_controller_port";
 }

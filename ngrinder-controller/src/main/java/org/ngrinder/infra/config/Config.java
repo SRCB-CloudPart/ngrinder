@@ -729,7 +729,7 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
 	 *
 	 * @return credential username/access key
 	 */
-	public String getEc2Identity(){
+	public String getAgentDynamicEc2Identity(){
 		return getAgentDynamicProperties().getProperty(PROP_AGENT_DYNAMIC_AWS_IDENTITY);
 	}
 
@@ -738,7 +738,7 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
 	 *
 	 * @return credential password/secret key
 	 */
-	public String getEc2Credential(){
+	public String getAgentDynamicEc2Credential(){
 		return getAgentDynamicProperties().getProperty(PROP_AGENT_DYNAMIC_AWS_CREDENTIAL);
 	}
 
@@ -747,7 +747,7 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
 	 *
 	 * @return guard time
 	 */
-	public int getGuardTime(){
+	public int getAgentDynamicGuardTime(){
 		return getAgentDynamicProperties().getPropertyInt(PROP_AGENT_DYNAMIC_GUARD_TIME);
 	}
 
@@ -756,7 +756,7 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
 	 *
 	 * @return docker image repo
 	 */
-	public String getDockerRepo(){
+	public String getAgentDynamicDockerRepo(){
 		return getAgentDynamicProperties().getProperty(PROP_AGENT_DYNAMIC_DOCKER_REPO);
 	}
 
@@ -766,8 +766,46 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
 	 *
 	 * @return docker image tag
 	 */
-	public String getDockerTag(){
+	public String getAgentDynamicDockerTag(){
 		return getAgentDynamicProperties().getProperty(PROP_AGENT_DYNAMIC_DOCKER_TAG);
 	}
 
+	/**
+	 * Get the ngrinder controller IP which will be used if dynamic agent feature is enabled
+	 *
+	 * @return controller IP
+	 */
+	public String getAgentDynamicControllerIP(){
+		return getAgentDynamicProperties().getProperty(PROP_AGENT_DYNAMIC_CONTROLLER_IP);
+	}
+
+
+	/**
+	 * Get the ngrinder controller port which will be used if dynamic agent feature is enabled
+	 *
+	 * @return controller port
+	 */
+	public String getAgentDynamicControllerPort(){
+		return getAgentDynamicProperties().getProperty(PROP_AGENT_DYNAMIC_CONTROLLER_PORT);
+	}
+
+	/**
+	 * check whether the dynamic agent with type EC2 is enabled
+	 *
+	 * @return true or false
+	 */
+	public boolean isAgentDynamicEc2Enabled(){
+		String dynamicType = getAgentDynamicType();
+		String identity = getAgentDynamicEc2Identity();
+		String credential = getAgentDynamicEc2Credential();
+		String controllerIP = getAgentDynamicControllerIP();
+		String controllerPort = getAgentDynamicControllerPort();
+
+		if((dynamicType != null && dynamicType.equalsIgnoreCase("EC2"))
+			&& (identity != null && credential != null)
+			&& (controllerIP != null && controllerPort != null)){
+				return true;
+		}
+		return false;
+	}
 }

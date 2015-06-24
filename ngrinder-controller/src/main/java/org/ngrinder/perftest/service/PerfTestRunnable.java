@@ -93,9 +93,9 @@ public class PerfTestRunnable implements ControllerConstants {
 
 	private Runnable agentRunnable;
 
-	private long lastBeginningTime;
+	private long lastBeginningTime = System.currentTimeMillis();
 
-	private boolean dynamicAgentNeedsCleaning = false;
+	private boolean isDynamicAgentOff = false;
 
 	@Autowired
 	private DynamicAgentHandler dynamicAgentHandler;
@@ -121,7 +121,6 @@ public class PerfTestRunnable implements ControllerConstants {
 		scheduledTaskService.addFixedDelayedScheduledTask(finishRunnable, PERFTEST_RUN_FREQUENCY_MILLISECONDS);
 
 		this.agentRunnable = new Runnable(){
-
 			@Override
 			public void run() {
 				turnOffDynamicAgents();
@@ -156,6 +155,7 @@ public class PerfTestRunnable implements ControllerConstants {
 	}
 
 	void doStart() {
+
 		if (config.hasNoMoreTestLock()) {
 			return;
 		}
@@ -178,11 +178,10 @@ public class PerfTestRunnable implements ControllerConstants {
 			return;
 		}
 
-
 		if (!hasEnoughFreeAgents(runCandidate)) {
-			if(dynamicAgentNeedsCleaning == false && dynamicAgentHandler.getAddedNodeCount() > 0){
+			if(isDynamicAgentOff == true && dynamicAgentHandler.getAddedNodeCount() >= runCandidate.getAgentCount()){
 				turnOnDynamicAgents();
-			}else {
+			}else{
 				addDynamicAgents(runCandidate);
 			}
 			return;
@@ -190,7 +189,7 @@ public class PerfTestRunnable implements ControllerConstants {
 
 		// Update the time of the latest perftest under running
 		lastBeginningTime = System.currentTimeMillis();
-
+		
 		doTest(runCandidate);
 	}
 
@@ -198,24 +197,22 @@ public class PerfTestRunnable implements ControllerConstants {
 	 * To turn off the created EC2 instance in order to reduce code
 	 */
 	protected void turnOffDynamicAgents() {
-		long guardTime = config.getGuardTime();
+		if(dynamicAgentHandler.isInAddingStatus()){
+			return;
+		}
+		long guardTime = config.getAgentDynamicGuardTime();
 		long durationMillis = System.currentTimeMillis() - lastBeginningTime;
 		long durationInMinutes = durationMillis / (60 * 1000);
-		if (durationInMinutes > guardTime && dynamicAgentNeedsCleaning) {
+		if (durationInMinutes > guardTime && isDynamicAgentOff == false) {
 			Runnable turnOffEc2AgentRunnable = new Runnable() {
 				@Override
 				public void run() {
-					dynamicAgentHandler.setIsInAddingStatus(true);
-					dynamicAgentHandler.getEnvToGenerateScript("off");
-					dynamicAgentHandler.setScriptName("off.sh");
-					dynamicAgentHandler.dynamicAgentCommand("off");
-					dynamicAgentHandler.setIsInAddingStatus(false);
-					dynamicAgentNeedsCleaning = false;
+					LOG.info("Begin to turn off EC2 instances...");
+					dynamicAgentHandler.turnOffEc2Instance();
+					isDynamicAgentOff = true;
 				}
 			};
 			scheduledTaskService.runAsync(turnOffEc2AgentRunnable);
-			//Thread thread = new Thread(turnOffEc2AgentRunnable);
-			//thread.start();
 		}
 	}
 
@@ -223,22 +220,19 @@ public class PerfTestRunnable implements ControllerConstants {
 	 * To turn on the created EC2 instances which are turned off
 	 */
 	protected void turnOnDynamicAgents(){
+		if(dynamicAgentHandler.isInAddingStatus()){
+			return;
+		}
+
 		Runnable turnOnEc2AgentRunnable = new Runnable() {
 			@Override
 			public void run() {
-			if(dynamicAgentHandler.getAddedNodeCount() > 0){
-				dynamicAgentHandler.setIsInAddingStatus(true);
-				dynamicAgentHandler.getEnvToGenerateScript("on");
-				dynamicAgentHandler.setScriptName("on.sh");
-				dynamicAgentHandler.dynamicAgentCommand("on");
-				dynamicAgentHandler.setIsInAddingStatus(false);
-				dynamicAgentNeedsCleaning = true;
-			}
+				LOG.info("Begin to turn on EC2 instances...");
+				dynamicAgentHandler.turnOnEc2Instance();
+				isDynamicAgentOff = false;
 			}
 		};
 		scheduledTaskService.runAsync(turnOnEc2AgentRunnable);
-		//Thread thread = new Thread(turnOnEc2AgentRunnable);
-		//thread.start();
 	}
 
 	/**
@@ -249,76 +243,35 @@ public class PerfTestRunnable implements ControllerConstants {
 	 */
 	protected void addDynamicAgents(PerfTest test) {
 		String dynamicType = config.getAgentDynamicType();
-		// if dynamicType is "" which means the agent deployment is manual
-		if(dynamicType.equals("")){
-			return;
-		}
-		int size;
-		size = dynamicAgentHandler.getAddedNodeCount();
-		int allowedMaxDynamic = config.getAgentDynamicNodeMax();
-		if(size >= allowedMaxDynamic){
-			LOG.info("Dynamic agent count reaches the max allowed dynamic agents, can not deploy any more...");
+		if(dynamicType == null || dynamicType.equals("")){
 			return;
 		}
 		if(dynamicAgentHandler.isInAddingStatus()){
 			return;
 		}
-		int requiredAgents = test.getAgentCount();
-		if(dynamicType.contentEquals("EC2")){
-			String identity = config.getEc2Identity();
-			String credential = config.getEc2Credential();
-			dynamicAgentHandler.setProvider("aws-ec2");
-			dynamicAgentHandler.setIdentity(identity);
-			dynamicAgentHandler.setCredential(credential);
-			dynamicAgentHandler.setAddingNodes(requiredAgents);
-			Runnable addEc2AgentRunnable = new Runnable() {
-				@Override
-				public void run() {
-					dynamicAgentHandler.setIsInAddingStatus(true);
-					dynamicAgentHandler.getEnvToGenerateScript("run");
-					dynamicAgentHandler.setScriptName("run.sh");
-					dynamicAgentHandler.dynamicAgentCommand("run");
-					dynamicAgentHandler.setIsInAddingStatus(false);
-					dynamicAgentNeedsCleaning = true;
-				}
-			};
-			scheduledTaskService.runAsync(addEc2AgentRunnable);
-			//Thread thread = new Thread(addEc2AgentRunnable);
-			//thread.start();
-		}else{
-			//TODO: mesos solution
-			;
+		int size = dynamicAgentHandler.getAddedNodeCount();
+		final int requiredAgents = test.getAgentCount();
+		int allowedMaxDynamic = config.getAgentDynamicNodeMax();
+
+		if(size >= allowedMaxDynamic){
+			LOG.info("Dynamic agent count reaches the max allowed dynamic agents, can not deploy any more...");
+			return;
 		}
-	}
+		if((size + requiredAgents) > allowedMaxDynamic){
+			LOG.info("New test case required agents will exceed the allowed max agents, can not deploy...");
+			return;
+		}
 
-
-
-	private void initFirstOneEc2Instance(){
-
-		String dynamicType = config.getAgentDynamicType();
-		LOG.info(dynamicType);
-		dynamicAgentHandler.setIsInAddingStatus(true);
 		if(dynamicType.contentEquals("EC2")){
-			String identity = config.getEc2Identity();
-			String credential = config.getEc2Credential();
-			dynamicAgentHandler.setProvider("aws-ec2");
-			dynamicAgentHandler.setIdentity(identity);
-			dynamicAgentHandler.setCredential(credential);
-			dynamicAgentHandler.setAddingNodes(1);
 			Runnable addEc2AgentRunnable = new Runnable() {
 				@Override
 				public void run() {
-					LOG.info("adding ec2 agent runnable ...");
-					dynamicAgentHandler.setIsInAddingStatus(true);
-					dynamicAgentHandler.getEnvToGenerateScript("run");
-					dynamicAgentHandler.setScriptName("run.sh");
-					dynamicAgentHandler.dynamicAgentCommand("run");
-					dynamicAgentHandler.setIsInAddingStatus(false);
+					LOG.info("Begin to add {} EC2 instances...", requiredAgents);
+					dynamicAgentHandler.addDynamicEc2Instance(requiredAgents);
+					isDynamicAgentOff = false;
 				}
 			};
 			scheduledTaskService.runAsync(addEc2AgentRunnable);
-//			Thread thread = new Thread(addEc2AgentRunnable);
-//			thread.start();
 		}else{
 			//TODO: mesos solution
 			;
