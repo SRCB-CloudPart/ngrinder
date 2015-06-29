@@ -14,7 +14,7 @@
 		<webappdir>${basedir}/src/main/webapp</webappdir>
 		<deploy.dir>${basedir}/../../deploy</deploy.dir>
 		<jetty.version>6.1.25</jetty.version>
-		<jclouds.version>1.8.1</jclouds.version>
+		<jclouds.version>1.9.0</jclouds.version>
 	</properties>
 
 	<profiles>

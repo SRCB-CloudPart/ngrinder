@@ -14,6 +14,7 @@
 package org.ngrinder.perftest.service;
 
 import com.google.common.base.Charsets;
+import com.google.common.base.Predicate;
 import com.google.common.base.Predicates;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.io.Files;
@@ -23,10 +24,8 @@ import org.jclouds.compute.ComputeService;
 import org.jclouds.compute.ComputeServiceContext;
 import org.jclouds.compute.RunNodesException;
 import org.jclouds.compute.RunScriptOnNodesException;
-import org.jclouds.compute.domain.ExecResponse;
-import org.jclouds.compute.domain.NodeMetadata;
-import org.jclouds.compute.domain.Template;
-import org.jclouds.compute.domain.TemplateBuilder;
+import org.jclouds.compute.domain.*;
+import org.jclouds.compute.domain.NodeMetadata.Status;
 import org.jclouds.domain.LoginCredentials;
 import org.jclouds.ec2.domain.InstanceType;
 import org.jclouds.enterprise.config.EnterpriseConfigurationModule;
@@ -44,6 +43,7 @@ import org.springframework.stereotype.Component;
 
 import javax.annotation.PostConstruct;
 import java.io.*;
+import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Properties;
@@ -54,13 +54,15 @@ import static com.google.common.base.Charsets.UTF_8;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Predicates.not;
 import static com.google.common.collect.Iterables.concat;
+import static com.google.common.collect.Lists.newArrayList;
+import static com.google.common.collect.Sets.newHashSet;
+import static com.google.common.collect.Maps.newHashMap;
 import static org.jclouds.aws.ec2.reference.AWSEC2Constants.PROPERTY_EC2_AMI_QUERY;
 import static org.jclouds.aws.ec2.reference.AWSEC2Constants.PROPERTY_EC2_CC_AMI_QUERY;
 import static org.jclouds.compute.config.ComputeServiceProperties.TIMEOUT_SCRIPT_COMPLETE;
 import static org.jclouds.compute.options.TemplateOptions.Builder.overrideLoginCredentials;
 import static org.jclouds.compute.predicates.NodePredicates.*;
 import static org.jclouds.ec2.compute.options.EC2TemplateOptions.Builder.runScript;
-import static org.jclouds.scriptbuilder.domain.Statements.exec;
 
 /**
  * Dynamic Agent Provisioning Handler.
@@ -94,22 +96,28 @@ public class DynamicAgentHandler {
     private Config config;
 
     /*
+     * Define two sets, one is to record the running nodes, the other is to record
+     * the stopped node. These two list will be convenient for operation in the next stage.
+     */
+    private Set<String> runningNodeSet = newHashSet();
+    private Set<String> stoppedNodeSet = newHashSet();
+    private Map<String, String> runningNodeIdIPMap = newHashMap();
+
+    public int getStoppedNodeCount(){
+        return stoppedNodeSet.size();
+    }
+
+    public Map<String, String> getRunningNodeIdIPMap(){
+        return runningNodeIdIPMap;
+    }
+
+    /*
      * Record the total count of EC2 nodes added to the specified group
      */
     private int added_node_count = 0;
 
-    public synchronized int getAddedNodeCount(){
+    public int getAddedNodeCount(){
         return this.added_node_count;
-    }
-
-    /*
-     * number of EC2 node to add to the group for each add operation
-     */
-    private int adding_nodes = 1;
-
-    public synchronized void setAddingNodes(int adding_nodes) {
-        this.adding_nodes = adding_nodes;
-        this.added_node_count += adding_nodes;
     }
 
     /*
@@ -119,16 +127,16 @@ public class DynamicAgentHandler {
      */
     private boolean isInAddingStatus = false;
 
-    public synchronized boolean isInAddingStatus() {
+    public boolean isInAddingStatus() {
         return isInAddingStatus;
     }
 
-    public synchronized  void setIsInAddingStatus(boolean isInAddingStatus) {
+    public void setIsInAddingStatus(boolean isInAddingStatus) {
         this.isInAddingStatus = isInAddingStatus;
     }
 
     public enum Action {
-        ADD, RUN, ON, OFF, DESTROY
+        ADD, RUN, ON, OFF, DESTROY, LIST
     }
 
     private String provider = "aws-ec2";
@@ -162,7 +170,7 @@ public class DynamicAgentHandler {
     public String generateUniqueGroupName(){
         String groupName = "agt";
         String ctrl_ip = config.getAgentDynamicControllerIP();
-        ctrl_ip = ctrl_ip.replaceAll("\\.", "");
+        ctrl_ip = ctrl_ip.replaceAll("\\.", "d");
         return groupName + ctrl_ip;
     }
 
@@ -197,9 +205,13 @@ public class DynamicAgentHandler {
         if(config.isAgentDynamicEc2Enabled()) {
             setIsInAddingStatus(true);
             setProviderIdCredentialForEc2();
-            setAddingNodes(1);
+            dynamicAgentCommand("list", getAddedNodeCount());
             setScriptName("run.sh");
-            dynamicAgentCommand("run");
+            if (runningNodeSet.size() == 0 && stoppedNodeSet.size() == 0) {
+                dynamicAgentCommand("run", 1);
+            }else if(runningNodeSet.size() == 0 && stoppedNodeSet.size() > 0){
+                dynamicAgentCommand("on", 1);
+            }
             setIsInAddingStatus(false);
         }
     }
@@ -208,20 +220,19 @@ public class DynamicAgentHandler {
         if(config.isAgentDynamicEc2Enabled()) {
             setIsInAddingStatus(true);
             setProviderIdCredentialForEc2();
-            setAddingNodes(requiredNum);
             setScriptName("run.sh");
-            dynamicAgentCommand("run");
+            dynamicAgentCommand("run", requiredNum);
             setIsInAddingStatus(false);
         }
     }
 
-    public void turnOnEc2Instance(){
+    public void turnOnEc2Instance(int requiredNum){
         if(config.isAgentDynamicEc2Enabled()) {
-            if (getAddedNodeCount() > 0) {
+            if (stoppedNodeSet.size() >= requiredNum) {
                 setIsInAddingStatus(true);
                 setProviderIdCredentialForEc2();
                 setScriptName("on.sh");
-                dynamicAgentCommand("on");
+                dynamicAgentCommand("on", requiredNum);
                 setIsInAddingStatus(false);
             }
         }
@@ -232,7 +243,7 @@ public class DynamicAgentHandler {
             setIsInAddingStatus(true);
             setProviderIdCredentialForEc2();
             setScriptName("off.sh");
-            dynamicAgentCommand("off");
+            dynamicAgentCommand("off", getAddedNodeCount());
             setIsInAddingStatus(false);
         }
     }
@@ -243,7 +254,7 @@ public class DynamicAgentHandler {
             Thread thread = new Thread(){
                 @Override
                 public void run() {
-                    dynamicAgentCommand("destroy");
+                    dynamicAgentCommand("destroy", getAddedNodeCount());
                 }
             };
             LOG.info("Register shutdown hook to destroy the created EC2 instance when controller daemon shut down...");
@@ -263,6 +274,36 @@ public class DynamicAgentHandler {
 
         LOG.info("Container IP: " + controllerIP + ", Container Port: " + controllerPort +
                 ", Repo: " + dockerImageRepo + ", Tag: " + dockerImageTag);
+    }
+
+    private Predicate<ComputeMetadata> nodeNameStartsWith(final String nodeNamePrefix) {
+        checkNotNull(nodeNamePrefix, "reasonable node name prefix must be provided");
+        return new Predicate<ComputeMetadata>(){
+            @Override
+            public boolean apply(ComputeMetadata computeMetadata) {
+                String nodeName = computeMetadata.getName();
+                return nodeName != null && nodeName.startsWith(nodeNamePrefix) ;
+            }
+            @Override
+            public String toString() {
+                return "nodeNameStartsWith(" + nodeNamePrefix + ")";
+            }
+        };
+    }
+
+    private Predicate<NodeMetadata> inGivenList(final List<String> givenList) {
+        checkNotNull(givenList, "reasonable given list must be provided");
+        return new Predicate<NodeMetadata>() {
+            @Override
+            public boolean apply(NodeMetadata nodeMetadata) {
+                return givenList.contains(nodeMetadata.getId());
+            }
+
+            @Override
+            public String toString() {
+                return "inGivenList(" + givenList + ")";
+            }
+        };
     }
 
     private ComputeService initComputeService(String provider, String identity, String credential) {
@@ -290,6 +331,171 @@ public class DynamicAgentHandler {
 
         return builder.buildView(ComputeServiceContext.class).getComputeService();
     }
+
+    /**
+     * Major operation, according to the action which is enum value.
+     *
+     * @param actionCmd action command name
+     * @param count the number of EC2 instances will be operated by the action command
+     *
+     */
+    public void dynamicAgentCommand(String actionCmd, int count) {
+
+        LOG.info("action command: " + actionCmd + ", touched ec2 instance count: " + count);
+
+        checkNotNull(identity, "identity can not be null or empty");
+        checkNotNull(credential, "credential can not be null or empty");
+
+        Action action = Action.valueOf(actionCmd.toUpperCase());
+
+        File file = null;
+        if (action == Action.RUN || action == Action.ON || action == Action.OFF) {
+            checkNotNull(scriptName, "please pass the local file to run as the last parameter");
+            file = new File(scriptName);
+        }
+
+        LoginCredentials login =  (action != Action.DESTROY && action != Action.LIST) ? getLoginCredential() : null;
+
+        ComputeService compute = initComputeService(provider, identity, credential);
+
+        String groupName = generateUniqueGroupName();
+
+        try {
+            switch (action) {
+                case RUN:
+                    LOG.info(">> add " + count + " node to group " + groupName);
+
+                    TemplateBuilder templateBuilder = compute.templateBuilder()
+                            .locationId("ap-southeast-1").hardwareId(InstanceType.M1_MEDIUM);
+
+                    Statement bootInstructions = createAdminAccess();
+                    templateBuilder.options(runScript(bootInstructions));
+                    Template template = templateBuilder.build();
+
+                    List<String> addList = newArrayList();
+                    Set<? extends NodeMetadata> nodes = compute.createNodesInGroup(groupName, count, template);
+                    for (NodeMetadata node: nodes) {
+                        String id = node.getId();
+                        LOG.info("<< added node: " + id + " [" + concat(node.getPrivateAddresses(), node.getPublicAddresses()) + "]");
+                        addList.add(id);
+                        added_node_count++;
+                        runningNodeSet.add(id);
+                        runningNodeIdIPMap.put(id, node.getPrivateAddresses().toString());
+                    }
+
+                    LOG.info(">> run [" + scriptName + "] on group " + groupName + " as " + login.identity);
+                    Map<? extends NodeMetadata, ExecResponse> responseRun = compute.runScriptOnNodesMatching(
+                            inGivenList(addList), Files.toString(file, Charsets.UTF_8),
+                            overrideLoginCredentials(login).runAsRoot(false)
+                                    .nameTask("_" + file.getName().replaceAll("\\..*", "")));
+
+                    for (Entry<? extends NodeMetadata, ExecResponse> response : responseRun.entrySet()) {
+                        LOG.info("<< " + response.getKey().getId() + " status: " + response.getValue());
+                    }
+                    break;
+
+                case OFF:
+        	 	    //1. before to do turn off the VMs, do stop and remove docker container
+                    //2. turn off operation will suspend all the nodes in the given group
+                    LOG.info(">> turn off [" + scriptName + "] on group " + groupName + " as " + login.identity);
+                    Map<? extends NodeMetadata, ExecResponse> stopAndRemove = compute.runScriptOnNodesMatching(
+                            inGroup(groupName),
+                            Files.toString(file, Charsets.UTF_8),   // passing in a string with the contents of the file
+                            overrideLoginCredentials(login).runAsRoot(false)
+                                    .nameTask("_" + file.getName().replaceAll("\\..*", "")));
+
+                    for (Entry<? extends NodeMetadata, ExecResponse> response : stopAndRemove.entrySet()) {
+                        String id = response.getKey().getId();
+                        LOG.info("<< node " + id + ": " +
+                                "[" + concat(response.getKey().getPrivateAddresses(), response.getKey().getPublicAddresses()) + "]");
+                        LOG.info("<< stop and remove status: " + response.getValue());
+                    }
+                    LOG.info(">> turn off nodes in group " + groupName);
+
+                    // you can use predicates to select which nodes you wish to turn off.
+                    Set<? extends NodeMetadata> turnOff = compute.suspendNodesMatching(Predicates.and(RUNNING, inGroup(groupName)));
+                    for(NodeMetadata node: turnOff){
+                        String id = node.getId();
+                        LOG.info("<< turn off node " + node);
+                        stoppedNodeSet.add(id);
+                        runningNodeSet.remove(id);
+                        runningNodeIdIPMap.remove(id);
+                    }
+                    break;
+
+                case ON:
+                    LOG.info(">> turn on [" + scriptName + "] " + count + " node(s) on group " + groupName + " as " + login.identity);
+                    List<String> turnOnList = newArrayList();
+                    for(String id: stoppedNodeSet){
+                        turnOnList.add(id);
+                        if(turnOnList.size() >= count){
+                            break;
+                        }
+                    }
+                    Set<? extends NodeMetadata> turnOn = compute.resumeNodesMatching(Predicates.and(SUSPENDED, inGivenList(turnOnList)));
+                    for (NodeMetadata node: turnOn) {
+                        String id = node.getId();
+                        LOG.info("<< pre-turned on node: " + id);
+                        runningNodeSet.add(id);
+                        stoppedNodeSet.remove(id);
+                        runningNodeIdIPMap.put(id, node.getPrivateAddresses().toString());
+                    }
+
+             		//after nodes are turned on, to start new docker container
+                    Map<? extends NodeMetadata, ExecResponse> turnOnRun = compute.runScriptOnNodesMatching(
+                            inGroup(groupName),  Files.toString(file, Charsets.UTF_8), // passing in a string with the contents of the file
+                            overrideLoginCredentials(login).runAsRoot(false)
+                                    .nameTask("_" + file.getName().replaceAll("\\..*", "")));
+
+                    for (Entry<? extends NodeMetadata, ExecResponse> response : turnOnRun.entrySet()) {
+                        LOG.info("<< turned on node " + response.getKey().getId() + ": " +
+                                "[" + concat(response.getKey().getPrivateAddresses(), response.getKey().getPublicAddresses()) + "]");
+                        LOG.info("<< " + response.getValue());
+                    }
+                    break;
+
+                case DESTROY:
+                    LOG.info(">> destroy nodes in group " + groupName);
+                    // you can use predicates to select which nodes you wish to destroy.
+                    Set<? extends NodeMetadata> destroyed = compute.destroyNodesMatching(Predicates.and(not(TERMINATED), inGroup(groupName)));
+                    LOG.info("<< destroyed nodes: " + destroyed);
+                    runningNodeSet.clear();
+                    stoppedNodeSet.clear();
+                    runningNodeIdIPMap.clear();
+                    break;
+
+                case LIST:
+                    Set<? extends NodeMetadata> gnodes = compute.listNodesDetailsMatching(nodeNameStartsWith(groupName));
+                    LOG.info(">> total number nodes/instances " + gnodes.size() + " group " + groupName);
+                    for (NodeMetadata nodeData : gnodes) {
+                        LOG.info("    >> " + nodeData);
+                        Status status = nodeData.getStatus();
+                        if(status == Status.RUNNING){
+                            runningNodeSet.add(nodeData.getId());
+                            runningNodeIdIPMap.put(nodeData.getId(), nodeData.getPrivateAddresses().toString());
+                        }else if(status == Status.SUSPENDED){
+                            stoppedNodeSet.add(nodeData.getId());
+                        }
+                    }
+                    added_node_count = runningNodeSet.size() + stoppedNodeSet.size();
+                    LOG.info(">> total number available nodes " + added_node_count + " on group " + groupName);
+
+                    break;
+
+                default:
+                    break;
+            }
+        } catch (RunNodesException e) {
+            LOG.debug("error adding node to group " + groupName + ": " + e.getMessage());
+        } catch (RunScriptOnNodesException e) {
+            LOG.debug("error executing command" + " on group " + groupName + ": " + e.getMessage());
+        } catch (Exception e) {
+            LOG.debug("error: " + e.getMessage());
+        } finally {
+            compute.getContext().close();
+        }
+    }
+
 
     private LoginCredentials getAgentLoginForCommandExecution() {
         try {
@@ -355,9 +561,9 @@ public class DynamicAgentHandler {
              */
             AdminAccessBuilderSpec spec = AdminAccessBuilderSpec.parse(
                     "adminUsername=agent,"
-                    + "adminHome=/home/agent,"
-                    + "adminPublicKeyFile=/home/agent/.ssh/id_rsa.pub,"
-                    + "adminPrivateKeyFile=/home/agent/.ssh/id_rsa");
+                            + "adminHome=/home/agent,"
+                            + "adminPublicKeyFile=/home/agent/.ssh/id_rsa.pub,"
+                            + "adminPrivateKeyFile=/home/agent/.ssh/id_rsa");
             bootInstruction = AdminAccess.builder().from(spec).build();
         }else{
             String home = System.getProperty("user.home");
@@ -371,143 +577,6 @@ public class DynamicAgentHandler {
     }
 
     /**
-     * Major operation, according to the action which is enum value.
-     *
-     * @param actionCmd
-     */
-    public void dynamicAgentCommand(String actionCmd) {
-
-        LOG.info(actionCmd);
-
-        checkNotNull(identity, "identity can not be null or empty");
-        checkNotNull(credential, "credential can not be null or empty");
-
-        Action action = Action.valueOf(actionCmd.toUpperCase());
-
-        if (action == Action.RUN || action == Action.ON || action == Action.OFF) {
-            checkNotNull(scriptName, "please pass the local file to run as the last parameter");
-        }
-
-        File file = new File(scriptName);
-        LoginCredentials login =  (action != Action.DESTROY) ? getLoginCredential() : null;
-
-        ComputeService compute = initComputeService(provider, identity, credential);
-
-        String groupName = generateUniqueGroupName();
-
-        try {
-            switch (action) {
-                case RUN:
-                    LOG.info(">> adding node to group " + groupName);
-
-                    TemplateBuilder templateBuilder = compute.templateBuilder()
-                            .locationId("ap-southeast-1").hardwareId(InstanceType.M1_MEDIUM);
-
-                    Statement bootInstructions = createAdminAccess();
-                    templateBuilder.options(runScript(bootInstructions));
-                    Template template = templateBuilder.build();
-
-                    Set<? extends NodeMetadata> nodes = compute.createNodesInGroup(groupName, adding_nodes, template);
-                    for (NodeMetadata node: nodes) {
-                        LOG.info("<< node " + node.getId() + "[" + concat(node.getPrivateAddresses(), node.getPublicAddresses()) + "]");
-                    }
-
-                    // init to run docker daemon installation
-                    LOG.info(">> run command: 'sudo wget -qO- https://get.docker.com/ | sh' with account: "  + login.identity);
-                    Map<? extends NodeMetadata, ExecResponse> responses = compute.runScriptOnNodesMatching(
-                            inGroup(groupName),                                     // predicate used to select nodes
-                            exec("sudo wget -qO- https://get.docker.com/ | sh"),    // what you actually intend to run
-                            overrideLoginCredentials(login)                         // use my local user & ssh key
-                                    .runAsRoot(false)                               // don't attempt to run as root (sudo)
-                                    .wrapInInitScript(false));                      // run command directly
-
-                    for (Entry<? extends NodeMetadata, ExecResponse> response : responses.entrySet()) {
-                        LOG.info("<< " + response.getValue());
-                    }
-
-                    String info = ">> running [" + scriptName + "] on group " + groupName + " as " + login.identity;
-                    LOG.info(info);
-                    // when running a sequence of commands, you probably want to have jclouds use the default behavior,
-                    // which is to fork a background process.
-                    Map<? extends NodeMetadata, ExecResponse> responserun = compute.runScriptOnNodesMatching(//
-                            inGroup(groupName),
-                            Files.toString(file, Charsets.UTF_8),
-                            overrideLoginCredentials(login)
-                                    .runAsRoot(false)
-                                    .nameTask("_" + file.getName().replaceAll("\\..*", "")));   // ensuring task name isn't
-                                                                                                // the same as the file so status checking works properly
-
-                    for (Entry<? extends NodeMetadata, ExecResponse> response : responserun.entrySet()) {
-                        LOG.info("<< " + response.getValue());
-                    }
-                    break;
-
-                case OFF:
-        	 	    //before to do turn off the VMs, do stop and remove docker container
-                    LOG.info(">> turn off [" + scriptName + "] on group " + groupName + " as " + login.identity);
-                    Map<? extends NodeMetadata, ExecResponse> stopandremove = compute.runScriptOnNodesMatching(
-                            inGroup(groupName),
-                            Files.toString(file, Charsets.UTF_8),   // passing in a string with the contents of the file
-                            overrideLoginCredentials(login)
-                                    .runAsRoot(false)
-                                    .nameTask("_" + file.getName().replaceAll("\\..*", ""))); // ensuring task name isn't
-                    // the same as the file so status checking works properly
-                    for (Entry<? extends NodeMetadata, ExecResponse> response : stopandremove.entrySet()) {
-                        LOG.info("<< node " + response.getKey().getId() + ": " +
-                                "[" + concat(response.getKey().getPrivateAddresses(), response.getKey().getPublicAddresses()) + "]");
-                        LOG.info("<< " + response.getValue());
-                    }
-                    LOG.info(">> turn off nodes in group " + groupName);
-
-                    // you can use predicates to select which nodes you wish to turn off.
-                    Set<? extends NodeMetadata> turnoffs = compute.suspendNodesMatching(Predicates.and(RUNNING, inGroup(groupName)));
-                    LOG.info("<< turn off nodes " + turnoffs);
-                    break;
-
-                case ON:
-                    LOG.info(">> turnon [" + scriptName + "] on group " + groupName + " as " + login.identity);
-                    // you can use predicates to select which nodes you wish to turn on.
-                    Set<? extends NodeMetadata> turnons = compute.resumeNodesMatching(Predicates.and(SUSPENDED, inGroup(groupName)));
-                    LOG.info("<< turn on nodes " + turnons);
-
-             		//after nodes are turned on, to start new docker container
-                    Map<? extends NodeMetadata, ExecResponse> turnonrun = compute.runScriptOnNodesMatching(
-                            inGroup(groupName),
-                            Files.toString(file, Charsets.UTF_8), // passing in a string with the contents of the file
-                            overrideLoginCredentials(login)
-                                    .runAsRoot(false)
-                                    .nameTask("_" + file.getName().replaceAll("\\..*", ""))); // ensuring task name isn't
-
-                    // the same as the file so status checking works properly
-                    for (Entry<? extends NodeMetadata, ExecResponse> response : turnonrun.entrySet()) {
-                        LOG.info("<< node " + response.getKey().getId() + ": " +
-                                "[" + concat(response.getKey().getPrivateAddresses(), response.getKey().getPublicAddresses()) + "]");
-                        LOG.info("<< " + response.getValue());
-                    }
-                    break;
-
-                case DESTROY:
-                    LOG.info(">> destroying nodes in group " + groupName);
-                    // you can use predicates to select which nodes you wish to destroy.
-                    Set<? extends NodeMetadata> destroyed = compute.destroyNodesMatching(Predicates.and(not(TERMINATED), inGroup(groupName)));
-                    LOG.info("<< destroyed nodes: " + destroyed);
-                    break;
-
-                default:
-                    break;
-            }
-        } catch (RunNodesException e) {
-            LOG.debug("error adding node to group " + groupName + ": " + e.getMessage());
-        } catch (RunScriptOnNodesException e) {
-            LOG.debug("error executing command" + " on group " + groupName + ": " + e.getMessage());
-        } catch (Exception e) {
-            LOG.debug("error: " + e.getMessage());
-        } finally {
-            compute.getContext().close();
-        }
-    }
-
-    /**
      * Script file generator based on the script template
      *
      * @param ctrl_IP, ngrinder controller IP
@@ -516,7 +585,6 @@ public class DynamicAgentHandler {
      * @param agent_docker_tag, the docker image tag
      * @param cmd, the operation command, such as ADD, RUN, TURN ON, TURN OFF
      *
-     * @return void
      */
     protected void generateScriptBasedOnTemplate(String ctrl_IP, String ctrl_port, String agent_docker_repo,
                                                  String agent_docker_tag, String cmd)  {
@@ -532,7 +600,7 @@ public class DynamicAgentHandler {
         LOG.info("Ctrl IP: " + ctrl_IP + ", Ctrl Port: " + ctrl_port + ", docker repo: " + agent_docker_repo
                     + ", docker tag: " + agent_docker_tag + ", operation: " + cmd);
 
-        String newFileName = "";
+        String newFileName;
         if(cmd.equalsIgnoreCase("run")) {
             newFileName = "run.sh";
         }else if(cmd.equalsIgnoreCase("on")){
@@ -572,9 +640,9 @@ public class DynamicAgentHandler {
         } catch (IOException e) {
             LOG.debug(e.getMessage());
         }
-        FileWriter fw = null;
+
         try {
-            fw = new FileWriter(newFile);
+            FileWriter fw = new FileWriter(newFile);
             BufferedWriter bw = new BufferedWriter(fw);
             bw.write(sb.toString());
             bw.close();

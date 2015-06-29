@@ -17,7 +17,9 @@ import net.grinder.SingleConsole;
 import net.grinder.SingleConsole.ConsoleShutdownListener;
 import net.grinder.StopReason;
 import net.grinder.common.GrinderProperties;
+import net.grinder.common.processidentity.AgentIdentity;
 import net.grinder.console.model.ConsoleProperties;
+import net.grinder.engine.controller.AgentControllerIdentityImplementation;
 import net.grinder.util.ListenerHelper;
 import net.grinder.util.ListenerSupport;
 import net.grinder.util.UnitUtils;
@@ -43,10 +45,9 @@ import org.springframework.stereotype.Component;
 import javax.annotation.PostConstruct;
 import javax.annotation.PreDestroy;
 import java.io.File;
-import java.util.Calendar;
-import java.util.Date;
-import java.util.List;
+import java.util.*;
 
+import static com.google.common.collect.Sets.newHashSet;
 import static org.apache.commons.lang.ObjectUtils.defaultIfNull;
 import static org.ngrinder.common.constant.ClusterConstants.PROP_CLUSTER_SAFE_DIST;
 import static org.ngrinder.common.util.AccessUtils.getSafe;
@@ -179,8 +180,10 @@ public class PerfTestRunnable implements ControllerConstants {
 		}
 
 		if (!hasEnoughFreeAgents(runCandidate)) {
-			if(isDynamicAgentOff == true && dynamicAgentHandler.getAddedNodeCount() >= runCandidate.getAgentCount()){
-				turnOnDynamicAgents();
+			int stopped_nodes = dynamicAgentHandler.getStoppedNodeCount();
+			int needed_nodes = runCandidate.getAgentCount();
+			if(isDynamicAgentOff == true && stopped_nodes >= needed_nodes){
+				turnOnDynamicAgents(needed_nodes);
 			}else{
 				addDynamicAgents(runCandidate);
 			}
@@ -189,7 +192,7 @@ public class PerfTestRunnable implements ControllerConstants {
 
 		// Update the time of the latest perftest under running
 		lastBeginningTime = System.currentTimeMillis();
-		
+
 		doTest(runCandidate);
 	}
 
@@ -218,8 +221,10 @@ public class PerfTestRunnable implements ControllerConstants {
 
 	/**
 	 * To turn on the created EC2 instances which are turned off
+	 *
+	 * @param nodeCount the number of EC2 instances to be turned on
 	 */
-	protected void turnOnDynamicAgents(){
+	protected void turnOnDynamicAgents(final int nodeCount){
 		if(dynamicAgentHandler.isInAddingStatus()){
 			return;
 		}
@@ -227,8 +232,8 @@ public class PerfTestRunnable implements ControllerConstants {
 		Runnable turnOnEc2AgentRunnable = new Runnable() {
 			@Override
 			public void run() {
-				LOG.info("Begin to turn on EC2 instances...");
-				dynamicAgentHandler.turnOnEc2Instance();
+				LOG.info("Begin to turn on {} EC2 instances...", nodeCount);
+				dynamicAgentHandler.turnOnEc2Instance(nodeCount);
 				isDynamicAgentOff = false;
 			}
 		};
@@ -239,7 +244,6 @@ public class PerfTestRunnable implements ControllerConstants {
 	 * add dynamic agent for the given {@link PerfTest}.
 	 *
 	 * @param test {@link PerfTest}
-	 * @return void
 	 */
 	protected void addDynamicAgents(PerfTest test) {
 		String dynamicType = config.getAgentDynamicType();
@@ -250,24 +254,53 @@ public class PerfTestRunnable implements ControllerConstants {
 			return;
 		}
 		int size = dynamicAgentHandler.getAddedNodeCount();
-		final int requiredAgents = test.getAgentCount();
+		int requiredAgents = test.getAgentCount();
 		int allowedMaxDynamic = config.getAgentDynamicNodeMax();
 
 		if(size >= allowedMaxDynamic){
 			LOG.info("Dynamic agent count reaches the max allowed dynamic agents, can not deploy any more...");
 			return;
 		}
-		if((size + requiredAgents) > allowedMaxDynamic){
+
+		int freeSize = agentManager.getAllFreeApprovedAgentsForUser(test.getCreatedUser()).size();
+		final int realNeeds = requiredAgents - freeSize;
+		if((size + realNeeds) > allowedMaxDynamic){
 			LOG.info("New test case required agents will exceed the allowed max agents, can not deploy...");
 			return;
+		}
+
+		/*
+		 * Because the gap is very long between EC2 instance created and agent is ready, avoid to create not
+		 * wanted EC2 instance, to check whether the new auto installed agent is ready through the IP from running
+		 * node set.
+		 */
+		Set<String> approvedAgentIPs = newHashSet();
+		Set<AgentIdentity> agentSets = agentManager.getAllApprovedAgents(test.getCreatedUser());
+		for(AgentIdentity ai: agentSets){
+			AgentControllerIdentityImplementation acii = agentManager.convert(ai);
+			approvedAgentIPs.add(acii.getIp());
+			System.out.println("Approved IP: " + acii.getIp());
+			LOG.info("Approved IP: " + acii.getIp());
+		}
+
+		Map<String, String> runningNodeIdIpMap = dynamicAgentHandler.getRunningNodeIdIPMap();
+		for(String id: runningNodeIdIpMap.keySet()){
+			String IP = runningNodeIdIpMap.get(id);
+			System.out.println("Node IP: " + IP);
+			LOG.info("Node IP: " + IP);
+			if(!approvedAgentIPs.contains(IP)){
+				System.out.println("EC2 node with IP: " + IP + " is under preparing, no need to create new more");
+				LOG.info("EC2 node with IP: " + IP + " is under preparing, no need to create new more");
+				return;
+			}
 		}
 
 		if(dynamicType.contentEquals("EC2")){
 			Runnable addEc2AgentRunnable = new Runnable() {
 				@Override
 				public void run() {
-					LOG.info("Begin to add {} EC2 instances...", requiredAgents);
-					dynamicAgentHandler.addDynamicEc2Instance(requiredAgents);
+					LOG.info("Begin to add {} EC2 instances...", realNeeds);
+					dynamicAgentHandler.addDynamicEc2Instance(realNeeds);
 					isDynamicAgentOff = false;
 				}
 			};

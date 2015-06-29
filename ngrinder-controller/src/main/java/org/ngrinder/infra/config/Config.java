@@ -13,7 +13,7 @@
  */
 package org.ngrinder.infra.config;
 
-import ch.qos.logback.classic.LoggerContext;
+  import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.joran.JoranConfigurator;
 import ch.qos.logback.core.joran.spi.JoranException;
 import net.grinder.util.ListenerSupport;
@@ -70,7 +70,7 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
 	private PropertiesWrapper controllerProperties;
 	private PropertiesWrapper databaseProperties;
 	private PropertiesWrapper clusterProperties;
-	private PropertiesWrapper agentDynamicProperties;
+	private PropertiesWrapper dynamicAgentProperties;
 	private String announcement = "";
 	private Date announcementDate;
 	private boolean verbose;
@@ -84,7 +84,7 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
 	protected PropertiesKeyMapper databasePropertiesKeyMapper = PropertiesKeyMapper.create("database-properties.map");
 	protected PropertiesKeyMapper controllerPropertiesKeyMapper = PropertiesKeyMapper.create("controller-properties.map");
 	protected PropertiesKeyMapper clusterPropertiesKeyMapper = PropertiesKeyMapper.create("cluster-properties.map");
-	protected PropertiesKeyMapper agentDynamicPropertiesKeyMapper = PropertiesKeyMapper.create("agentDynamic-properties.map");
+	protected PropertiesKeyMapper dynamicAgentPropertiesKeyMapper = PropertiesKeyMapper.create("agentDynamic-properties.map");
 
 	@SuppressWarnings("SpringJavaAutowiringInspection")
 	@Autowired
@@ -398,7 +398,7 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
 		// Override if exists
 		controllerProperties = new PropertiesWrapper(properties, controllerPropertiesKeyMapper);
 		clusterProperties = new PropertiesWrapper(properties, clusterPropertiesKeyMapper);
-		agentDynamicProperties = new PropertiesWrapper(properties, agentDynamicPropertiesKeyMapper);
+		dynamicAgentProperties = new PropertiesWrapper(properties, dynamicAgentPropertiesKeyMapper);
 	}
 
 	/**
@@ -702,8 +702,8 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
 	 *
 	 * @return {@link PropertiesWrapper} which is loaded from system.conf.
 	 */
-	public PropertiesWrapper getAgentDynamicProperties() {
-		return checkNotNull(agentDynamicProperties);
+	public PropertiesWrapper getDynamicAgentProperties() {
+		return checkNotNull(dynamicAgentProperties);
 	}
 
 	/**
@@ -712,7 +712,7 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
 	 * @return dynamic type
 	 */
 	public String getAgentDynamicType(){
-		return getAgentDynamicProperties().getProperty(PROP_AGENT_DYNAMIC_TYPE);
+		return getDynamicAgentProperties().getProperty(PROP_AGENT_DYNAMIC_TYPE);
 	}
 
 	/**
@@ -721,7 +721,7 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
 	 * @return node max
 	 */
 	public int getAgentDynamicNodeMax(){
-		return getAgentDynamicProperties().getPropertyInt(PROP_AGENT_DYNAMIC_MAX);
+		return getDynamicAgentProperties().getPropertyInt(PROP_AGENT_DYNAMIC_MAX);
 	}
 
 	/**
@@ -730,7 +730,7 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
 	 * @return credential username/access key
 	 */
 	public String getAgentDynamicEc2Identity(){
-		return getAgentDynamicProperties().getProperty(PROP_AGENT_DYNAMIC_AWS_IDENTITY);
+		return getDynamicAgentProperties().getProperty(PROP_AGENT_DYNAMIC_AWS_IDENTITY);
 	}
 
 	/**
@@ -739,7 +739,7 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
 	 * @return credential password/secret key
 	 */
 	public String getAgentDynamicEc2Credential(){
-		return getAgentDynamicProperties().getProperty(PROP_AGENT_DYNAMIC_AWS_CREDENTIAL);
+		return getDynamicAgentProperties().getProperty(PROP_AGENT_DYNAMIC_AWS_CREDENTIAL);
 	}
 
 	/**
@@ -748,7 +748,7 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
 	 * @return guard time
 	 */
 	public int getAgentDynamicGuardTime(){
-		return getAgentDynamicProperties().getPropertyInt(PROP_AGENT_DYNAMIC_GUARD_TIME);
+		return getDynamicAgentProperties().getPropertyInt(PROP_AGENT_DYNAMIC_GUARD_TIME);
 	}
 
 	/**
@@ -757,7 +757,7 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
 	 * @return docker image repo
 	 */
 	public String getAgentDynamicDockerRepo(){
-		return getAgentDynamicProperties().getProperty(PROP_AGENT_DYNAMIC_DOCKER_REPO);
+		return getDynamicAgentProperties().getProperty(PROP_AGENT_DYNAMIC_DOCKER_REPO);
 	}
 
 
@@ -767,7 +767,7 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
 	 * @return docker image tag
 	 */
 	public String getAgentDynamicDockerTag(){
-		return getAgentDynamicProperties().getProperty(PROP_AGENT_DYNAMIC_DOCKER_TAG);
+		return getDynamicAgentProperties().getProperty(PROP_AGENT_DYNAMIC_DOCKER_TAG);
 	}
 
 	/**
@@ -776,7 +776,7 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
 	 * @return controller IP
 	 */
 	public String getAgentDynamicControllerIP(){
-		return getAgentDynamicProperties().getProperty(PROP_AGENT_DYNAMIC_CONTROLLER_IP);
+		return getDynamicAgentProperties().getProperty(PROP_AGENT_DYNAMIC_CONTROLLER_IP);
 	}
 
 
@@ -786,7 +786,7 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
 	 * @return controller port
 	 */
 	public String getAgentDynamicControllerPort(){
-		return getAgentDynamicProperties().getProperty(PROP_AGENT_DYNAMIC_CONTROLLER_PORT);
+		return getDynamicAgentProperties().getProperty(PROP_AGENT_DYNAMIC_CONTROLLER_PORT);
 	}
 
 	/**

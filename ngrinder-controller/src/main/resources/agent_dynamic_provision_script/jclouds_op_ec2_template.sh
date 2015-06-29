@@ -84,7 +84,7 @@ function check_start_agent_container()
         fi
     done
     if [[ $AGENT_RUNNING != "YES" ]];then
-        sudo docker run -d -e "CONTROLLER_ADDR=$AGENT_CTRL_IP:$AGENT_CTRL_PORT" $AGENT_IMG_REPO:$AGENT_IMG_TAG >>/tmp/AutoAgentProvision.log 2>&1
+        sudo docker run --net=host -d -e "CONTROLLER_ADDR=$AGENT_CTRL_IP:$AGENT_CTRL_PORT" $AGENT_IMG_REPO:$AGENT_IMG_TAG >>/tmp/AutoAgentProvision.log 2>&1
         if [[ $? != 0 ]]; then
             LOG_PRINT "Start docker container [$AGENT_CTRL_IP:$AGENT_CTRL_PORT]- [$AGENT_IMG_REPO:$AGENT_IMG_TAG] failed..."
             exit 3
