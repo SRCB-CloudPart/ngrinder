@@ -117,12 +117,12 @@ case $AGENT_WORK_MODE in
         check_pull_agent_image
         check_start_agent_container
         ;;
-    "TURNON")
+    "ON")
         check_install_docker
         check_stop_remove_agent_container
         check_start_agent_container
         ;;
-    "TURNOFF")
+    "OFF")
         check_stop_remove_agent_container
         ;;
      *)
