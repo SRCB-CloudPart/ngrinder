@@ -183,7 +183,7 @@ public class PerfTestRunnable implements ControllerConstants {
 			int stopped_nodes = dynamicAgentHandler.getStoppedNodeCount();
 			int needed_nodes = runCandidate.getAgentCount();
 			if(isDynamicAgentOff == true && stopped_nodes >= needed_nodes){
-				turnOnDynamicAgents(needed_nodes);
+				turnOnDynamicAgents(runCandidate);
 			}else{
 				addDynamicAgents(runCandidate);
 			}
@@ -200,9 +200,6 @@ public class PerfTestRunnable implements ControllerConstants {
 	 * To turn off the created EC2 instance in order to reduce code
 	 */
 	protected void turnOffDynamicAgents() {
-		if(dynamicAgentHandler.isInAddingStatus()){
-			return;
-		}
 		long guardTime = config.getAgentDynamicGuardTime();
 		long durationMillis = System.currentTimeMillis() - lastBeginningTime;
 		long durationInMinutes = durationMillis / (60 * 1000);
@@ -222,26 +219,27 @@ public class PerfTestRunnable implements ControllerConstants {
 	/**
 	 * To turn on the created EC2 instances which are turned off
 	 *
-	 * @param nodeCount the number of EC2 instances to be turned on
+	 * @param test {@link PerfTest}
 	 */
-	protected void turnOnDynamicAgents(final int nodeCount){
-		if(dynamicAgentHandler.isInAddingStatus()){
-			return;
-		}
-
+	protected void turnOnDynamicAgents(final PerfTest test){
 		Runnable turnOnEc2AgentRunnable = new Runnable() {
 			@Override
 			public void run() {
-				LOG.info("Begin to turn on {} EC2 instances...", nodeCount);
-				dynamicAgentHandler.turnOnEc2Instance(nodeCount);
-				isDynamicAgentOff = false;
+				String testIdentifier = test.getTestIdentifier();
+				int neededCount = test.getAgentCount();
+				LOG.info("Begin to turn on {} EC2 instances...", neededCount);
+				dynamicAgentHandler.turnOnEc2Instance(testIdentifier, neededCount);
+				//when all the stopped nodes are turnned on, change the flag isDynamicAgentOff to false
+				if(dynamicAgentHandler.getStoppedNodeCount() == 0) {
+					isDynamicAgentOff = false;
+				}
 			}
 		};
 		scheduledTaskService.runAsync(turnOnEc2AgentRunnable);
 	}
 
 	/**
-	 * add dynamic agent for the given {@link PerfTest}.
+	 * add dynamic agent for the given perfTest
 	 *
 	 * @param test {@link PerfTest}
 	 */
@@ -250,9 +248,7 @@ public class PerfTestRunnable implements ControllerConstants {
 		if(dynamicType == null || dynamicType.equals("")){
 			return;
 		}
-		if(dynamicAgentHandler.isInAddingStatus()){
-			return;
-		}
+
 		int size = dynamicAgentHandler.getAddedNodeCount();
 		int requiredAgents = test.getAgentCount();
 		int allowedMaxDynamic = config.getAgentDynamicNodeMax();
@@ -279,29 +275,38 @@ public class PerfTestRunnable implements ControllerConstants {
 		for(AgentIdentity ai: agentSets){
 			AgentControllerIdentityImplementation acii = agentManager.convert(ai);
 			approvedAgentIPs.add(acii.getIp());
-			System.out.println("Approved IP: " + acii.getIp());
 			LOG.info("Approved IP: " + acii.getIp());
 		}
 
-		Map<String, String> runningNodeIdIpMap = dynamicAgentHandler.getRunningNodeIdIPMap();
-		for(String id: runningNodeIdIpMap.keySet()){
-			String IP = runningNodeIdIpMap.get(id);
-			System.out.println("Node IP: " + IP);
-			LOG.info("Node IP: " + IP);
-			if(!approvedAgentIPs.contains(IP)){
-				System.out.println("EC2 node with IP: " + IP + " is under preparing, no need to create new more");
-				LOG.info("EC2 node with IP: " + IP + " is under preparing, no need to create new more");
-				return;
+		final String testIdentifier = test.getTestIdentifier();
+		Map<String, Long> nodeIpEc2UpTimeMap = dynamicAgentHandler.getTestIdEc2NodeStatusMap(testIdentifier);
+		boolean toCreate = false;
+		if(nodeIpEc2UpTimeMap != null){
+			/*
+			 * If any one of the EC2 node ip is not in the approved agent IP list, which means the new agent
+			 * in the docker container running in the new created EC2 node is not ready.
+			 * Then to check the timer whether it is expired, if yes, which means the agent has some problem,
+			 * allow to create new one.
+			 */
+			toCreate = isToCreate(approvedAgentIPs, nodeIpEc2UpTimeMap);
+		}else{
+			/*
+			 * ngrinder controller startup condition, if the agent is not ready from run/on operation
+			 */
+			nodeIpEc2UpTimeMap = dynamicAgentHandler.getTestIdEc2NodeStatusMap(dynamicAgentHandler.KEY_FOR_STARTUP);
+			//null or empty means the initialization to list ec2 status is not ready
+			if(nodeIpEc2UpTimeMap == null || nodeIpEc2UpTimeMap.isEmpty()){
+				toCreate = false;
 			}
+			toCreate = isToCreate(approvedAgentIPs, nodeIpEc2UpTimeMap);
 		}
 
-		if(dynamicType.contentEquals("EC2")){
+		if(toCreate && dynamicType.contentEquals("EC2")){
 			Runnable addEc2AgentRunnable = new Runnable() {
 				@Override
 				public void run() {
 					LOG.info("Begin to add {} EC2 instances...", realNeeds);
-					dynamicAgentHandler.addDynamicEc2Instance(realNeeds);
-					isDynamicAgentOff = false;
+					dynamicAgentHandler.addDynamicEc2Instance(testIdentifier, realNeeds);
 				}
 			};
 			scheduledTaskService.runAsync(addEc2AgentRunnable);
@@ -309,6 +314,18 @@ public class PerfTestRunnable implements ControllerConstants {
 			//TODO: mesos solution
 			;
 		}
+	}
+
+	private boolean isToCreate(Set<String> approvedAgentIPs, Map<String, Long> nodeIpEc2UpTimeMap) {
+		for(String ip: nodeIpEc2UpTimeMap.keySet()) {
+            if (!approvedAgentIPs.contains(ip)) {
+                boolean timeout = dynamicAgentHandler.isTimeoutOfAgentRunningUp(nodeIpEc2UpTimeMap.get(ip));
+				if(timeout){
+					return true;
+				}
+            }
+        }
+		return false;
 	}
 
 	private PerfTest getRunnablePerfTest() {
