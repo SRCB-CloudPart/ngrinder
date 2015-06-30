@@ -115,6 +115,29 @@ public class DynamicAgentHandler {
         testIdEc2NodeStatusMap.put(testIdentifier, newAddedNodeIpUpTimeMap);
     }
 
+    public void removeItemInTestIdEc2NodeStatusMap(String testIdentifier){
+        testIdEc2NodeStatusMap.remove(testIdentifier);
+    }
+
+    /**
+     * Check whether there is test case which is not finished, if there is, then even if the guard time is
+     * expired, do not turn off the created EC2 instance.
+     *
+     * @return true, there is test case which is not finished; false, all case finished test
+     */
+    public boolean hasRunningTestInTestIdEc2NodeStatusMap(){
+        int testCount = 0;
+        for(String id: testIdEc2NodeStatusMap.keySet()){
+            if(!id.equalsIgnoreCase(KEY_FOR_STARTUP)){
+                testCount++;
+            }
+        }
+        if(testCount > 0){
+            return true;
+        }
+        return false;
+    }
+
     /*
      * The time duration to monitor the agent in docker container to be up. (if it is up, it will appear
      * in the approved agent list, if the timer expires, and the agent with the private IP of the new
@@ -224,6 +247,7 @@ public class DynamicAgentHandler {
         if(config.isAgentDynamicEc2Enabled()) {
             setProviderIdCredentialForEc2();
             dynamicAgentCommand("list", KEY_FOR_STARTUP, getAddedNodeCount());
+            setTestIdEc2NodeStatusMap(KEY_FOR_STARTUP);
             if (runningNodeSet.size() == 0 && stoppedNodeSet.size() == 0) {
                 setScriptName("add.sh");
                 dynamicAgentCommand("add", KEY_FOR_STARTUP, 1);
@@ -237,7 +261,6 @@ public class DynamicAgentHandler {
     public void addDynamicEc2Instance(String testIdentifier, int requiredNum){
         if(config.isAgentDynamicEc2Enabled()) {
             setProviderIdCredentialForEc2();
-            setTestIdEc2NodeStatusMap(testIdentifier);
             setScriptName("add.sh");
             dynamicAgentCommand("add", testIdentifier, requiredNum);
         }
@@ -247,7 +270,6 @@ public class DynamicAgentHandler {
         if(config.isAgentDynamicEc2Enabled()) {
             if (stoppedNodeSet.size() >= requiredNum) {
                 setProviderIdCredentialForEc2();
-                setTestIdEc2NodeStatusMap(testIdentifier);
                 setScriptName("on.sh");
                 dynamicAgentCommand("on", testIdentifier, requiredNum);
             }
@@ -355,7 +377,7 @@ public class DynamicAgentHandler {
      */
     public void dynamicAgentCommand(String actionCmd, String testIdentifier, int count) {
 
-        LOG.info("action command: " + actionCmd + ", touched ec2 instance count: " + count);
+        LOG.info("action: " + actionCmd + ", test id: " + testIdentifier + ", count: " + count);
 
         checkNotNull(identity, "identity can not be null or empty");
         checkNotNull(credential, "credential can not be null or empty");
@@ -369,12 +391,9 @@ public class DynamicAgentHandler {
         }
 
         Map<String, Long> newAddedNodeMap = testIdEc2NodeStatusMap.get(testIdentifier);
-        if (action == Action.ADD || action == Action.ON) {
-            //for controller startup condition, map is null
-            if (newAddedNodeMap == null) {
-                newAddedNodeMap = newHashMap();
-                testIdEc2NodeStatusMap.put(KEY_FOR_STARTUP, newAddedNodeMap);
-            }
+        if(action == Action.ADD || action == Action.ON) {
+            LOG.debug(">> test identifier mapped node status map must be initialized");
+            checkNotNull(newAddedNodeMap, "test identifier mapped node status map must be initialized");
         }
 
         LoginCredentials login =  (action != Action.DESTROY && action != Action.LIST) ? getLoginCredential() : null;

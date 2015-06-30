@@ -98,11 +98,11 @@ function check_start_agent_container()
 
 function check_stop_remove_agent_container()
 {
-    agents=`sudo docker ps | awk '{print $1}'`
+    agents=`sudo docker ps -a| awk '{print $1}'`
     for item in $agents
     do
-        if [[ X$item != "CONTAINER ID" ]];then
-            sudo docker stop -f $item >> /tmp/AutoAgentProvision.log 2>&1
+        if [[ X$item != X"CONTAINER" ]];then
+            sudo docker stop $item >> /tmp/AutoAgentProvision.log 2>&1
             sleep 1
             sudo docker rm -f $item >> /tmp/AutoAgentProvision.log 2>&1
             sleep 1
@@ -112,7 +112,7 @@ function check_stop_remove_agent_container()
 
 SCRIPT_START
 case $AGENT_WORK_MODE in
-    "RUN")
+    "ADD")
         check_install_docker
         check_pull_agent_image
         check_start_agent_container
@@ -127,5 +127,6 @@ case $AGENT_WORK_MODE in
         ;;
      *)
         LOG_PRINT "Error, not supported operation: $AGENT_WORK_MODE"
+        exit 4
         ;;
 esac

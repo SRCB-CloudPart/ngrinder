@@ -204,15 +204,18 @@ public class PerfTestRunnable implements ControllerConstants {
 		long durationMillis = System.currentTimeMillis() - lastBeginningTime;
 		long durationInMinutes = durationMillis / (60 * 1000);
 		if (durationInMinutes > guardTime && isDynamicAgentOff == false) {
-			Runnable turnOffEc2AgentRunnable = new Runnable() {
-				@Override
-				public void run() {
-					LOG.info("Begin to turn off EC2 instances...");
-					dynamicAgentHandler.turnOffEc2Instance();
-					isDynamicAgentOff = true;
-				}
-			};
-			scheduledTaskService.runAsync(turnOffEc2AgentRunnable);
+			lastBeginningTime = System.currentTimeMillis();
+			if (!dynamicAgentHandler.hasRunningTestInTestIdEc2NodeStatusMap()) {
+				Runnable turnOffEc2AgentRunnable = new Runnable() {
+					@Override
+					public void run() {
+						LOG.info("Begin to turn off EC2 instances...");
+						dynamicAgentHandler.turnOffEc2Instance();
+						isDynamicAgentOff = true;
+					}
+				};
+				scheduledTaskService.runAsync(turnOffEc2AgentRunnable);
+			}
 		}
 	}
 
@@ -222,20 +225,24 @@ public class PerfTestRunnable implements ControllerConstants {
 	 * @param test {@link PerfTest}
 	 */
 	protected void turnOnDynamicAgents(final PerfTest test){
-		Runnable turnOnEc2AgentRunnable = new Runnable() {
-			@Override
-			public void run() {
-				String testIdentifier = test.getTestIdentifier();
-				int neededCount = test.getAgentCount();
-				LOG.info("Begin to turn on {} EC2 instances...", neededCount);
-				dynamicAgentHandler.turnOnEc2Instance(testIdentifier, neededCount);
-				//when all the stopped nodes are turnned on, change the flag isDynamicAgentOff to false
-				if(dynamicAgentHandler.getStoppedNodeCount() == 0) {
-					isDynamicAgentOff = false;
+		final String testIdentifier = test.getTestIdentifier();
+		Map<String, Long> nodeIpEc2UpTimeMap = dynamicAgentHandler.getTestIdEc2NodeStatusMap(testIdentifier);
+		if(nodeIpEc2UpTimeMap == null) {
+			Runnable turnOnEc2AgentRunnable = new Runnable() {
+				@Override
+				public void run() {
+					int neededCount = test.getAgentCount();
+					LOG.info("Begin to turn on {} EC2 instances...", neededCount);
+					dynamicAgentHandler.setTestIdEc2NodeStatusMap(testIdentifier);
+					dynamicAgentHandler.turnOnEc2Instance(testIdentifier, neededCount);
+					//when all the stopped nodes are turnned on, change the flag isDynamicAgentOff to false
+					if (dynamicAgentHandler.getStoppedNodeCount() == 0) {
+						isDynamicAgentOff = false;
+					}
 				}
-			}
-		};
-		scheduledTaskService.runAsync(turnOnEc2AgentRunnable);
+			};
+			scheduledTaskService.runAsync(turnOnEc2AgentRunnable);
+		}
 	}
 
 	/**
@@ -306,6 +313,7 @@ public class PerfTestRunnable implements ControllerConstants {
 				@Override
 				public void run() {
 					LOG.info("Begin to add {} EC2 instances...", realNeeds);
+					dynamicAgentHandler.setTestIdEc2NodeStatusMap(testIdentifier);
 					dynamicAgentHandler.addDynamicEc2Instance(testIdentifier, realNeeds);
 				}
 			};
@@ -581,6 +589,7 @@ public class PerfTestRunnable implements ControllerConstants {
 			LOG.info("Terminate {}", each.getId());
 			SingleConsole consoleUsingPort = consoleManager.getConsoleUsingPort(each.getPort());
 			doTerminate(each, consoleUsingPort);
+			dynamicAgentHandler.removeItemInTestIdEc2NodeStatusMap(each.getTestIdentifier());
 			cleanUp(each);
 			notifyFinish(each, StopReason.TOO_MANY_ERRORS);
 		}
@@ -589,6 +598,7 @@ public class PerfTestRunnable implements ControllerConstants {
 			LOG.info("Stop test {}", each.getId());
 			SingleConsole consoleUsingPort = consoleManager.getConsoleUsingPort(each.getPort());
 			doCancel(each, consoleUsingPort);
+			dynamicAgentHandler.removeItemInTestIdEc2NodeStatusMap(each.getTestIdentifier());
 			cleanUp(each);
 			notifyFinish(each, StopReason.CANCEL_BY_USER);
 		}
@@ -597,6 +607,7 @@ public class PerfTestRunnable implements ControllerConstants {
 			SingleConsole consoleUsingPort = consoleManager.getConsoleUsingPort(each.getPort());
 			if (isTestFinishCandidate(each, consoleUsingPort)) {
 				doNormalFinish(each, consoleUsingPort);
+				dynamicAgentHandler.removeItemInTestIdEc2NodeStatusMap(each.getTestIdentifier());
 				cleanUp(each);
 				notifyFinish(each, StopReason.NORMAL);
 			}
