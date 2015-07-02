@@ -291,23 +291,6 @@ public class PerfTestController extends BaseController {
 	}
 
 	/**
-	 * Get the current ngrinder controller dynamic agent type status, enabled or not.
-	 *
-	 * @param user       user
-	 * @return perftest/detail
-	 */
-	@RestAPI
-	@RequestMapping("/dynamicAgentType")
-	public HttpEntity<String> getQuickStart(User user){
-
-		String enabled = "false";
-		if(getConfig().isAgentDynamicEc2Enabled()){
-			enabled = "true";
-		}
-		return toJsonHttpEntity(toJson(enabled));
-	}
-
-	/**
 	 * Create a new test from quick start mode.
 	 *
 	 * @param user       user

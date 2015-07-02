@@ -44,6 +44,15 @@
 	</div>
 </#macro>
 
+<#macro ro_input_prepend name, value, message, extra_css>
+<div class="input-prepend ${extra_css}" style="margin-bottom: 0">
+		<span class="add-on" title='<@spring.message "${message}"/>'>
+			<@spring.message "${message}"/>
+        </span>
+    <input class="input span1" readonly type="text" id="${toUnderscore(name)}" name="${name}" value="${value}" />
+</div>
+</#macro>
+
 <#macro input_label name, value, message,  err_style="", others="">
 	<div class="control-group">
 		<label for="${toUnderscore(name)}" class="control-label"><@spring.message "${message}"/></label>

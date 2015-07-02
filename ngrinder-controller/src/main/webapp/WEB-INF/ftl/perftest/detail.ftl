@@ -320,13 +320,12 @@ ${vuserCalcScript};
 
 var objTimer;
 var durationMap = [];
-var isDynamicAgentEnabled = false;
 
 $(document).ready(function () {
 	$.ajaxSetup({
 		cache : false //close AJAX cache
 	});
-    getDynamicAgentEnabledStatus();
+
 	initTags();
 	initDuration();
 	initScheduleDate();
@@ -707,20 +706,6 @@ function getBrowserTimeApplyingTimezone(time) {
 	}
 }	
 
-function getDynamicAgentEnabledStatus(){
-	var ajaxObj = new AjaxObj("/perftest/dynamicAgentType", {});
-	ajaxObj.async = false;
-	ajaxObj.success = function(enabled){
-		var en = eval(enabled);
-		if(en == "true"){
-			isDynamicAgentEnabled = true;
-		}else{
-			isDynamicAgentEnabled = false;
-		}
-	}
-	ajaxObj.call();
-}
-
 function bindEvent() {
 	$("#script_name").change(function() {
 		bindNewScript($(this), false);
@@ -748,9 +733,9 @@ function bindEvent() {
 
 	$("#save_schedule_btn").click(function() {
 		var minVal = 0;
-        if(isDynamicAgentEnabled == false) {
+        <#if dynamicAgentEnabled == false>
 			minVal = 1;
-        }
+		</#if>
 
 		$("#agent_count").rules("add", {
 			min:minVal
@@ -778,9 +763,9 @@ function bindEvent() {
 
 	$("#save_test_btn").click(function() {
         var minVal = 0;
-        if(isDynamicAgentEnabled == false) {
+        <#if dynamicAgentEnabled == false>
             minVal = 1;
-        }
+		</#if>
 
 		$("#agent_count").rules("add", {
 			min:minVal
@@ -945,6 +930,16 @@ function bindEvent() {
 		}
 	});
 
+    $("#expand_node_info_btn").click(function() {
+        $(this).toggleClass("collapse");
+        var $panel = $("#node_info_show_panel");
+        if ($panel.is(":hidden")) {
+            $panel.show("slow");
+        } else {
+            $panel.slideUp();
+        }
+    });
+
 	$("#select_hour, #select_min, #select_sec").change(function() {
 		$("#duration_ratio").click();
 	});
@@ -982,13 +977,13 @@ function changeAgentMaxCount(region, isValid) {
 	}
 	$("#maxAgentCount").text(count);
 
-	if(isDynamicAgentEnabled == false) {
+	<#if dynamicAgentEnabled == false>
         var $agentCountObj = $("#agent_count");
 
         $agentCountObj.rules("add", {
             max: count
         });
-    }
+    </#if>
 
 	if (isValid) {
 		$agentCountObj.valid();

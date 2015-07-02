@@ -161,6 +161,47 @@ public class BaseController implements WebConstants {
 	}
 
 	/**
+	 * Provide the running node count of current system.
+	 *
+	 * @return running node count
+	 */
+	@ModelAttribute("runningNodeCount")
+	public int runningNodeCount() {
+		return config.getRunningNodeCount();
+	}
+
+	/**
+	 * Provide the stopped node count of current system
+	 *
+	 * @return stopped node count
+	 */
+	@ModelAttribute("stoppedNodeCount")
+	public int stoppedNodeCount() {
+		return config.getStoppedNodeCount();
+	}
+
+	/**
+	 * Provide the stopped node count of current system
+	 *
+	 * @return stopped node count
+	 */
+	@ModelAttribute("allowedNodeCount")
+	public int allowedNodeCount() {
+		return config.getAgentDynamicNodeMax();
+	}
+
+	/**
+	 * Provide the boolean value representing that dynamic agent feature enabled or not as a model attributes.
+	 *
+	 * @return dynamic agent feature enabled mark
+	 */
+	@ModelAttribute("dynamicAgentEnabled")
+	public boolean isDynamicAgentEnabled() {
+		return config.isAgentDynamicEc2Enabled();
+	}
+
+
+	/**
 	 * Provide the help URL as a model attribute.
 	 *
 	 * @return help URL

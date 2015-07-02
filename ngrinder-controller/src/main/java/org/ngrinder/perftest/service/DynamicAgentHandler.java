@@ -53,7 +53,6 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Predicates.not;
 import static com.google.common.collect.Iterables.concat;
 import static com.google.common.collect.Lists.newArrayList;
-import static com.google.common.collect.Sets.newHashSet;
 import static com.google.common.collect.Maps.newHashMap;
 import static org.jclouds.aws.ec2.reference.AWSEC2Constants.PROPERTY_EC2_AMI_QUERY;
 import static org.jclouds.aws.ec2.reference.AWSEC2Constants.PROPERTY_EC2_CC_AMI_QUERY;
@@ -99,18 +98,28 @@ public class DynamicAgentHandler {
      * Define map to record the new added node list, which will assist to sync the status whether
      * the agent in docker image is ready or not. And, if during the given time, if the agent running
      * in the docker container with the private IP of the created EC2 instance does not appear in the
-     * approved agent list, treat this status as that the wanted new agent meets problem, ignore this
-     * one, and try to create new EC2 instance and prepare to run agent in it again if the count of added
-     * new EC2 instances is not exceeded the threshold defined in configuration file (system.conf).
+     * approved agent list, treat this status as that the wanted new agent meets problem.
      */
     private Map<String, Map<String, Long>> testIdEc2NodeStatusMap = newHashMap();
     public final static String KEY_FOR_STARTUP = "CONTROLLER_STARTUP";
 
+    /**
+     * Get the node status map with the specified test identifier, the map contains the timestamp when
+     * EC2 node becomes running status, the node ID is the map key.
+     *
+     * @param testIdentifier
+     * @return node status map data
+     */
     public Map<String, Long> getTestIdEc2NodeStatusMap(String testIdentifier){
         return testIdEc2NodeStatusMap.get(testIdentifier);
     }
 
-    public void setTestIdEc2NodeStatusMap(String testIdentifier){
+    /**
+     * Initialize the node status map for the specified test identifier
+     *
+     * @param testIdentifier
+     */
+    private void setTestIdEc2NodeStatusMap(String testIdentifier){
         Map<String, Long> newAddedNodeIpUpTimeMap = newHashMap();
         testIdEc2NodeStatusMap.put(testIdentifier, newAddedNodeIpUpTimeMap);
     }
@@ -146,6 +155,7 @@ public class DynamicAgentHandler {
      * This timer unit is in millisecond (10 minutes). the time gap depends on the network speed, because
      * it will cost time to download agent from ngrinder controller after the new created EC2 instance to
      * run docker container.
+     * Note: this timer should be greater than the dynamic agent guard time defined in system.conf
      */
     private long monitoringAgentUpTimeThreshold = 10 * 60 * 1000 * 1000;
 
@@ -166,10 +176,19 @@ public class DynamicAgentHandler {
         return this.addedNodeCount.get();
     }
 
-    private Set<String> runningNodeSet = newHashSet();
-    private Set<String> stoppedNodeSet = newHashSet();
+    private Map<String, String> runningNodeMap = newHashMap();
+    private Map<String, String> stoppedNodeMap = newHashMap();
     public int getStoppedNodeCount(){
-        return stoppedNodeSet.size();
+        return stoppedNodeMap.size();
+    }
+
+    public String getNodeIdByPrivateIp(String ip){
+        for(String id: runningNodeMap.keySet()){
+            if(ip.equalsIgnoreCase(runningNodeMap.get(id))){
+                return id;
+            }
+        }
+        return null;
     }
 
 
@@ -181,7 +200,8 @@ public class DynamicAgentHandler {
     private String identity = null;
     private String credential = null;
     private String scriptTemplatePath = null;
-    private String scriptName = null;
+    private String scriptName = "";
+    private LoginCredentials addOnOffLogin = getLoginCredential();
 
     public void setProvider(String provider) {
         this.provider = provider;
@@ -205,7 +225,7 @@ public class DynamicAgentHandler {
      *
      * @return group name
      */
-    public String generateUniqueGroupName(){
+    private String generateUniqueGroupName(){
         String groupName = "agt";
         String ctrl_ip = config.getAgentDynamicControllerIP();
         ctrl_ip = ctrl_ip.replaceAll("\\.", "d");
@@ -215,8 +235,8 @@ public class DynamicAgentHandler {
     @PostConstruct
     public void init(){
         testIdEc2NodeStatusMap = Collections.synchronizedMap(testIdEc2NodeStatusMap);
-        runningNodeSet = Collections.synchronizedSet(runningNodeSet);
-        stoppedNodeSet = Collections.synchronizedSet(stoppedNodeSet);
+        runningNodeMap = Collections.synchronizedMap(runningNodeMap);
+        stoppedNodeMap = Collections.synchronizedMap(stoppedNodeMap);
 
         initEnvironment();
     }
@@ -230,9 +250,7 @@ public class DynamicAgentHandler {
             LOG.info(e.getMessage());
         }
 
-        getEnvToGenerateScript();
-
-        //registerShutdownHook();
+        registerShutdownHook();
     }
 
     private void setProviderIdCredentialForEc2(){
@@ -243,73 +261,126 @@ public class DynamicAgentHandler {
         setCredential(credential);
     }
 
+    /**
+     * When ngrinder controller startup, to initialize the EC2 instance, it maybe turn on the stopped node,
+     * or to add one EC2 node. if there is node is running, do nothing.
+     */
     public void initFirstOneEc2Instance(){
         if(config.isAgentDynamicEc2Enabled()) {
             setProviderIdCredentialForEc2();
-            dynamicAgentCommand("list", KEY_FOR_STARTUP, getAddedNodeCount());
             setTestIdEc2NodeStatusMap(KEY_FOR_STARTUP);
-            if (runningNodeSet.size() == 0 && stoppedNodeSet.size() == 0) {
+            dynamicAgentCommand("list", KEY_FOR_STARTUP, null);
+            if (runningNodeMap.size() == 0 && stoppedNodeMap.size() == 0) {
                 setScriptName("add.sh");
-                dynamicAgentCommand("add", KEY_FOR_STARTUP, 1);
-            }else if(runningNodeSet.size() == 0 && stoppedNodeSet.size() > 0){
+                List<String> nodeIdList = newArrayList();
+                nodeIdList.add("" + 1);
+                dynamicAgentCommand("add", KEY_FOR_STARTUP, nodeIdList);
+            }else if(runningNodeMap.size() == 0 && stoppedNodeMap.size() > 0){
                 setScriptName("on.sh");
-                dynamicAgentCommand("on", KEY_FOR_STARTUP, 1);
+                List<String> nodeIdList = newArrayList();
+                nodeIdList.add("" + 1);
+                dynamicAgentCommand("on", KEY_FOR_STARTUP, nodeIdList);
             }
         }
     }
 
+    /**
+     * If there is not enough agent to use, and no enough stopped node to turn on, then to do add
+     * new EC2 node for this test
+     *
+     * @param testIdentifier
+     * @param requiredNum
+     */
     public void addDynamicEc2Instance(String testIdentifier, int requiredNum){
         if(config.isAgentDynamicEc2Enabled()) {
             setProviderIdCredentialForEc2();
             setScriptName("add.sh");
-            dynamicAgentCommand("add", testIdentifier, requiredNum);
+            setTestIdEc2NodeStatusMap(testIdentifier);
+            List<String> nodeIdList = newArrayList();
+            //Here, the content for nodeIdList has no meaning
+            for(int i=0; i<requiredNum; i++) {
+                nodeIdList.add("" + i);
+            }
+            dynamicAgentCommand("add", testIdentifier, nodeIdList);
         }
     }
 
+    /**
+     * Terminate the EC2 instances for timeout or when ngrinder controller exit
+     *
+     * @param nodeIdList
+     */
+    public void terminateEc2Instance(List<String> nodeIdList){
+        if(config.isAgentDynamicEc2Enabled()) {
+            //setProviderIdCredentialForEc2();
+            dynamicAgentCommand("destroy", "", nodeIdList);
+        }
+    }
+
+    /**
+     * If there is new test case is ready, then to turn on the stopped node if there is enough.
+     *
+     * @param testIdentifier
+     * @param requiredNum
+     */
     public void turnOnEc2Instance(String testIdentifier, int requiredNum){
         if(config.isAgentDynamicEc2Enabled()) {
-            if (stoppedNodeSet.size() >= requiredNum) {
+            if (stoppedNodeMap.size() >= requiredNum) {
                 setProviderIdCredentialForEc2();
                 setScriptName("on.sh");
-                dynamicAgentCommand("on", testIdentifier, requiredNum);
+                setTestIdEc2NodeStatusMap(testIdentifier);
+                List<String> nodeIdList = newArrayList();
+                prepareNodeIdList(requiredNum, nodeIdList, stoppedNodeMap);
+                dynamicAgentCommand("on", testIdentifier, nodeIdList);
             }
         }
     }
 
+    private void prepareNodeIdList(int requiredNum, List<String> nodeIdList, Map<String, String> map) {
+        int cnt=0;
+        for(String id: map.keySet()) {
+            nodeIdList.add(id);
+            cnt++;
+            if(cnt == requiredNum){
+                break;
+            }
+        }
+    }
+
+    /**
+     * Turn off the EC2 instance when the guard time expired, to save cost.
+     */
     public void turnOffEc2Instance(){
         if(config.isAgentDynamicEc2Enabled()) {
             setProviderIdCredentialForEc2();
             setScriptName("off.sh");
-            dynamicAgentCommand("off", "", getAddedNodeCount());
+            dynamicAgentCommand("off", "", null);
         }
     }
 
     private void registerShutdownHook(){
-        if(config.isAgentDynamicEc2Enabled()) {
-            setProviderIdCredentialForEc2();
-            Thread thread = new Thread(){
-                @Override
-                public void run() {
-                    dynamicAgentCommand("destroy", "", getAddedNodeCount());
-                }
-            };
-            LOG.info("Register shutdown hook to destroy the created EC2 instance when controller daemon shut down...");
-            Runtime.getRuntime().addShutdownHook(thread);
-        }
+        Thread thread = new Thread(){
+            @Override
+            public void run() {
+                terminateEc2Instance(null);
+            }
+        };
+        LOG.info("Register shutdown hook to destroy the created EC2 instance when controller daemon shut down...");
+        Runtime.getRuntime().addShutdownHook(thread);
     }
 
-    protected void getEnvToGenerateScript(){
+    private void getEnvToGenerateScript(){
         String dockerImageRepo = config.getAgentDynamicDockerRepo();
         String dockerImageTag = config.getAgentDynamicDockerTag();
         String controllerIP = config.getAgentDynamicControllerIP();
         String controllerPort = config.getAgentDynamicControllerPort();
 
+        LOG.info("Container IP: " + controllerIP + ", Container Port: " + controllerPort +
+                ", Repo: " + dockerImageRepo + ", Tag: " + dockerImageTag);
+
         generateScriptBasedOnTemplate(controllerIP, controllerPort, dockerImageRepo, dockerImageTag, "add");
         generateScriptBasedOnTemplate(controllerIP, controllerPort, dockerImageRepo, dockerImageTag, "off");
         generateScriptBasedOnTemplate(controllerIP, controllerPort, dockerImageRepo, dockerImageTag, "on");
-
-        LOG.info("Container IP: " + controllerIP + ", Container Port: " + controllerPort +
-                ", Repo: " + dockerImageRepo + ", Tag: " + dockerImageTag);
     }
 
     private Predicate<ComputeMetadata> nodeNameStartsWith(final String nodeNamePrefix) {
@@ -357,13 +428,12 @@ public class DynamicAgentHandler {
                 new SLF4JLoggingModule(),
                 new EnterpriseConfigurationModule());
 
-        LOG.info("provider: " + provider + ", identity: " + identity + ", credential: " + credential);
         ContextBuilder builder = ContextBuilder.newBuilder(provider)
                 .credentials(identity, credential)
                 .modules(modules)
                 .overrides(properties);
 
-        LOG.info(">> initializing " + builder.getApiMetadata());
+        LOG.info(">> initializing {}", builder.getApiMetadata());
 
         return builder.buildView(ComputeServiceContext.class).getComputeService();
     }
@@ -372,12 +442,22 @@ public class DynamicAgentHandler {
      * Major operation, according to the action which is enum value.
      *
      * @param actionCmd action command name
-     * @param count the number of EC2 instances will be operated by the action command
+     * @param testIdentifier the test identifier     *
+     * @param nodeIdList the IDs which mapped to the node to be operated indicated by actionCmd
+     *                   When actionCmd is to turn off or list, nodeIdList is null
+     *                   When actionCmd is to destroy, it maybe null which means destroy all nodes,
+     *                   it also can be not null, which will indicate which nodes to be destroyed
      *
      */
-    public void dynamicAgentCommand(String actionCmd, String testIdentifier, int count) {
+    public void dynamicAgentCommand(String actionCmd, String testIdentifier, List<String> nodeIdList) {
 
-        LOG.info("action: " + actionCmd + ", test id: " + testIdentifier + ", count: " + count);
+        String cnt = "";
+        if(nodeIdList == null){
+            cnt = " all nodes";
+        }else{
+            cnt = String.valueOf(nodeIdList.size());
+        }
+        LOG.info("action: " + actionCmd + ", test id: " + testIdentifier + ", count: " + cnt);
 
         checkNotNull(identity, "identity can not be null or empty");
         checkNotNull(credential, "credential can not be null or empty");
@@ -391,22 +471,21 @@ public class DynamicAgentHandler {
         }
 
         Map<String, Long> newAddedNodeMap = testIdEc2NodeStatusMap.get(testIdentifier);
-        if(action == Action.ADD || action == Action.ON) {
-            LOG.debug(">> test identifier mapped node status map must be initialized");
+        if(action == Action.ADD || action == Action.ON || action == Action.LIST) {
             checkNotNull(newAddedNodeMap, "test identifier mapped node status map must be initialized");
         }
 
-        LoginCredentials login =  (action != Action.DESTROY && action != Action.LIST) ? getLoginCredential() : null;
+        LoginCredentials login =  (action != Action.DESTROY && action != Action.LIST) ? addOnOffLogin : null;
 
         ComputeService compute = initComputeService(provider, identity, credential);
 
         String groupName = generateUniqueGroupName();
+        getEnvToGenerateScript();
 
         try {
             switch (action) {
                 case ADD:
-                    LOG.info(">> add " + count + " node to group " + groupName);
-
+                    LOG.info(">> prepare to add {} node to group {}", nodeIdList.size(), groupName);
                     TemplateBuilder templateBuilder = compute.templateBuilder()
                             .locationId("ap-southeast-1").hardwareId(InstanceType.M1_MEDIUM);
 
@@ -414,33 +493,34 @@ public class DynamicAgentHandler {
                     templateBuilder.options(runScript(bootInstructions));
                     Template template = templateBuilder.build();
 
+                    LOG.info(">> begin to create {} in group {}", nodeIdList.size(), groupName);
+                    addedNodeCount.getAndSet(nodeIdList.size());
                     List<String> addList = newArrayList();
-
-                    Set<? extends NodeMetadata> nodes = compute.createNodesInGroup(groupName, count, template);
+                    Set<? extends NodeMetadata> nodes = compute.createNodesInGroup(groupName, nodeIdList.size(), template);
                     for (NodeMetadata node: nodes) {
                         String id = node.getId();
-                        LOG.info("<< added node: " + id + " [" + concat(node.getPrivateAddresses(), node.getPublicAddresses()) + "]");
+                        LOG.info("<< added node: {} {}", id, concat(node.getPrivateAddresses(), node.getPublicAddresses()));
                         addList.add(id);
-                        addedNodeCount.getAndIncrement();
-                        runningNodeSet.add(id);
+                        runningNodeMap.put(id, node.getPrivateAddresses().toString());
                         newAddedNodeMap.put(node.getPrivateAddresses().toString(), System.currentTimeMillis());
                     }
+                    SetCurrentNodeCount();
 
-                    LOG.info(">> exec [" + scriptName + "] on group " + groupName + " as " + login.identity);
+                    LOG.info(">> exec {} to initialize nodes as {}", scriptName, login.identity);
                     Map<? extends NodeMetadata, ExecResponse> responseRun = compute.runScriptOnNodesMatching(
                             inGivenList(addList), Files.toString(file, Charsets.UTF_8),
                             overrideLoginCredentials(login).runAsRoot(false)
                                     .nameTask("_" + file.getName().replaceAll("\\..*", "")));
 
                     for (Entry<? extends NodeMetadata, ExecResponse> response : responseRun.entrySet()) {
-                        LOG.info("<< " + response.getKey().getId() + " status: " + response.getValue());
+                        LOG.info("<< {} status {}", response.getKey().getId(), response.getValue());
                     }
                     break;
 
                 case OFF:
         	 	    //1. before to do turn off the VMs, do stop and remove docker container
                     //2. turn off operation will suspend all the nodes in the given group
-                    LOG.info(">> turn off [" + scriptName + "] on group " + groupName + " as " + login.identity);
+                    LOG.info(">> exec {} as {} ", scriptName, login.identity);
                     Map<? extends NodeMetadata, ExecResponse> stopAndRemove = compute.runScriptOnNodesMatching(
                             inGroup(groupName),
                             Files.toString(file, Charsets.UTF_8),   // passing in a string with the contents of the file
@@ -449,95 +529,109 @@ public class DynamicAgentHandler {
 
                     for (Entry<? extends NodeMetadata, ExecResponse> response : stopAndRemove.entrySet()) {
                         String id = response.getKey().getId();
-                        LOG.info("<< node " + id + ": " +
-                                "[" + concat(response.getKey().getPrivateAddresses(), response.getKey().getPublicAddresses()) + "]");
-                        LOG.info("<< stop and remove status: " + response.getValue());
+                        LOG.info("<< node: {} {}", id, concat(response.getKey().getPrivateAddresses(), response.getKey().getPublicAddresses()));
+                        LOG.info("<< stop and remove status: {}", response.getValue());
                     }
-                    LOG.info(">> turn off nodes in group " + groupName);
 
                     // you can use predicates to select which nodes you wish to turn off.
+                    LOG.info(">> begin to turn off nodes in group {}", groupName);
                     Set<? extends NodeMetadata> turnOff = compute.suspendNodesMatching(Predicates.and(RUNNING, inGroup(groupName)));
                     for(NodeMetadata node: turnOff){
                         String id = node.getId();
-                        LOG.info("<< turn off node " + node);
-                        stoppedNodeSet.add(id);
-                        runningNodeSet.remove(id);
+                        LOG.info("<< turn off node {}", node);
+                        stoppedNodeMap.put(id, node.getPrivateAddresses().toString());
+                        runningNodeMap.remove(id);
                     }
-                    testIdEc2NodeStatusMap.clear();
+                    SetCurrentNodeCount();
                     break;
 
                 case ON:
-                    LOG.info(">> turn on [" + scriptName + "] " + count + " node(s) on group " + groupName + " as " + login.identity);
-                    List<String> turnOnList = newArrayList();
-                    for(String id: stoppedNodeSet){
-                        turnOnList.add(id);
-                        if(turnOnList.size() >= count){
-                            break;
-                        }
-                    }
-
-                    Set<? extends NodeMetadata> turnOn = compute.resumeNodesMatching(Predicates.and(SUSPENDED, inGivenList(turnOnList)));
+                    LOG.info(">> begin to turn on node(s) in group {} as {}", groupName, login.identity);
+                    Set<? extends NodeMetadata> turnOn = compute.resumeNodesMatching(Predicates.and(SUSPENDED, inGivenList(nodeIdList)));
                     for (NodeMetadata node: turnOn) {
                         String id = node.getId();
-                        LOG.info("<< pre-turned on node: " + id);
-                        runningNodeSet.add(id);
-                        stoppedNodeSet.remove(id);
-                        newAddedNodeMap.put(node.getPrivateAddresses().toString(), System.currentTimeMillis());
+                        String ip = node.getPrivateAddresses().toString();
+                        LOG.info("<< turned on node: {}", id);
+                        runningNodeMap.put(id, ip);
+                        stoppedNodeMap.remove(id);
+                        newAddedNodeMap.put(ip, System.currentTimeMillis());
                     }
+                    SetCurrentNodeCount();
 
+                    LOG.info(">> exec {} to initialize nodes", scriptName);
              		//after nodes are turned on, to start new docker container
                     Map<? extends NodeMetadata, ExecResponse> turnOnRun = compute.runScriptOnNodesMatching(
-                            inGroup(groupName),  Files.toString(file, Charsets.UTF_8), // passing in a string with the contents of the file
+                            inGivenList(nodeIdList),  Files.toString(file, Charsets.UTF_8), // passing in a string with the contents of the file
                             overrideLoginCredentials(login).runAsRoot(false)
                                     .nameTask("_" + file.getName().replaceAll("\\..*", "")));
 
                     for (Entry<? extends NodeMetadata, ExecResponse> response : turnOnRun.entrySet()) {
-                        LOG.info("<< turned on node " + response.getKey().getId() + ": " +
-                                "[" + concat(response.getKey().getPrivateAddresses(), response.getKey().getPublicAddresses()) + "]");
-                        LOG.info("<< " + response.getValue());
+                        LOG.info("<< initialized node {}: {}", response.getKey().getId(),
+                                concat(response.getKey().getPrivateAddresses(), response.getKey().getPublicAddresses()));
+                        LOG.info("<< {}", response.getValue());
                     }
                     break;
 
                 case DESTROY:
-                    LOG.info(">> destroy nodes in group " + groupName);
+                    Predicate<NodeMetadata> destroyPredicate = null;
+                    if(nodeIdList == null || nodeIdList.isEmpty()){
+                        destroyPredicate = inGroup(groupName);
+                        LOG.info(">> destroy all nodes in group {}", groupName);
+                    }else{
+                        destroyPredicate = inGivenList(nodeIdList);
+                        LOG.info(">> destroy {} nodes in group {}", nodeIdList.size(), groupName);
+                    }
                     // you can use predicates to select which nodes you wish to destroy.
-                    Set<? extends NodeMetadata> destroyed = compute.destroyNodesMatching(Predicates.and(not(TERMINATED), inGroup(groupName)));
-                    LOG.info("<< destroyed nodes: " + destroyed);
-                    runningNodeSet.clear();
-                    stoppedNodeSet.clear();
-                    testIdEc2NodeStatusMap.clear();
+                    Set<? extends NodeMetadata> destroyed = compute.destroyNodesMatching(Predicates.and(not(TERMINATED), destroyPredicate));
+                    for(NodeMetadata node: destroyed) {
+                        runningNodeMap.remove(node.getId());
+                        stoppedNodeMap.remove(node.getId());
+                        addedNodeCount.getAndDecrement();
+                        LOG.info("<< destroyed node: {}", node);
+                    }
+                    LOG.info("<< nodes are destroyed... ");
+                    SetCurrentNodeCount();
                     break;
 
                 case LIST:
+                    LOG.info(">> begin to list nodes status in group {}", groupName);
                     Set<? extends NodeMetadata> gnodes = compute.listNodesDetailsMatching(nodeNameStartsWith(groupName));
-                    LOG.info(">> total number nodes/instances " + gnodes.size() + " group " + groupName);
+                    LOG.info(">> total number nodes/instances {} in group {}", gnodes.size(), groupName);
+                    long currentTime = System.currentTimeMillis();
                     for (NodeMetadata nodeData : gnodes) {
                         LOG.info("    >> " + nodeData);
                         Status status = nodeData.getStatus();
+                        String ip = nodeData.getPrivateAddresses().toString();
                         if(status == Status.RUNNING){
-                            runningNodeSet.add(nodeData.getId());
+                            runningNodeMap.put(nodeData.getId(), ip);
+                            newAddedNodeMap.put(ip, currentTime);
                         }else if(status == Status.SUSPENDED){
-                            stoppedNodeSet.add(nodeData.getId());
+                            stoppedNodeMap.put(nodeData.getId(), ip);
                         }
                     }
-                    addedNodeCount.getAndSet(runningNodeSet.size() + stoppedNodeSet.size());
-                    LOG.info(">> total number available nodes " + addedNodeCount.get() + " on group " + groupName);
+                    SetCurrentNodeCount();
+                    addedNodeCount.getAndSet(runningNodeMap.size() + stoppedNodeMap.size());
+                    LOG.info(">> total number available {} nodes in group {}", addedNodeCount.get(), groupName);
                     break;
 
                 default:
                     break;
             }
         } catch (RunNodesException e) {
-            LOG.debug("error adding node to group " + groupName + ": " + e.getMessage());
+            LOG.debug("error adding node to group {}: {}", groupName, e.getMessage());
         } catch (RunScriptOnNodesException e) {
-            LOG.debug("error executing command" + " on group " + groupName + ": " + e.getMessage());
+            LOG.debug("error executing command {} in group {}", groupName, e.getMessage());
         } catch (Exception e) {
-            LOG.debug("error: " + e.getMessage());
+            LOG.debug("error: {}", e.getMessage());
         } finally {
             compute.getContext().close();
         }
     }
 
+    private void SetCurrentNodeCount() {
+        config.setRunningNodeCount(runningNodeMap.size());
+        config.setStoppedNodeCount(stoppedNodeMap.size());
+    }
 
     private LoginCredentials getAgentLoginForCommandExecution() {
         try {
@@ -547,7 +641,7 @@ public class DynamicAgentHandler {
             String privateKey = Files.toString(priFile, UTF_8);
             return LoginCredentials.builder().user(user).privateKey(privateKey).build();
         } catch (Exception e) {
-            LOG.debug("error reading ssh key " + e.getMessage());
+            LOG.debug("error reading ssh key {}", e.getMessage());
             return null;
         }
     }
@@ -560,7 +654,7 @@ public class DynamicAgentHandler {
             return LoginCredentials.builder().
                     user(user).privateKey(privateKey).build();
         } catch (Exception e) {
-            LOG.debug("error reading ssh key " + e.getMessage());
+            LOG.debug("error reading ssh key {}", e.getMessage());
             return null;
         }
     }
@@ -628,7 +722,7 @@ public class DynamicAgentHandler {
      * @param cmd, the operation command, such as ADD, ON, OFF
      *
      */
-    protected void generateScriptBasedOnTemplate(String ctrl_IP, String ctrl_port, String agent_docker_repo,
+    private void generateScriptBasedOnTemplate(String ctrl_IP, String ctrl_port, String agent_docker_repo,
                                                  String agent_docker_tag, String cmd)  {
         /*
          * the must parameters in the target script

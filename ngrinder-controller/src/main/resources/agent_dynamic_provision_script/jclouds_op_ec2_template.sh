@@ -6,7 +6,7 @@ START_TIME=`date +%T`
 DATE=`date +%Y-%m-%d-%H%M-%S --date=$START_TIME`
 PID=$$
 ####################################################################################
-
+RET_MAX=3
 function SCRIPT_START()
 {
     LOG_PRINT "PID             :  $PID"
@@ -24,27 +24,41 @@ function check_install_docker()
     if [[ $? == 0 ]]; then
        LOG_PRINT "Docker is existing already"
     else
-       sudo wget -qO- https://get.docker.com/ | sh >> /tmp/AutoAgentProvision.log 2>&1
-       #sudo yum install -y docker-io >> /tmp/AutoAgentProvision.log 2>&1
-       if [[ $? != 0 ]];then
-           LOG_PRINT "Install docker failed"
-           exit 1
-       fi
-       LOG_PRINT "Docker is installed successfully"
+       cnt=1
+       while true
+       do
+            sudo wget -qO- https://get.docker.com/ | sh >> /tmp/AutoAgentProvision.log 2>&1
+            #sudo yum install -y docker-io >> /tmp/AutoAgentProvision.log 2>&1
+            if [[ $? != 0 ]];then
+                LOG_PRINT "Install docker failed $cnt times..."
+            else
+                LOG_PRINT "Docker is installed successfully"
+                break
+            fi
+            sleep 5
+            cnt=$((cnt + 1))
+            if [[ $cnt -eq $RET_MAX ]]; then
+                exit 1
+            fi
+       done
     fi
     sleep 2
-    sudo service docker start >> /tmp/AutoAgentProvision.log 2>&1
-    if [[ $? == 0 ]];then
-       LOG_PRINT "First to start docker daemon service successfully.."
-    else
-       LOG_PRINT "First to start docker daemon service failed..."
-       sudo service docker start >> /tmp/AutoAgentProvision.log 2>&1
-       if [[ $? == 0 ]];then
-           LOG_PRINT "Second to start docker daemon service successfully.."
-       else
-           LOG_PRINT "Second to start docker daemon service failed..."
-       fi
-    fi
+    cnt=1
+    while true
+    do
+        sudo service docker start >> /tmp/AutoAgentProvision.log 2>&1
+        if [[ $? == 0 ]];then
+            LOG_PRINT "Start docker daemon service successfully.."
+            break
+        else
+            LOG_PRINT "Start docker daemon service failed $cnt times..."
+        fi
+        sleep 5
+        cnt=$((cnt + 1))
+        if [[ $cnt -eq $RET_MAX ]]; then
+            exit 2
+        fi
+    done
 }
 
 function check_pull_agent_image()
@@ -60,13 +74,22 @@ function check_pull_agent_image()
     done
     if [[ $IS_FOUND != "YES" ]];then
        LOG_PRINT "Begin to pull ngrinder agent [$AGENT_IMG_REPO:$AGENT_IMG_TAG]..."
-       sudo docker pull $AGENT_IMG_REPO:$AGENT_IMG_TAG >> /tmp/AutoAgentProvision.log 2>&1
-       if [[ $? != 0 ]]; then
-          LOG_PRINT ">>>>>----->>>>> docker pull $AGENT_IMG_REPO:$AGENT_IMG_TAG failed..."
-          exit 2
-       else
-          LOG_PRINT "=============== docker pull $AGENT_IMG_REPO:$AGENT_IMG_TAG successfully..."
-       fi
+       cnt=1
+       while true
+       do
+            sudo docker pull $AGENT_IMG_REPO:$AGENT_IMG_TAG >> /tmp/AutoAgentProvision.log 2>&1
+            if [[ $? != 0 ]]; then
+                LOG_PRINT ">>>>>----->>>>> docker pull $AGENT_IMG_REPO:$AGENT_IMG_TAG failed $cnt times..."
+            else
+                LOG_PRINT "=============== docker pull $AGENT_IMG_REPO:$AGENT_IMG_TAG successfully..."
+                break
+            fi
+            sleep 5
+            cnt=$((cnt + 1))
+            if [[ $cnt -eq $RET_MAX ]]; then
+                exit 3
+            fi
+       done
     else
        LOG_PRINT "Agent image [$AGENT_IMG_REPO:$AGENT_IMG_TAG] is existing."
     fi
@@ -84,13 +107,22 @@ function check_start_agent_container()
         fi
     done
     if [[ $AGENT_RUNNING != "YES" ]];then
-        sudo docker run --net=host -d -e "CONTROLLER_ADDR=$AGENT_CTRL_IP:$AGENT_CTRL_PORT" $AGENT_IMG_REPO:$AGENT_IMG_TAG >>/tmp/AutoAgentProvision.log 2>&1
-        if [[ $? != 0 ]]; then
-            LOG_PRINT "Start docker container [$AGENT_CTRL_IP:$AGENT_CTRL_PORT]- [$AGENT_IMG_REPO:$AGENT_IMG_TAG] failed..."
-            exit 3
-        else
-            LOG_PRINT "Start docker container [$AGENT_CTRL_IP:$AGENT_CTRL_PORT]- [$AGENT_IMG_REPO:$AGENT_IMG_TAG] successfully..."
-	fi
+        cnt=1
+        while true
+        do
+            sudo docker run --net=host -d -e "CONTROLLER_ADDR=$AGENT_CTRL_IP:$AGENT_CTRL_PORT" $AGENT_IMG_REPO:$AGENT_IMG_TAG >>/tmp/AutoAgentProvision.log 2>&1
+            if [[ $? != 0 ]]; then
+                LOG_PRINT "Start docker container [$AGENT_CTRL_IP:$AGENT_CTRL_PORT]- [$AGENT_IMG_REPO:$AGENT_IMG_TAG] failed $cnt times..."
+            else
+                LOG_PRINT "Start docker container [$AGENT_CTRL_IP:$AGENT_CTRL_PORT]- [$AGENT_IMG_REPO:$AGENT_IMG_TAG] successfully..."
+                break
+            fi
+            sleep 5
+            cnt=$((cnt + 1))
+            if [[ $cnt -eq $RET_MAX ]]; then
+                exit 4
+            fi
+        done
     else
         LOG_PRINT "Docker container [$AGENT_CTRL_IP:$AGENT_CTRL_PORT]- [$AGENT_IMG_REPO:$AGENT_IMG_TAG] is running..."
     fi
@@ -102,10 +134,36 @@ function check_stop_remove_agent_container()
     for item in $agents
     do
         if [[ X$item != X"CONTAINER" ]];then
-            sudo docker stop $item >> /tmp/AutoAgentProvision.log 2>&1
-            sleep 1
-            sudo docker rm -f $item >> /tmp/AutoAgentProvision.log 2>&1
-            sleep 1
+            cnt=1
+            while true
+            do
+                sudo docker stop $item >> /tmp/AutoAgentProvision.log 2>&1
+                if [[ $? != 0 ]]; then
+                    LOG_PRINT "Stop container $item failed $cnt times..."
+                else
+                    LOG_PRINT "Stop container $item successfully..."
+                    break
+                fi
+                cnt=$((cnt + 1))
+                if [[ $cnt -eq $RET_MAX ]]; then
+                    break
+                fi
+            done
+            cnt=1
+            while true
+            do
+                sudo docker rm -f $item >> /tmp/AutoAgentProvision.log 2>&1
+                if [[ $? != 0 ]]; then
+                    LOG_PRINT "Remove container $item failed $cnt times..."
+                else
+                    LOG_PRINT "Remove container $item successfully..."
+                    break
+                fi
+                cnt=$((cnt + 1))
+                if [[ $cnt -eq $RET_MAX ]]; then
+                    break
+                fi
+            done
         fi
     done
 }
@@ -127,6 +185,6 @@ case $AGENT_WORK_MODE in
         ;;
      *)
         LOG_PRINT "Error, not supported operation: $AGENT_WORK_MODE"
-        exit 4
+        exit 5
         ;;
 esac

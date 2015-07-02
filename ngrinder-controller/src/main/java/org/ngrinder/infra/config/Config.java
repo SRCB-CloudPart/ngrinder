@@ -808,4 +808,41 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
 		}
 		return false;
 	}
+
+	private int runningNodeCount=0;
+	private int stoppedNodeCount=0;
+
+	/**
+	 * Set the current running EC2 node count
+	 *
+	 * @param count
+	 */
+	public void setRunningNodeCount(int count){
+		this.runningNodeCount = count;
+	}
+
+	/**
+	 * Get the current running EC2 node count
+	 *
+	 * @return
+	 */
+	public int getRunningNodeCount(){
+		return this.runningNodeCount;
+	}
+
+	/**
+	 * Set the current stopped EC2 node count
+	 *
+	 * @param count
+	 */
+	public void setStoppedNodeCount(int count){
+		this.stoppedNodeCount = count;
+	}
+
+	/**
+	 * Get the current stopped EC2 node count
+	 */
+	public int getStoppedNodeCount(){
+		return this.stoppedNodeCount;
+	}
 }
