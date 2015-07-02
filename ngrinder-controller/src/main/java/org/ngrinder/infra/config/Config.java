@@ -845,4 +845,23 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
 	public int getStoppedNodeCount(){
 		return this.stoppedNodeCount;
 	}
+
+	private int addedNodeCount = 0;
+
+	/**
+	 * Set the added EC2 node count, it is convenient to use in performance test controller to check whether the
+	 * agent count required is exceed the threshold.
+	 *
+	 * @param count
+	 */
+	public void setAddedNodeCount(int count){
+		this.addedNodeCount = count;
+	}
+	/**
+	 * Get the added node count, this number may be greater than running node count plus stopped node count,
+	 * because the bad node will be removed, but the count is also added into the added node count.
+	 */
+	public int getAddedNodeCount(){
+		return this.stoppedNodeCount;
+	}
 }

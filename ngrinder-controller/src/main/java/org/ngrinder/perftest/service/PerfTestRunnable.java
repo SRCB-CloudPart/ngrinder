@@ -99,6 +99,8 @@ public class PerfTestRunnable implements ControllerConstants {
 
 	private boolean isDynamicAgentOff = false;
 
+	private boolean isDynamicAgentInitDone = false;
+
 	@Autowired
 	private DynamicAgentHandler dynamicAgentHandler;
 
@@ -238,11 +240,9 @@ public class PerfTestRunnable implements ControllerConstants {
 				@Override
 				public void run() {
 					int neededCount = test.getAgentCount();
-					int freeCount = agentManager.getAllFreeApprovedAgentsForUser(test.getCreatedUser()).size();
-					int onCount = neededCount - freeCount;
-					if(onCount > 0) {
-						LOG.info("Begin to turn on {} EC2 instances...", onCount);
-						dynamicAgentHandler.turnOnEc2Instance(testIdentifier, onCount);
+					if(neededCount > 0) {
+						LOG.info("Begin to turn on {} EC2 instances...", neededCount);
+						dynamicAgentHandler.turnOnEc2Instance(testIdentifier, neededCount);
 						//when all the stopped nodes are turned on, change the flag isDynamicAgentOff to false
 						if (dynamicAgentHandler.getStoppedNodeCount() == 0) {
 							isDynamicAgentOff = false;
@@ -268,15 +268,15 @@ public class PerfTestRunnable implements ControllerConstants {
 		int size = dynamicAgentHandler.getAddedNodeCount();
 		int requiredAgents = test.getAgentCount();
 		int allowedMaxDynamic = config.getAgentDynamicNodeMax();
+		LOG.info("Debug: allowedMaxDynamic {}, addedNode: {}", allowedMaxDynamic, size);
 
 		if(size >= allowedMaxDynamic){
 			LOG.info("Dynamic agent count reaches the max {}, can not deploy any more...", allowedMaxDynamic);
 			return;
 		}
 
-		int freeSize = agentManager.getAllFreeApprovedAgentsForUser(test.getCreatedUser()).size();
-		final int realNeeds = requiredAgents - freeSize;
-		if((realNeeds > 0) && ((size + realNeeds) > allowedMaxDynamic)){
+		final int realNeeds = requiredAgents ;
+		if(size + requiredAgents > allowedMaxDynamic){
 			LOG.info("New test case required agents will exceed the max {}, can not deploy...", allowedMaxDynamic);
 			return;
 		}
@@ -308,21 +308,22 @@ public class PerfTestRunnable implements ControllerConstants {
 			if(nodeIpEc2UpTimeMap.isEmpty()){
 				toCreate = false;
 			}else {
-				toCreate = isToCreate(approvedAgentIPs, testIdentifier, nodeIpEc2UpTimeMap);
+				toCreate = isToCreate(approvedAgentIPs, nodeIpEc2UpTimeMap);
 			}
 		}else{
 			/*
-			 * ngrinder controller startup condition, if the agent is not ready from run/on operation
+			 * ngrinder controller startup condition, if the agent is not ready from create/on operation
 			 */
-			nodeIpEc2UpTimeMap = dynamicAgentHandler.getTestIdEc2NodeStatusMap(dynamicAgentHandler.KEY_FOR_STARTUP);
-			LOG.info("Debug: " + nodeIpEc2UpTimeMap);
-			//null or empty means the initialization to list ec2 status is not ready
-			if(nodeIpEc2UpTimeMap == null || nodeIpEc2UpTimeMap.isEmpty()){
-				toCreate = false;
-				LOG.info("Debug: not null or empty, toCreate=" + toCreate);
+			if(isDynamicAgentInitDone){
+				toCreate = true;
 			}else {
-				toCreate = isToCreate(approvedAgentIPs, testIdentifier, nodeIpEc2UpTimeMap);
-				LOG.info("Debug: null or empty, toCreate=" + toCreate);
+				int ret = isDynamicAgentInitFinished(approvedAgentIPs);
+				LOG.info("isDynamicAgentInitFinished ret: " + ret);
+				if(ret > 0){
+					isDynamicAgentInitDone = true;
+				}else{
+					isDynamicAgentInitDone = false;
+				}
 			}
 		}
 		LOG.info("toCreate flag: " + toCreate);
@@ -342,7 +343,45 @@ public class PerfTestRunnable implements ControllerConstants {
 		}
 	}
 
-	private boolean isToCreate(Set<String> approvedAgentIPs, String testIdentifier, Map<String, Long> nodeIpEc2UpTimeMap) {
+	private int isDynamicAgentInitFinished(Set<String> approvedAgentIPs){
+		/*
+	     * ngrinder controller startup condition, if the agent is not ready from create/on operation
+		 */
+		Map<String, Long> nodeIpEc2UpTimeMap = dynamicAgentHandler.getTestIdEc2NodeStatusMap(dynamicAgentHandler.KEY_FOR_STARTUP);
+		int containedCount = 0;
+		List <String> ipList = Lists.newArrayList();
+		int timeOutCnt = 0;
+		final List<String> nodeIdList = Lists.newArrayList();
+		for(String ip: nodeIpEc2UpTimeMap.keySet()) {
+			String tip = ip.replace("[", "");
+			tip = tip.replace("]", "");
+			LOG.info("check init -- ip: {}, tip: {}", ip, tip);
+			if (approvedAgentIPs.contains(tip)) {
+				LOG.info("ip: {} is in approved agent list", tip);
+				containedCount++;
+			}else{
+				boolean timeOut = dynamicAgentHandler.isTimeoutOfAgentRunningUp(nodeIpEc2UpTimeMap.get(ip));
+				if(timeOut){
+					timeOutCnt++;
+					ipList.add(ip);
+					String id = dynamicAgentHandler.getNodeIdByPrivateIp(ip);
+					if(id != null){
+						nodeIdList.add(id);
+					}
+				}
+			}
+		}
+		if(containedCount == nodeIpEc2UpTimeMap.size() && containedCount > 0){
+			return 1;
+		}else if(timeOutCnt > 0){
+			removeBadEc2Nodes(nodeIpEc2UpTimeMap, nodeIdList, ipList);
+			return 2;
+		}else{
+			return 0;
+		}
+	}
+
+	private boolean isToCreate(Set<String> approvedAgentIPs, Map<String, Long> nodeIpEc2UpTimeMap) {
 		int containedCount = 0;
 		final List<String> nodeIdList = Lists.newArrayList();
 		List <String> ipList = Lists.newArrayList();
@@ -350,7 +389,7 @@ public class PerfTestRunnable implements ControllerConstants {
 		for(String ip: nodeIpEc2UpTimeMap.keySet()) {
 			String tip = ip.replace("[", "");
 			tip = tip.replace("]", "");
-			LOG.info("ip: {}, tip: {}", ip, tip);
+			LOG.info("check create -- ip: {}, tip: {}", ip, tip);
             if (approvedAgentIPs.contains(tip)) {
 				LOG.info("ip: {} is in approved agent list", tip);
 				containedCount++;
@@ -366,30 +405,32 @@ public class PerfTestRunnable implements ControllerConstants {
 				}
 			}
         }
-		if(containedCount == nodeIpEc2UpTimeMap.size() && containedCount > 0) {
-			return true;
+		if(containedCount == nodeIpEc2UpTimeMap.size() && containedCount > 0){
+			return false;
 		}else{
 			if(timeOutCnt > 0){
-				if(nodeIdList.size() > 0) {
-					LOG.info("begin to terminate {} nodes because of timeout..", nodeIdList.size());
-					for (String ip : ipList) {
-						nodeIpEc2UpTimeMap.remove(ip);
-					}
-					Runnable termEc2NodeRunnable = new Runnable() {
-						@Override
-						public void run() {
-							dynamicAgentHandler.terminateEc2Instance(nodeIdList);
-						}
-					};
-					scheduledTaskService.runAsync(termEc2NodeRunnable);
-					return true;
-				}else{ //there is no running nodes, maybe guard time expired???
-					return true;
-				}
+				removeBadEc2Nodes(nodeIpEc2UpTimeMap, nodeIdList, ipList);
+				return true;
 			}else {
 				return false;
 			}
 		}
+	}
+
+	private void removeBadEc2Nodes(Map<String, Long> nodeIpEc2UpTimeMap, final List<String> nodeIdList, List<String> ipList) {
+		if(nodeIdList.size() > 0) {
+            LOG.info("begin to terminate {} nodes because of timeout..", nodeIdList.size());
+            for (String ip : ipList) {
+                nodeIpEc2UpTimeMap.remove(ip);
+            }
+            Runnable termEc2NodeRunnable = new Runnable() {
+                @Override
+                public void run() {
+                    dynamicAgentHandler.terminateEc2Instance(nodeIdList);
+                }
+            };
+            scheduledTaskService.runAsync(termEc2NodeRunnable);
+        }
 	}
 
 	private PerfTest getRunnablePerfTest() {

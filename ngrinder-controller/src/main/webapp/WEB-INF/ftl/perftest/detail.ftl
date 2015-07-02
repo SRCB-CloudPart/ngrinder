@@ -977,13 +977,16 @@ function changeAgentMaxCount(region, isValid) {
 	}
 	$("#maxAgentCount").text(count);
 
+	var $agentCountObj = $("#agent_count");
 	<#if dynamicAgentEnabled == false>
-        var $agentCountObj = $("#agent_count");
-
         $agentCountObj.rules("add", {
             max: count
         });
-    </#if>
+    <#else>
+        $agentCountObj.rules("add", {
+            max: ${allowedNodeCount} + ${addedNodeCount}
+        });
+	</#if>
 
 	if (isValid) {
 		$agentCountObj.valid();

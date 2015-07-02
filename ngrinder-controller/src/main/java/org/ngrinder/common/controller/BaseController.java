@@ -191,6 +191,16 @@ public class BaseController implements WebConstants {
 	}
 
 	/**
+	 * Provide the added node count of current system
+	 *
+	 * @return added node count
+	 */
+	@ModelAttribute("addedNodeCount")
+	public int addedNodeCount() {
+		return config.getAddedNodeCount();
+	}
+
+	/**
 	 * Provide the boolean value representing that dynamic agent feature enabled or not as a model attributes.
 	 *
 	 * @return dynamic agent feature enabled mark

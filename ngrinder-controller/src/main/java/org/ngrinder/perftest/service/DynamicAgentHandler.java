@@ -495,6 +495,7 @@ public class DynamicAgentHandler {
 
                     LOG.info(">> begin to create {} in group {}", nodeIdList.size(), groupName);
                     addedNodeCount.getAndSet(nodeIdList.size());
+                    config.setAddedNodeCount(addedNodeCount.get());
                     List<String> addList = newArrayList();
                     Set<? extends NodeMetadata> nodes = compute.createNodesInGroup(groupName, nodeIdList.size(), template);
                     for (NodeMetadata node: nodes) {
@@ -611,6 +612,7 @@ public class DynamicAgentHandler {
                     }
                     SetCurrentNodeCount();
                     addedNodeCount.getAndSet(runningNodeMap.size() + stoppedNodeMap.size());
+                    config.setAddedNodeCount(addedNodeCount.get());
                     LOG.info(">> total number available {} nodes in group {}", addedNodeCount.get(), groupName);
                     break;
 
