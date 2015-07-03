@@ -54,6 +54,7 @@ import static com.google.common.base.Predicates.not;
 import static com.google.common.collect.Iterables.concat;
 import static com.google.common.collect.Lists.newArrayList;
 import static com.google.common.collect.Maps.newHashMap;
+import static com.google.common.collect.Sets.newHashSet;
 import static org.jclouds.aws.ec2.reference.AWSEC2Constants.PROPERTY_EC2_AMI_QUERY;
 import static org.jclouds.aws.ec2.reference.AWSEC2Constants.PROPERTY_EC2_CC_AMI_QUERY;
 import static org.jclouds.compute.config.ComputeServiceProperties.TIMEOUT_SCRIPT_COMPLETE;
@@ -91,6 +92,24 @@ public class DynamicAgentHandler {
 
     @Autowired
     private Config config;
+
+    /*
+     * This is a flag which is used to sync the operation in this bean and perfTestRunnable. Because this
+     * dynamic agent feature has two cases: one is enabled when ngrinder controller to start up, the other
+     * case is to enable this feature after ngrinder controller start up. Both cases, controller have to
+     * know the existing nodes under the specified group name used by JClouds. To avoid data mismatch, in
+     * case one, then permit to do list nodes again. For case two, should do list nodes before to run test
+     * case.
+     */
+    private static boolean initStartedFlag = false;
+
+    public boolean getInitStartedFlag(){
+        return initStartedFlag;
+    }
+
+    public void setInitStartedFlag(boolean started){
+        initStartedFlag = started;
+    }
 
     /*
      * <PerfTest identifier, <EC2 instance private IP, time stamp when instance is created>
@@ -152,12 +171,12 @@ public class DynamicAgentHandler {
      * in the approved agent list, if the timer expires, and the agent with the private IP of the new
      * created EC2 node does not appear, to allow to add new EC2 if possible)
      *
-     * This timer unit is in millisecond (10 minutes). the time gap depends on the network speed, because
+     * This timer unit is in millisecond (30 minutes). the time gap depends on the network speed, because
      * it will cost time to download agent from ngrinder controller after the new created EC2 instance to
      * run docker container.
      * Note: this timer should be greater than the dynamic agent guard time defined in system.conf
      */
-    private long monitoringAgentUpTimeThreshold = 10 * 60 * 1000 * 1000;
+    private long monitoringAgentUpTimeThreshold = 30 * 60 * 1000;
 
     public boolean isTimeoutOfAgentRunningUp(long timeStamp){
         long current = System.currentTimeMillis();
@@ -180,6 +199,12 @@ public class DynamicAgentHandler {
     private Map<String, String> stoppedNodeMap = newHashMap();
     public int getStoppedNodeCount(){
         return stoppedNodeMap.size();
+    }
+
+    private Set<String> turningOnSet = newHashSet();
+
+    public int getTurningOnSetCount(){
+        return turningOnSet.size();
     }
 
     public String getNodeIdByPrivateIp(String ip){
@@ -237,6 +262,7 @@ public class DynamicAgentHandler {
         testIdEc2NodeStatusMap = Collections.synchronizedMap(testIdEc2NodeStatusMap);
         runningNodeMap = Collections.synchronizedMap(runningNodeMap);
         stoppedNodeMap = Collections.synchronizedMap(stoppedNodeMap);
+        turningOnSet = Collections.synchronizedSet(turningOnSet);
 
         initEnvironment();
     }
@@ -266,22 +292,25 @@ public class DynamicAgentHandler {
      * or to add one EC2 node. if there is node is running, do nothing.
      */
     public void initFirstOneEc2Instance(){
-        if(config.isAgentDynamicEc2Enabled()) {
-            setProviderIdCredentialForEc2();
-            setTestIdEc2NodeStatusMap(KEY_FOR_STARTUP);
-            dynamicAgentCommand("list", KEY_FOR_STARTUP, null);
-            if (runningNodeMap.size() == 0 && stoppedNodeMap.size() == 0) {
-                setScriptName("add.sh");
-                List<String> nodeIdList = newArrayList();
-                nodeIdList.add("" + 1);
-                dynamicAgentCommand("add", KEY_FOR_STARTUP, nodeIdList);
-            }else if(runningNodeMap.size() == 0 && stoppedNodeMap.size() > 0){
-                setScriptName("on.sh");
-                List<String> nodeIdList = newArrayList();
-                nodeIdList.add("" + 1);
-                dynamicAgentCommand("on", KEY_FOR_STARTUP, nodeIdList);
-            }
+        doListEc2NodeInfo();
+        if (runningNodeMap.size() == 0 && stoppedNodeMap.size() == 0) {
+            setScriptName("add.sh");
+            List<String> nodeIdList = newArrayList();
+            nodeIdList.add("" + 1);
+            dynamicAgentCommand("add", KEY_FOR_STARTUP, nodeIdList);
+        }else if(runningNodeMap.size() == 0 && stoppedNodeMap.size() > 0){
+            setScriptName("on.sh");
+            List<String> nodeIdList = newArrayList();
+            prepareNodeIdList(1, nodeIdList, stoppedNodeMap);
+            syncNodeIdFromStoppedToTurningOn(nodeIdList);
+            dynamicAgentCommand("on", KEY_FOR_STARTUP, nodeIdList);
         }
+    }
+
+    private void doListEc2NodeInfo(){
+        setProviderIdCredentialForEc2();
+        setTestIdEc2NodeStatusMap(KEY_FOR_STARTUP);
+        dynamicAgentCommand("list", KEY_FOR_STARTUP, null);
     }
 
     /**
@@ -292,17 +321,15 @@ public class DynamicAgentHandler {
      * @param requiredNum
      */
     public void addDynamicEc2Instance(String testIdentifier, int requiredNum){
-        if(config.isAgentDynamicEc2Enabled()) {
-            setProviderIdCredentialForEc2();
-            setScriptName("add.sh");
-            setTestIdEc2NodeStatusMap(testIdentifier);
-            List<String> nodeIdList = newArrayList();
-            //Here, the content for nodeIdList has no meaning
-            for(int i=0; i<requiredNum; i++) {
-                nodeIdList.add("" + i);
-            }
-            dynamicAgentCommand("add", testIdentifier, nodeIdList);
+        setProviderIdCredentialForEc2();
+        setScriptName("add.sh");
+        setTestIdEc2NodeStatusMap(testIdentifier);
+        List<String> nodeIdList = newArrayList();
+        //Here, the content for nodeIdList has no meaning
+        for(int i=0; i<requiredNum; i++) {
+            nodeIdList.add("" + i);
         }
+        dynamicAgentCommand("add", testIdentifier, nodeIdList);
     }
 
     /**
@@ -311,10 +338,8 @@ public class DynamicAgentHandler {
      * @param nodeIdList
      */
     public void terminateEc2Instance(List<String> nodeIdList){
-        if(config.isAgentDynamicEc2Enabled()) {
-            //setProviderIdCredentialForEc2();
-            dynamicAgentCommand("destroy", "", nodeIdList);
-        }
+        //setProviderIdCredentialForEc2();
+        dynamicAgentCommand("destroy", "", nodeIdList);
     }
 
     /**
@@ -324,22 +349,32 @@ public class DynamicAgentHandler {
      * @param requiredNum
      */
     public void turnOnEc2Instance(String testIdentifier, int requiredNum){
-        if(config.isAgentDynamicEc2Enabled()) {
-            if (stoppedNodeMap.size() >= requiredNum) {
-                setProviderIdCredentialForEc2();
-                setScriptName("on.sh");
-                setTestIdEc2NodeStatusMap(testIdentifier);
-                List<String> nodeIdList = newArrayList();
-                prepareNodeIdList(requiredNum, nodeIdList, stoppedNodeMap);
-                dynamicAgentCommand("on", testIdentifier, nodeIdList);
-            }
+        if (stoppedNodeMap.size() >= requiredNum) {
+            setProviderIdCredentialForEc2();
+            setScriptName("on.sh");
+            setTestIdEc2NodeStatusMap(testIdentifier);
+            List<String> nodeIdList = newArrayList();
+            prepareNodeIdList(requiredNum, nodeIdList, stoppedNodeMap);
+            syncNodeIdFromStoppedToTurningOn(nodeIdList);
+            dynamicAgentCommand("on", testIdentifier, nodeIdList);
+        }
+    }
+
+    private void syncNodeIdFromStoppedToTurningOn(List<String> nodeIdList){
+        for(String id: nodeIdList){
+            turningOnSet.add(id);
         }
     }
 
     private void prepareNodeIdList(int requiredNum, List<String> nodeIdList, Map<String, String> map) {
         int cnt=0;
+        LOG.info("need to prepare {} node id list", requiredNum);
         for(String id: map.keySet()) {
+            if(turningOnSet.contains(id)) {
+                continue;
+            }
             nodeIdList.add(id);
+            LOG.info("node ID: {}", id);
             cnt++;
             if(cnt == requiredNum){
                 break;
@@ -351,11 +386,9 @@ public class DynamicAgentHandler {
      * Turn off the EC2 instance when the guard time expired, to save cost.
      */
     public void turnOffEc2Instance(){
-        if(config.isAgentDynamicEc2Enabled()) {
-            setProviderIdCredentialForEc2();
-            setScriptName("off.sh");
-            dynamicAgentCommand("off", "", null);
-        }
+        setProviderIdCredentialForEc2();
+        setScriptName("off.sh");
+        dynamicAgentCommand("off", "", null);
     }
 
     private void registerShutdownHook(){
@@ -411,6 +444,13 @@ public class DynamicAgentHandler {
                 return "inGivenList(" + givenList + ")";
             }
         };
+    }
+
+    private String getPrueIpString(String tip) {
+        String ip = tip.replace("[", "");
+        ip = ip.replace("]", "");
+        LOG.info("tip: {}, ip: {}", tip, ip);
+        return ip;
     }
 
     private ComputeService initComputeService(String provider, String identity, String credential) {
@@ -480,6 +520,8 @@ public class DynamicAgentHandler {
         ComputeService compute = initComputeService(provider, identity, credential);
 
         String groupName = generateUniqueGroupName();
+        LOG.info("current system has {} EC2 nodes in group {}", addedNodeCount.get(), groupName);
+
         getEnvToGenerateScript();
 
         try {
@@ -494,16 +536,18 @@ public class DynamicAgentHandler {
                     Template template = templateBuilder.build();
 
                     LOG.info(">> begin to create {} in group {}", nodeIdList.size(), groupName);
-                    addedNodeCount.getAndSet(nodeIdList.size());
+                    addedNodeCount.getAndAdd(nodeIdList.size());
                     config.setAddedNodeCount(addedNodeCount.get());
                     List<String> addList = newArrayList();
                     Set<? extends NodeMetadata> nodes = compute.createNodesInGroup(groupName, nodeIdList.size(), template);
+                    long addTimeStamp = System.currentTimeMillis();
                     for (NodeMetadata node: nodes) {
                         String id = node.getId();
+                        String ip = getPrueIpString(node.getPrivateAddresses().toString());
                         LOG.info("<< added node: {} {}", id, concat(node.getPrivateAddresses(), node.getPublicAddresses()));
                         addList.add(id);
-                        runningNodeMap.put(id, node.getPrivateAddresses().toString());
-                        newAddedNodeMap.put(node.getPrivateAddresses().toString(), System.currentTimeMillis());
+                        runningNodeMap.put(id, ip);
+                        newAddedNodeMap.put(ip, addTimeStamp);
                     }
                     SetCurrentNodeCount();
 
@@ -539,23 +583,27 @@ public class DynamicAgentHandler {
                     Set<? extends NodeMetadata> turnOff = compute.suspendNodesMatching(Predicates.and(RUNNING, inGroup(groupName)));
                     for(NodeMetadata node: turnOff){
                         String id = node.getId();
+                        String tip = node.getPrivateAddresses().toString();
                         LOG.info("<< turn off node {}", node);
-                        stoppedNodeMap.put(id, node.getPrivateAddresses().toString());
+                        stoppedNodeMap.put(id, getPrueIpString(tip));
                         runningNodeMap.remove(id);
                     }
+                    turningOnSet.clear();
                     SetCurrentNodeCount();
                     break;
 
                 case ON:
                     LOG.info(">> begin to turn on node(s) in group {} as {}", groupName, login.identity);
+                    LOG.info(">> nodeIdList content: {}", nodeIdList);
                     Set<? extends NodeMetadata> turnOn = compute.resumeNodesMatching(Predicates.and(SUSPENDED, inGivenList(nodeIdList)));
+                    long onTimeStamp = System.currentTimeMillis();
                     for (NodeMetadata node: turnOn) {
                         String id = node.getId();
-                        String ip = node.getPrivateAddresses().toString();
+                        String ip = getPrueIpString(node.getPrivateAddresses().toString());
                         LOG.info("<< turned on node: {}", id);
                         runningNodeMap.put(id, ip);
                         stoppedNodeMap.remove(id);
-                        newAddedNodeMap.put(ip, System.currentTimeMillis());
+                        newAddedNodeMap.put(ip, onTimeStamp);
                     }
                     SetCurrentNodeCount();
 
@@ -585,27 +633,30 @@ public class DynamicAgentHandler {
                     // you can use predicates to select which nodes you wish to destroy.
                     Set<? extends NodeMetadata> destroyed = compute.destroyNodesMatching(Predicates.and(not(TERMINATED), destroyPredicate));
                     for(NodeMetadata node: destroyed) {
-                        runningNodeMap.remove(node.getId());
-                        stoppedNodeMap.remove(node.getId());
+                        String id = node.getId();
+                        runningNodeMap.remove(id);
+                        stoppedNodeMap.remove(id);
+                        turningOnSet.remove(id);
                         addedNodeCount.getAndDecrement();
                         LOG.info("<< destroyed node: {}", node);
                     }
                     LOG.info("<< nodes are destroyed... ");
                     SetCurrentNodeCount();
+                    config.setAddedNodeCount(addedNodeCount.get());
                     break;
 
                 case LIST:
                     LOG.info(">> begin to list nodes status in group {}", groupName);
                     Set<? extends NodeMetadata> gnodes = compute.listNodesDetailsMatching(nodeNameStartsWith(groupName));
                     LOG.info(">> total number nodes/instances {} in group {}", gnodes.size(), groupName);
-                    long currentTime = System.currentTimeMillis();
+                    long listTimeStamp = System.currentTimeMillis();
                     for (NodeMetadata nodeData : gnodes) {
                         LOG.info("    >> " + nodeData);
                         Status status = nodeData.getStatus();
-                        String ip = nodeData.getPrivateAddresses().toString();
+                        String ip = getPrueIpString(nodeData.getPrivateAddresses().toString());
                         if(status == Status.RUNNING){
                             runningNodeMap.put(nodeData.getId(), ip);
-                            newAddedNodeMap.put(ip, currentTime);
+                            newAddedNodeMap.put(ip, listTimeStamp);
                         }else if(status == Status.SUSPENDED){
                             stoppedNodeMap.put(nodeData.getId(), ip);
                         }
@@ -613,6 +664,7 @@ public class DynamicAgentHandler {
                     SetCurrentNodeCount();
                     addedNodeCount.getAndSet(runningNodeMap.size() + stoppedNodeMap.size());
                     config.setAddedNodeCount(addedNodeCount.get());
+                    config.setIsListInfoDone(true);
                     LOG.info(">> total number available {} nodes in group {}", addedNodeCount.get(), groupName);
                     break;
 

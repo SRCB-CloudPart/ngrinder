@@ -210,6 +210,17 @@ public class BaseController implements WebConstants {
 		return config.isAgentDynamicEc2Enabled();
 	}
 
+	/**
+	 * Because the JCloud API operate the EC2 is very slow, only controller knows the status of existing system,
+	 * to allow user control dynamic agent.
+	 *
+	 * @return dynamic agent feature enabled mark
+	 */
+	@ModelAttribute("isListInfoDone")
+	public boolean isListInfoDone() {
+		return config.getIsListInfoDone();
+	}
+
 
 	/**
 	 * Provide the help URL as a model attribute.

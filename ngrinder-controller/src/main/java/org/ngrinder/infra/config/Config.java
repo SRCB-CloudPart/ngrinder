@@ -744,11 +744,16 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
 
 	/**
 	 * Get the configured guard time which is used to prevent VM created but not to use in long time
+	 * check if it is shorter than 60 minutes, if yes, set it as 60
 	 *
 	 * @return guard time
 	 */
 	public int getAgentDynamicGuardTime(){
-		return getDynamicAgentProperties().getPropertyInt(PROP_AGENT_DYNAMIC_GUARD_TIME);
+		int time = getDynamicAgentProperties().getPropertyInt(PROP_AGENT_DYNAMIC_GUARD_TIME);
+		if(time < 60){
+			return 60;
+		}
+		return time;
 	}
 
 	/**
@@ -815,7 +820,7 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
 	/**
 	 * Set the current running EC2 node count
 	 *
-	 * @param count
+	 * @param count current running node count
 	 */
 	public void setRunningNodeCount(int count){
 		this.runningNodeCount = count;
@@ -824,7 +829,7 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
 	/**
 	 * Get the current running EC2 node count
 	 *
-	 * @return
+	 * @return current running node count
 	 */
 	public int getRunningNodeCount(){
 		return this.runningNodeCount;
@@ -833,7 +838,7 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
 	/**
 	 * Set the current stopped EC2 node count
 	 *
-	 * @param count
+	 * @param count current stopped EC2 node count
 	 */
 	public void setStoppedNodeCount(int count){
 		this.stoppedNodeCount = count;
@@ -852,7 +857,7 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
 	 * Set the added EC2 node count, it is convenient to use in performance test controller to check whether the
 	 * agent count required is exceed the threshold.
 	 *
-	 * @param count
+	 * @param count the current added EC2 node number
 	 */
 	public void setAddedNodeCount(int count){
 		this.addedNodeCount = count;
@@ -862,6 +867,27 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
 	 * because the bad node will be removed, but the count is also added into the added node count.
 	 */
 	public int getAddedNodeCount(){
-		return this.stoppedNodeCount;
+		return this.addedNodeCount;
+	}
+
+
+	private boolean isListInfoDone = false;
+
+	/**
+	 * This param is used to indicate the parameter range check on web UI, if not done, just as this feature is
+	 * not eanbled
+	 *
+	 * @param done true or false
+	 */
+	public void setIsListInfoDone(boolean done){
+		this.isListInfoDone = done;
+	}
+
+	/**
+	 * Get status whether the list node status done or not
+	 * @return whether list information is done
+	 */
+	public boolean getIsListInfoDone(){
+		return this.isListInfoDone;
 	}
 }

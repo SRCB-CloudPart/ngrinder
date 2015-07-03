@@ -369,11 +369,13 @@ public class PerfTestController extends BaseController {
 				checkArgument(newOne.getAgentCount() >= 1, "agentCount should be more than 1 when it's READY status.");
 			}
 		}else{
+			int agentMaxCount = agentCountObj.intValue();
 			int reqCount = newOne.getAgentCount();
 			int max = getConfig().getAgentDynamicNodeMax();
 			int added = getConfig().getAddedNodeCount();
-			checkArgument(reqCount < max, "required dynamic agent count %s should not exceed %s", reqCount, max);
-			checkArgument((reqCount + added) < max,	"total dynamic agent count (%s + %s) should not exceed %s",	reqCount, added, max);
+			int maxCountAllowed = max - added + agentMaxCount;
+
+			checkArgument(reqCount <= maxCountAllowed, "current max allowed dynamic agent count %s should not exceed %s",	reqCount, maxCountAllowed);
 		}
 
 		checkArgument(newOne.getVuserPerAgent() <= agentManager.getMaxVuserPerAgent(),
