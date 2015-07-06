@@ -395,7 +395,9 @@ public class DynamicAgentHandler {
         Thread thread = new Thread(){
             @Override
             public void run() {
-                terminateEc2Instance(null);
+                if(config.isAgentDynamicEc2Enabled()) {
+                    terminateEc2Instance(null);
+                }
             }
         };
         LOG.info("Register shutdown hook to destroy the created EC2 instance when controller daemon shut down...");

@@ -751,6 +751,7 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
 	public int getAgentDynamicGuardTime(){
 		int time = getDynamicAgentProperties().getPropertyInt(PROP_AGENT_DYNAMIC_GUARD_TIME);
 		if(time < 60){
+			LOG.warn("Guard time threshold should be greater than 60 minutes, change it to 60 minutes by system now...");
 			return 60;
 		}
 		return time;
