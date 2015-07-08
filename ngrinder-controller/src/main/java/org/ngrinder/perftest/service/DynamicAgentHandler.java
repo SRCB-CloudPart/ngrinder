@@ -38,6 +38,7 @@ import org.ngrinder.infra.config.Config;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Profile;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
 
@@ -50,7 +51,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static com.google.common.base.Charsets.UTF_8;
 import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.base.Predicates.not;
 import static com.google.common.collect.Iterables.concat;
 import static com.google.common.collect.Lists.newArrayList;
 import static com.google.common.collect.Maps.newHashMap;
@@ -59,7 +59,8 @@ import static org.jclouds.aws.ec2.reference.AWSEC2Constants.PROPERTY_EC2_AMI_QUE
 import static org.jclouds.aws.ec2.reference.AWSEC2Constants.PROPERTY_EC2_CC_AMI_QUERY;
 import static org.jclouds.compute.config.ComputeServiceProperties.TIMEOUT_SCRIPT_COMPLETE;
 import static org.jclouds.compute.options.TemplateOptions.Builder.overrideLoginCredentials;
-import static org.jclouds.compute.predicates.NodePredicates.*;
+import static org.jclouds.compute.predicates.NodePredicates.RUNNING;
+import static org.jclouds.compute.predicates.NodePredicates.SUSPENDED;
 import static org.jclouds.ec2.compute.options.EC2TemplateOptions.Builder.runScript;
 
 /**
@@ -85,6 +86,7 @@ import static org.jclouds.ec2.compute.options.EC2TemplateOptions.Builder.runScri
  * @author shihuc
  * @since 3.4
  */
+@Profile("production")
 @Component("dyanmicAgent")
 public class DynamicAgentHandler {
 
@@ -126,7 +128,7 @@ public class DynamicAgentHandler {
      * Get the node status map with the specified test identifier, the map contains the timestamp when
      * EC2 node becomes running status, the node ID is the map key.
      *
-     * @param testIdentifier
+     * @param testIdentifier the test identifier
      * @return node status map data
      */
     public Map<String, Long> getTestIdEc2NodeStatusMap(String testIdentifier){
@@ -136,9 +138,9 @@ public class DynamicAgentHandler {
     /**
      * Initialize the node status map for the specified test identifier
      *
-     * @param testIdentifier
+     * @param testIdentifier the test identifier
      */
-    private void setTestIdEc2NodeStatusMap(String testIdentifier){
+    public void setTestIdEc2NodeStatusMap(String testIdentifier){
         Map<String, Long> newAddedNodeIpUpTimeMap = newHashMap();
         testIdEc2NodeStatusMap.put(testIdentifier, newAddedNodeIpUpTimeMap);
     }
@@ -160,10 +162,7 @@ public class DynamicAgentHandler {
                 testCount++;
             }
         }
-        if(testCount > 0){
-            return true;
-        }
-        return false;
+        return testCount > 0;
     }
 
     /*
@@ -176,14 +175,10 @@ public class DynamicAgentHandler {
      * run docker container.
      * Note: this timer should be greater than the dynamic agent guard time defined in system.conf
      */
-    private long monitoringAgentUpTimeThreshold = 30 * 60 * 1000;
-
     public boolean isTimeoutOfAgentRunningUp(long timeStamp){
+        long monitoringAgentUpTimeThreshold = 30 * 60 * 1000;
         long current = System.currentTimeMillis();
-        if((current - timeStamp) > monitoringAgentUpTimeThreshold){
-            return true;
-        }
-        return false;
+        return (current - timeStamp) > monitoringAgentUpTimeThreshold;
     }
 
     /*
@@ -226,7 +221,7 @@ public class DynamicAgentHandler {
     private String credential = null;
     private String scriptTemplatePath = null;
     private String scriptName = "";
-    private LoginCredentials addOnOffLogin = getLoginCredential();
+    private LoginCredentials addOnOffLogin = null;
 
     public void setProvider(String provider) {
         this.provider = provider;
@@ -264,6 +259,7 @@ public class DynamicAgentHandler {
         stoppedNodeMap = Collections.synchronizedMap(stoppedNodeMap);
         turningOnSet = Collections.synchronizedSet(turningOnSet);
 
+        addOnOffLogin = getLoginCredential();
         initEnvironment();
     }
 
@@ -317,8 +313,8 @@ public class DynamicAgentHandler {
      * If there is not enough agent to use, and no enough stopped node to turn on, then to do add
      * new EC2 node for this test
      *
-     * @param testIdentifier
-     * @param requiredNum
+     * @param testIdentifier the test identifier
+     * @param requiredNum the required agent count
      */
     public void addDynamicEc2Instance(String testIdentifier, int requiredNum){
         setProviderIdCredentialForEc2();
@@ -335,7 +331,7 @@ public class DynamicAgentHandler {
     /**
      * Terminate the EC2 instances for timeout or when ngrinder controller exit
      *
-     * @param nodeIdList
+     * @param nodeIdList the node ID list which will indicate which node should be terminated
      */
     public void terminateEc2Instance(List<String> nodeIdList){
         //setProviderIdCredentialForEc2();
@@ -345,8 +341,8 @@ public class DynamicAgentHandler {
     /**
      * If there is new test case is ready, then to turn on the stopped node if there is enough.
      *
-     * @param testIdentifier
-     * @param requiredNum
+     * @param testIdentifier the test identifier
+     * @param requiredNum the node count implies how many node should be turned on
      */
     public void turnOnEc2Instance(String testIdentifier, int requiredNum){
         if (stoppedNodeMap.size() >= requiredNum) {
@@ -388,7 +384,11 @@ public class DynamicAgentHandler {
     public void turnOffEc2Instance(){
         setProviderIdCredentialForEc2();
         setScriptName("off.sh");
-        dynamicAgentCommand("off", "", null);
+        List<String> runningNodes = newArrayList();
+        for(String id: runningNodeMap.keySet()){
+            runningNodes.add(id);
+        }
+        dynamicAgentCommand("off", "", runningNodes);
     }
 
     private void registerShutdownHook(){
@@ -396,7 +396,14 @@ public class DynamicAgentHandler {
             @Override
             public void run() {
                 if(config.isAgentDynamicEc2Enabled()) {
-                    terminateEc2Instance(null);
+                    List<String> termList = newArrayList();
+                    for(String id: runningNodeMap.keySet()){
+                        termList.add(id);
+                    }
+                    for(String id: stoppedNodeMap.keySet()){
+                        termList.add(id);
+                    }
+                    terminateEc2Instance(termList);
                 }
             }
         };
@@ -410,15 +417,12 @@ public class DynamicAgentHandler {
         String controllerIP = config.getAgentDynamicControllerIP();
         String controllerPort = config.getAgentDynamicControllerPort();
 
-        LOG.info("Container IP: " + controllerIP + ", Container Port: " + controllerPort +
-                ", Repo: " + dockerImageRepo + ", Tag: " + dockerImageTag);
-
         generateScriptBasedOnTemplate(controllerIP, controllerPort, dockerImageRepo, dockerImageTag, "add");
         generateScriptBasedOnTemplate(controllerIP, controllerPort, dockerImageRepo, dockerImageTag, "off");
         generateScriptBasedOnTemplate(controllerIP, controllerPort, dockerImageRepo, dockerImageTag, "on");
     }
 
-    private Predicate<ComputeMetadata> nodeNameStartsWith(final String nodeNamePrefix) {
+    protected Predicate<ComputeMetadata> nodeNameStartsWith(final String nodeNamePrefix) {
         checkNotNull(nodeNamePrefix, "reasonable node name prefix must be provided");
         return new Predicate<ComputeMetadata>(){
             @Override
@@ -433,7 +437,7 @@ public class DynamicAgentHandler {
         };
     }
 
-    private Predicate<NodeMetadata> inGivenList(final List<String> givenList) {
+    protected Predicate<NodeMetadata> inGivenList(final List<String> givenList) {
         checkNotNull(givenList, "reasonable given list must be provided");
         return new Predicate<NodeMetadata>() {
             @Override
@@ -455,7 +459,7 @@ public class DynamicAgentHandler {
         return ip;
     }
 
-    private ComputeService initComputeService(String provider, String identity, String credential) {
+    protected ComputeService initComputeService(String provider, String identity, String credential) {
 
         // specific properties, in this case optimizing image list to only amazon supplied
         Properties properties = new Properties();
@@ -493,7 +497,7 @@ public class DynamicAgentHandler {
      */
     public void dynamicAgentCommand(String actionCmd, String testIdentifier, List<String> nodeIdList) {
 
-        String cnt = "";
+        String cnt;
         if(nodeIdList == null){
             cnt = " all nodes";
         }else{
@@ -501,8 +505,7 @@ public class DynamicAgentHandler {
         }
         LOG.info("action: " + actionCmd + ", test id: " + testIdentifier + ", count: " + cnt);
 
-        checkNotNull(identity, "identity can not be null or empty");
-        checkNotNull(credential, "credential can not be null or empty");
+        ComputeService compute = getComputeService();
 
         Action action = Action.valueOf(actionCmd.toUpperCase());
 
@@ -517,10 +520,6 @@ public class DynamicAgentHandler {
             checkNotNull(newAddedNodeMap, "test identifier mapped node status map must be initialized");
         }
 
-        LoginCredentials login =  (action != Action.DESTROY && action != Action.LIST) ? addOnOffLogin : null;
-
-        ComputeService compute = initComputeService(provider, identity, credential);
-
         String groupName = generateUniqueGroupName();
         LOG.info("current system has {} EC2 nodes in group {}", addedNodeCount.get(), groupName);
 
@@ -529,6 +528,8 @@ public class DynamicAgentHandler {
         try {
             switch (action) {
                 case ADD:
+                    checkNotNull(addOnOffLogin, "login is invalid, check user home and ssh path or ssh key whether they are existing");
+                    checkNotNull(nodeIdList, "should provide node count to create via jclouds");
                     LOG.info(">> prepare to add {} node to group {}", nodeIdList.size(), groupName);
                     TemplateBuilder templateBuilder = compute.templateBuilder()
                             .locationId("ap-southeast-1").hardwareId(InstanceType.M1_MEDIUM);
@@ -553,10 +554,10 @@ public class DynamicAgentHandler {
                     }
                     SetCurrentNodeCount();
 
-                    LOG.info(">> exec {} to initialize nodes as {}", scriptName, login.identity);
+                    LOG.info(">> exec {} to initialize nodes as {}", scriptName, addOnOffLogin.identity);
                     Map<? extends NodeMetadata, ExecResponse> responseRun = compute.runScriptOnNodesMatching(
                             inGivenList(addList), Files.toString(file, Charsets.UTF_8),
-                            overrideLoginCredentials(login).runAsRoot(false)
+                            overrideLoginCredentials(addOnOffLogin).runAsRoot(false)
                                     .nameTask("_" + file.getName().replaceAll("\\..*", "")));
 
                     for (Entry<? extends NodeMetadata, ExecResponse> response : responseRun.entrySet()) {
@@ -565,13 +566,14 @@ public class DynamicAgentHandler {
                     break;
 
                 case OFF:
+                    checkNotNull(addOnOffLogin, "login is invalid, check user home and ssh path or ssh key whether they are existing");
         	 	    //1. before to do turn off the VMs, do stop and remove docker container
                     //2. turn off operation will suspend all the nodes in the given group
-                    LOG.info(">> exec {} as {} ", scriptName, login.identity);
+                    LOG.info(">> exec {} as {} ", scriptName, addOnOffLogin.identity);
                     Map<? extends NodeMetadata, ExecResponse> stopAndRemove = compute.runScriptOnNodesMatching(
-                            inGroup(groupName),
+                            inGivenList(nodeIdList),
                             Files.toString(file, Charsets.UTF_8),   // passing in a string with the contents of the file
-                            overrideLoginCredentials(login).runAsRoot(false)
+                            overrideLoginCredentials(addOnOffLogin).runAsRoot(false)
                                     .nameTask("_" + file.getName().replaceAll("\\..*", "")));
 
                     for (Entry<? extends NodeMetadata, ExecResponse> response : stopAndRemove.entrySet()) {
@@ -582,7 +584,7 @@ public class DynamicAgentHandler {
 
                     // you can use predicates to select which nodes you wish to turn off.
                     LOG.info(">> begin to turn off nodes in group {}", groupName);
-                    Set<? extends NodeMetadata> turnOff = compute.suspendNodesMatching(Predicates.and(RUNNING, inGroup(groupName)));
+                    Set<? extends NodeMetadata> turnOff = compute.suspendNodesMatching(Predicates.and(RUNNING, inGivenList(nodeIdList)));
                     for(NodeMetadata node: turnOff){
                         String id = node.getId();
                         String tip = node.getPrivateAddresses().toString();
@@ -595,7 +597,8 @@ public class DynamicAgentHandler {
                     break;
 
                 case ON:
-                    LOG.info(">> begin to turn on node(s) in group {} as {}", groupName, login.identity);
+                    checkNotNull(addOnOffLogin, "login is invalid, check user home and ssh path or ssh key whether they are existing");
+                    LOG.info(">> begin to turn on node(s) in group {} as {}", groupName, addOnOffLogin.identity);
                     LOG.info(">> nodeIdList content: {}", nodeIdList);
                     Set<? extends NodeMetadata> turnOn = compute.resumeNodesMatching(Predicates.and(SUSPENDED, inGivenList(nodeIdList)));
                     long onTimeStamp = System.currentTimeMillis();
@@ -613,7 +616,7 @@ public class DynamicAgentHandler {
              		//after nodes are turned on, to start new docker container
                     Map<? extends NodeMetadata, ExecResponse> turnOnRun = compute.runScriptOnNodesMatching(
                             inGivenList(nodeIdList),  Files.toString(file, Charsets.UTF_8), // passing in a string with the contents of the file
-                            overrideLoginCredentials(login).runAsRoot(false)
+                            overrideLoginCredentials(addOnOffLogin).runAsRoot(false)
                                     .nameTask("_" + file.getName().replaceAll("\\..*", "")));
 
                     for (Entry<? extends NodeMetadata, ExecResponse> response : turnOnRun.entrySet()) {
@@ -624,16 +627,10 @@ public class DynamicAgentHandler {
                     break;
 
                 case DESTROY:
-                    Predicate<NodeMetadata> destroyPredicate = null;
-                    if(nodeIdList == null || nodeIdList.isEmpty()){
-                        destroyPredicate = inGroup(groupName);
-                        LOG.info(">> destroy all nodes in group {}", groupName);
-                    }else{
-                        destroyPredicate = inGivenList(nodeIdList);
-                        LOG.info(">> destroy {} nodes in group {}", nodeIdList.size(), groupName);
-                    }
+                    checkNotNull(nodeIdList, "which node(s) will be terminated should be specified");
+                    LOG.info(">> destroy {} nodes in group {}", nodeIdList.size(), groupName);
                     // you can use predicates to select which nodes you wish to destroy.
-                    Set<? extends NodeMetadata> destroyed = compute.destroyNodesMatching(Predicates.and(not(TERMINATED), destroyPredicate));
+                    Set<? extends NodeMetadata> destroyed = compute.destroyNodesMatching(inGivenList(nodeIdList));
                     for(NodeMetadata node: destroyed) {
                         String id = node.getId();
                         runningNodeMap.remove(id);
@@ -684,6 +681,12 @@ public class DynamicAgentHandler {
         }
     }
 
+    private ComputeService getComputeService() {
+        checkNotNull(identity, "identity can not be null or empty");
+        checkNotNull(credential, "credential can not be null or empty");
+        return initComputeService(provider, identity, credential);
+    }
+
     private void SetCurrentNodeCount() {
         config.setRunningNodeCount(runningNodeMap.size());
         config.setStoppedNodeCount(stoppedNodeMap.size());
@@ -693,7 +696,10 @@ public class DynamicAgentHandler {
         try {
             String user = "agent";
             File priFile = new File("/home/agent/.ssh/id_rsa");
-            checkNotNull(priFile, "private ssh key file id_rsa of user 'agent' is not existing.");
+            if(!priFile.exists()){
+                LOG.warn("private ssh key file id_rsa of user 'agent' is not existing.");
+                return null;
+            }
             String privateKey = Files.toString(priFile, UTF_8);
             return LoginCredentials.builder().user(user).privateKey(privateKey).build();
         } catch (Exception e) {
@@ -723,7 +729,7 @@ public class DynamicAgentHandler {
      */
     private LoginCredentials getLoginCredential(){
         String user = System.getProperty("user.name");
-        LoginCredentials tempLogin = null;
+        LoginCredentials tempLogin;
         if(user.equalsIgnoreCase("root")){
             tempLogin = getAgentLoginForCommandExecution();
         }else{
@@ -739,20 +745,26 @@ public class DynamicAgentHandler {
      *
      * @return statement
      */
-    private Statement createAdminAccess(){
+    protected Statement createAdminAccess(){
         String user = System.getProperty("user.name");
-        Statement bootInstruction = null;
+        Statement bootInstruction;
         if(user.equalsIgnoreCase("root")) {
             File pubFile = new File("/home/agent/.ssh/id_rsa.pub");
             File priFile = new File("/home/agent/.ssh/id_rsa");
-            checkNotNull(pubFile, "public ssh key file id_rsa.pub of user 'agent' not exist");
-            checkNotNull(priFile, "private ssh key file id_rsa of user 'agent' not exist");
+            if(!pubFile.exists()){
+                LOG.warn("public ssh key file id_rsa.pub of user 'agent' not exist");
+                return null;
+            }
+            if(!priFile.exists()){
+                LOG.warn("private ssh key file id_rsa of user 'agent' not exist");
+                return null;
+            }
             /*
              * Attention: public and private keys both should be provided else AdminAccess will use the default ssh keys.
              *            please refer to the scenario of public AdminAccess init(Configuration configuration) {...}
              */
             AdminAccessBuilderSpec spec = AdminAccessBuilderSpec.parse(
-                    "adminUsername=agent,"
+                              "adminUsername=agent,"
                             + "adminHome=/home/agent,"
                             + "adminPublicKeyFile=/home/agent/.ssh/id_rsa.pub,"
                             + "adminPrivateKeyFile=/home/agent/.ssh/id_rsa");
@@ -761,8 +773,14 @@ public class DynamicAgentHandler {
             String home = System.getProperty("user.home");
             File pubFile = new File(home, "/.ssh/id_rsa.pub");
             File priFile = new File(home, "/.ssh/id_rsa");
-            checkNotNull(pubFile, "public ssh key file id_rsa.pub of user '" + user + "' not exist");
-            checkNotNull(priFile, "private ssh key file id_rsa of user '" + user + "' not exist");
+            if(!pubFile.exists()){
+                LOG.warn("public ssh key file id_rsa.pub of user '{}' not exist", user);
+                return null;
+            }
+            if(!priFile.exists()){
+                LOG.warn("private ssh key file id_rsa of user '{}' not exist", user);
+                return null;
+            }
             bootInstruction = AdminAccess.standard();
         }
         return bootInstruction;
@@ -779,7 +797,7 @@ public class DynamicAgentHandler {
      *
      */
     private void generateScriptBasedOnTemplate(String ctrl_IP, String ctrl_port, String agent_docker_repo,
-                                                 String agent_docker_tag, String cmd)  {
+                                               String agent_docker_tag, String cmd)  {
         /*
          * the must parameters in the target script
          */
@@ -790,7 +808,7 @@ public class DynamicAgentHandler {
         String AGENT_WORK_MODE="AGENT_WORK_MODE=";
 
         LOG.info("Ctrl IP: " + ctrl_IP + ", Ctrl Port: " + ctrl_port + ", docker repo: " + agent_docker_repo
-                    + ", docker tag: " + agent_docker_tag + ", operation: " + cmd);
+                + ", docker tag: " + agent_docker_tag + ", operation: " + cmd);
 
         String newFileName;
         if(cmd.equalsIgnoreCase("add")) {
@@ -803,42 +821,40 @@ public class DynamicAgentHandler {
             return;
         }
 
-        StringBuffer sb = new StringBuffer();
-        sb.append("#!/bin/bash\n");
-        sb.append("\n");
-        sb.append(AGENT_CTRL_IP  + ctrl_IP   + "\n");
-        sb.append(AGENT_CTRL_PORT + ctrl_port + "\n");
-        sb.append(AGENT_IMG_REPO + agent_docker_repo  + "\n");
-        sb.append(AGENT_IMG_TAG + agent_docker_tag + "\n");
-        sb.append(AGENT_WORK_MODE + cmd.toUpperCase() + "\n");
-        sb.append("\n");
+        StringBuilder sb = new StringBuilder();
+        String prefixContent = "#!/bin/bash\n" +
+                                AGENT_CTRL_IP  + ctrl_IP   + "\n" +
+                                AGENT_CTRL_PORT + ctrl_port + "\n" +
+                                AGENT_IMG_REPO + agent_docker_repo  + "\n" +
+                                AGENT_IMG_TAG + agent_docker_tag + "\n" +
+                                AGENT_WORK_MODE + cmd.toUpperCase() + "\n" +
+                                "\n";
+        sb.append(prefixContent);
 
-        FileReader fr = null;
         String templateFile =  this.scriptTemplatePath + "/jclouds_op_ec2_template.sh";
-        try {
-            fr = new FileReader(templateFile);
-        } catch (IOException e) {
-            LOG.debug(e.getMessage());
-        }
-
-        File newFile = null;
-        BufferedReader br = new BufferedReader(fr);
-        String line = null;
-        try {
-            newFile = new File(this.scriptTemplatePath + "/" + newFileName);
-            while((line = br.readLine()) != null){
-                sb.append(line + "\n");
-            }
-        } catch (IOException e) {
-            LOG.debug(e.getMessage());
+        File file = new File(templateFile);
+        if(!file.exists()){
+            LOG.warn("{} is not existing....", templateFile);
+            return;
         }
 
         try {
+            FileInputStream fis = new FileInputStream(file);
+            int len = (int) file.length();
+            byte content[] = new byte[len];
+            int read = fis.read(content);
+            String suffixContent = new String(content);
+            sb.append(suffixContent);
+            fis.close();
+
+            File newFile = new File(this.scriptTemplatePath + "/" + newFileName);
             FileWriter fw = new FileWriter(newFile);
             BufferedWriter bw = new BufferedWriter(fw);
             bw.write(sb.toString());
             bw.close();
             fw.close();
+        } catch (FileNotFoundException e) {
+            LOG.debug(e.getMessage());
         } catch (IOException e) {
             LOG.debug(e.getMessage());
         }
