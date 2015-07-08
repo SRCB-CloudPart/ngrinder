@@ -842,7 +842,8 @@ public class DynamicAgentHandler {
             FileInputStream fis = new FileInputStream(file);
             int len = (int) file.length();
             byte content[] = new byte[len];
-            int read = fis.read(content);
+            //noinspection ResultOfMethodCallIgnored
+            fis.read(content);
             String suffixContent = new String(content);
             sb.append(suffixContent);
             fis.close();

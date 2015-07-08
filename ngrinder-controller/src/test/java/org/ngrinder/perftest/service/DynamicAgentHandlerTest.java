@@ -14,6 +14,7 @@ package org.ngrinder.perftest.service;
  * limitations under the License.
  */
 
+import com.google.common.collect.Lists;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -25,6 +26,7 @@ import org.ngrinder.infra.config.Config;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.List;
 
 import static org.hamcrest.CoreMatchers.is;
 import static org.junit.Assert.assertThat;
@@ -140,81 +142,81 @@ public class DynamicAgentHandlerTest {
         assertThat(dah.getTestIdEc2NodeStatusMap(MockDynamicAgentHandler.KEY_FOR_STARTUP).containsKey("192.168.1.1"), is(true));
         System.out.println("initFirstOneEc2InstanceTest_only_list is passed");
     }
-//
-//    @Test
-//    public void initFirstOneEc2InstanceTest_list_on() {
-//        dah.doList = true;
-//        dah.condition = 1;
-//        dah.initFirstOneEc2Instance();
-//
-//        assertThat(dah.getStoppedNodeCount(), is(1));
-//        assertThat(dah.getAddedNodeCount(), is(2));
-//        assertThat(dah.getTestIdEc2NodeStatusMap(dah.KEY_FOR_STARTUP).containsKey("192.168.1.1"), is(true));
-//        System.out.println("initFirstOneEc2InstanceTest_list_on is passed");
-//    }
-//
-//    @Test
-//    public void initFirstOneEc2InstanceTest_list_add() {
-//        dah.doList = true;
-//        dah.condition = 2;
-//        dah.initFirstOneEc2Instance();
-//
-//        assertThat(dah.getStoppedNodeCount(), is(0));
-//        assertThat(dah.getAddedNodeCount(), is(1));
-//        assertThat(dah.getTestIdEc2NodeStatusMap(dah.KEY_FOR_STARTUP).containsKey("192.168.1.3"), is(true));
-//        System.out.println("initFirstOneEc2InstanceTest_list_add is passed");
-//    }
-//
-//    @Test
-//    public void turnOffEc2InstanceTest() {
-//        //first to list out current nodes
-//        dah.doList = true;
-//        dah.condition = 0;
-//        dah.initFirstOneEc2Instance();
-//
-//        //turn off the running nodes
-//        dah.condition = 3;
-//        dah.turnOffEc2Instance();
-//
-//        assertThat(dah.getStoppedNodeCount(), is(2));
-//        assertThat(dah.getAddedNodeCount(), is(2));
-//        System.out.println("turnOffEc2InstanceTest is passed");
-//    }
-//
-//    @Test
-//    public void turnOnEc2InstanceTest() {
-//        //first to list out current nodes
-//        dah.doList = true;
-//        dah.condition = 0;
-//        dah.initFirstOneEc2Instance();
-//
-//        //turn off the running nodes
-//        String testIdentifier = "PerfTest_1_user";
-//        dah.condition = 4;
-//        dah.turnOnEc2Instance(testIdentifier, 1);
-//
-//        assertThat(dah.getStoppedNodeCount(), is(0));
-//        assertThat(dah.getAddedNodeCount(), is(2));
-//        assertThat(dah.getTestIdEc2NodeStatusMap(testIdentifier).containsKey("192.168.1.2"), is(true));
-//        System.out.println("turnOnEc2InstanceTest is passed");
-//    }
-//
-//    @Test
-//    public void terminateEc2InstanceTest() {
-//        //first to list out current nodes
-//        dah.doList = true;
-//        dah.condition = 0;
-//        dah.initFirstOneEc2Instance();
-//
-//        //term the specified nodes
-//        dah.condition = 5;
-//        List<String> termList = Lists.newArrayList();
-//        termList.add("201507070002");
-//        dah.terminateEc2Instance(termList);
-//
-//        assertThat(dah.getStoppedNodeCount(), is(0));
-//        assertThat(dah.getAddedNodeCount(), is(1));
-//        assertThat(dah.getTestIdEc2NodeStatusMap(dah.KEY_FOR_STARTUP).containsKey("192.168.1.2"), is(false));
-//        System.out.println("terminateEc2InstanceTest is passed");
-//    }
+
+    @Test
+    public void initFirstOneEc2InstanceTest_list_on() {
+        dah.doList = true;
+        dah.condition = 1;
+        dah.initFirstOneEc2Instance();
+
+        assertThat(dah.getStoppedNodeCount(), is(1));
+        assertThat(dah.getAddedNodeCount(), is(2));
+        assertThat(dah.getTestIdEc2NodeStatusMap(MockDynamicAgentHandler.KEY_FOR_STARTUP).containsKey("192.168.1.1"), is(true));
+        System.out.println("initFirstOneEc2InstanceTest_list_on is passed");
+    }
+
+    @Test
+    public void initFirstOneEc2InstanceTest_list_add() {
+        dah.doList = true;
+        dah.condition = 2;
+        dah.initFirstOneEc2Instance();
+
+        assertThat(dah.getStoppedNodeCount(), is(0));
+        assertThat(dah.getAddedNodeCount(), is(1));
+        assertThat(dah.getTestIdEc2NodeStatusMap(MockDynamicAgentHandler.KEY_FOR_STARTUP).containsKey("192.168.1.3"), is(true));
+        System.out.println("initFirstOneEc2InstanceTest_list_add is passed");
+    }
+
+    @Test
+    public void turnOffEc2InstanceTest() {
+        //first to list out current nodes
+        dah.doList = true;
+        dah.condition = 0;
+        dah.initFirstOneEc2Instance();
+
+        //turn off the running nodes
+        dah.condition = 3;
+        dah.turnOffEc2Instance();
+
+        assertThat(dah.getStoppedNodeCount(), is(2));
+        assertThat(dah.getAddedNodeCount(), is(2));
+        System.out.println("turnOffEc2InstanceTest is passed");
+    }
+
+    @Test
+    public void turnOnEc2InstanceTest() {
+        //first to list out current nodes
+        dah.doList = true;
+        dah.condition = 0;
+        dah.initFirstOneEc2Instance();
+
+        //turn off the running nodes
+        String testIdentifier = "PerfTest_1_user";
+        dah.condition = 4;
+        dah.turnOnEc2Instance(testIdentifier, 1);
+
+        assertThat(dah.getStoppedNodeCount(), is(0));
+        assertThat(dah.getAddedNodeCount(), is(2));
+        assertThat(dah.getTestIdEc2NodeStatusMap(testIdentifier).containsKey("192.168.1.2"), is(true));
+        System.out.println("turnOnEc2InstanceTest is passed");
+    }
+
+    @Test
+    public void terminateEc2InstanceTest() {
+        //first to list out current nodes
+        dah.doList = true;
+        dah.condition = 0;
+        dah.initFirstOneEc2Instance();
+
+        //term the specified nodes
+        dah.condition = 5;
+        List<String> termList = Lists.newArrayList();
+        termList.add("201507070002");
+        dah.terminateEc2Instance(termList);
+
+        assertThat(dah.getStoppedNodeCount(), is(0));
+        assertThat(dah.getAddedNodeCount(), is(1));
+        assertThat(dah.getTestIdEc2NodeStatusMap(MockDynamicAgentHandler.KEY_FOR_STARTUP).containsKey("192.168.1.2"), is(false));
+        System.out.println("terminateEc2InstanceTest is passed");
+    }
 }
