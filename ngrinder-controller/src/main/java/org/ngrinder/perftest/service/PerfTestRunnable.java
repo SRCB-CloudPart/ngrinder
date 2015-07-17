@@ -151,8 +151,6 @@ public class PerfTestRunnable implements ControllerConstants {
 
     void doStart() {
 
-        checkAndPrepareDynamicAgentStatus();
-
         if (config.hasNoMoreTestLock()) {
             return;
         }
@@ -187,26 +185,6 @@ public class PerfTestRunnable implements ControllerConstants {
         doTest(runCandidate);
     }
 
-    private void checkAndPrepareDynamicAgentStatus() {
-        //If the EC2 node initialization is not done, before the first case to test, should do list operation to
-        //get the existing node information.
-        if (config.isAgentDynamicEc2Enabled()) {
-            if (!dynamicAgentHandler.getInitStartedFlag()) {
-
-                dynamicAgentHandler.setInitStartedFlag(true);
-                LOG.info("Begin to list the existing node information...");
-
-                Runnable listRunnable = new Runnable() {
-                    @Override
-                    public void run() {
-                        dynamicAgentHandler.initFirstOneEc2Instance();
-                    }
-                };
-                scheduledTaskService.runAsync(listRunnable);
-            }
-        }
-    }
-
     private void runDynamicAgentEC2(PerfTest runCandidate) {
         if (config.isAgentDynamicEc2Enabled()) {
 
@@ -231,7 +209,7 @@ public class PerfTestRunnable implements ControllerConstants {
     /**
      * To turn off the created EC2 instance in order to reduce code
      */
-    protected void turnOffDynamicAgents() {
+    private void turnOffDynamicAgents() {
         long guardTime = config.getAgentDynamicGuardTime();
         long durationMillis = System.currentTimeMillis() - lastBeginningTime;
         long durationInMinutes = durationMillis / (60 * 1000);
@@ -256,7 +234,7 @@ public class PerfTestRunnable implements ControllerConstants {
      *
      * @param test {@link PerfTest}
      */
-    protected void turnOnDynamicAgents(final PerfTest test, final int realNeeds) {
+    private void turnOnDynamicAgents(final PerfTest test, final int realNeeds) {
         final String testIdentifier = test.getTestIdentifier();
         Map<String, Long> nodeIpEc2UpTimeMap = dynamicAgentHandler.getTestIdEc2NodeStatusMap(testIdentifier);
         if (nodeIpEc2UpTimeMap == null) {
@@ -283,7 +261,7 @@ public class PerfTestRunnable implements ControllerConstants {
      * @param test      PerfTest
      * @param realNeeds the real needed agent count
      */
-    protected void addDynamicAgents(PerfTest test, final int realNeeds) {
+    private void addDynamicAgents(PerfTest test, final int realNeeds) {
         String dynamicType = config.getAgentDynamicType();
         if (dynamicType == null || dynamicType.equals("")) {
             return;

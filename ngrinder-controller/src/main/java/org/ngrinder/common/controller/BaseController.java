@@ -22,6 +22,7 @@ import org.ngrinder.common.exception.NGrinderRuntimeException;
 import org.ngrinder.infra.config.Config;
 import org.ngrinder.model.User;
 import org.ngrinder.operation.service.AnnouncementService;
+import org.ngrinder.perftest.service.DynamicAgentHandler;
 import org.ngrinder.region.service.RegionService;
 import org.ngrinder.user.service.UserContext;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -79,6 +80,9 @@ public class BaseController implements WebConstants {
 
 	@Autowired
 	private RegionService regionService;
+
+	@Autowired
+	private DynamicAgentHandler dynamicAgentHandler;
 
 	@PostConstruct
 	void initJSON() {
@@ -167,7 +171,7 @@ public class BaseController implements WebConstants {
 	 */
 	@ModelAttribute("runningNodeCount")
 	public int runningNodeCount() {
-		return config.getRunningNodeCount();
+		return dynamicAgentHandler.getRunningNodeCount();
 	}
 
 	/**
@@ -177,7 +181,7 @@ public class BaseController implements WebConstants {
 	 */
 	@ModelAttribute("stoppedNodeCount")
 	public int stoppedNodeCount() {
-		return config.getStoppedNodeCount();
+		return dynamicAgentHandler.getStoppedNodeCount();
 	}
 
 	/**
@@ -197,7 +201,7 @@ public class BaseController implements WebConstants {
 	 */
 	@ModelAttribute("addedNodeCount")
 	public int addedNodeCount() {
-		return config.getAddedNodeCount();
+		return dynamicAgentHandler.getAddedNodeCount();
 	}
 
 	/**
@@ -218,7 +222,7 @@ public class BaseController implements WebConstants {
 	 */
 	@ModelAttribute("isListInfoDone")
 	public boolean isListInfoDone() {
-		return config.getIsListInfoDone();
+		return dynamicAgentHandler.getIsListInfoDone();
 	}
 
 

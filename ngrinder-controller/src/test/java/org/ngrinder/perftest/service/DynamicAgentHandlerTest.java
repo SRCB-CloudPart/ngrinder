@@ -75,6 +75,7 @@ public class DynamicAgentHandlerTest {
         prepareSshEnv();
         dah.ctrlIp = ctrlIP;
         dah.init();
+        System.out.println("setUp");
     }
 
     @SuppressWarnings("ResultOfMethodCallIgnored")
@@ -92,6 +93,7 @@ public class DynamicAgentHandlerTest {
         if(!isHomeExisting){
             homePath.delete();
         }
+        System.out.println("clean");
     }
 
     @SuppressWarnings("ResultOfMethodCallIgnored")
@@ -129,6 +131,17 @@ public class DynamicAgentHandlerTest {
                 e.printStackTrace();
             }
         }
+    }
+
+    @Test
+    public void addDynamicEc2InstanceTest(){
+        dah.condition = 6;
+        String testIdentifier = "PerfTest_2_user";
+        dah.addDynamicEc2Instance(testIdentifier, 1);
+
+        assertThat(dah.getAddedNodeCount(), is(1));
+        assertThat(dah.getTestIdEc2NodeStatusMap(testIdentifier).containsKey("192.168.1.3"), is(true));
+        System.out.println("addDynamicEc2InstanceTest is passed");
     }
 
     @Test

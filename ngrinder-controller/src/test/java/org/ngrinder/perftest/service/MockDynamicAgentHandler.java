@@ -27,7 +27,8 @@ import static org.mockito.Mockito.*;
 
 public class MockDynamicAgentHandler extends DynamicAgentHandler implements AgentDynamicConstants{
 
-    protected int condition = 0; // 0: only list, 1: list + on, 2: list + add, 3: off, 4: destroy
+    // 0: only list, 1: list + on, 2: list + add, 3: off, 4: on, 5: destroy, 6: add
+    protected int condition = 0;
     protected boolean doList = true;
     protected String ctrlIp = "";
 
@@ -68,11 +69,50 @@ public class MockDynamicAgentHandler extends DynamicAgentHandler implements Agen
             case 5:     //destroy
                 setDestroy(cs, nm1, nm2);
                 break;
+            case 6:     //add
+                setAdd(cs);
+                break;
         }
         ComputeServiceContext csc = mock(ComputeServiceContext.class);
         when(cs.getContext()).thenReturn(csc);
         doNothing().when(csc).close();
         return cs;
+    }
+
+    @SuppressWarnings("unchecked")
+    private void setAdd(ComputeService cs){
+        TemplateBuilder templateBuilder = mock(TemplateBuilder.class);
+        when(cs.templateBuilder()).thenReturn(templateBuilder);
+        when(templateBuilder.locationId(anyString())).thenReturn(templateBuilder);
+        when(templateBuilder.hardwareId(anyString())).thenReturn(templateBuilder);
+        when(templateBuilder.options(any(TemplateOptions.class))).thenReturn(templateBuilder);
+        Template template = mock(Template.class);
+        when(templateBuilder.build()).thenReturn(template);
+        Set addNodes = Sets.newHashSet();
+        NodeMetadata node = mock(NodeMetadata.class);
+        Set<String> nodeIp = Sets.newHashSet();
+        nodeIp.add("192.168.1.3");
+        addNodes.add(node);
+        String id = "201507070003";
+
+        try {
+            String groupName = getGroupName(ctrlIp);
+            when(cs.createNodesInGroup(groupName, 1, template)).thenReturn(addNodes);
+            when(node.getPrivateAddresses()).thenReturn(nodeIp);
+            when(node.getId()).thenReturn(id);
+        } catch (RunNodesException e) {
+            e.printStackTrace();
+        }
+
+        Map adds = Maps.newHashMap();
+        ExecResponse res = mock(ExecResponse.class);
+        adds.put(node, res);
+        try {
+            when(cs.runScriptOnNodesMatching(inGivenList(anyList()), anyString(), any(TemplateOptions.class))).thenReturn(adds);
+            when(node.getId()).thenReturn(id);
+        } catch (RunScriptOnNodesException e) {
+            e.printStackTrace();
+        }
     }
 
     @SuppressWarnings("unchecked")
@@ -190,38 +230,7 @@ public class MockDynamicAgentHandler extends DynamicAgentHandler implements Agen
             doList = false;
         }else {
             //add condition
-            TemplateBuilder templateBuilder = mock(TemplateBuilder.class);
-            when(cs.templateBuilder()).thenReturn(templateBuilder);
-            when(templateBuilder.locationId(anyString())).thenReturn(templateBuilder);
-            when(templateBuilder.hardwareId(anyString())).thenReturn(templateBuilder);
-            when(templateBuilder.options(any(TemplateOptions.class))).thenReturn(templateBuilder);
-            Template template = mock(Template.class);
-            when(templateBuilder.build()).thenReturn(template);
-            Set addNodes = Sets.newHashSet();
-            NodeMetadata node = mock(NodeMetadata.class);
-            Set<String> nodeIp = Sets.newHashSet();
-            nodeIp.add("192.168.1.3");
-            addNodes.add(node);
-            String id = "201507070003";
-
-            try {
-                String groupName = getGroupName(ctrlIp);
-                when(cs.createNodesInGroup(groupName, 1, template)).thenReturn(addNodes);
-                when(node.getPrivateAddresses()).thenReturn(nodeIp);
-                when(node.getId()).thenReturn(id);
-            } catch (RunNodesException e) {
-                e.printStackTrace();
-            }
-
-            Map adds = Maps.newHashMap();
-            ExecResponse res = mock(ExecResponse.class);
-            adds.put(node, res);
-            try {
-                when(cs.runScriptOnNodesMatching(inGivenList(anyList()), anyString(), any(TemplateOptions.class))).thenReturn(adds);
-                when(node.getId()).thenReturn(id);
-            } catch (RunScriptOnNodesException e) {
-                e.printStackTrace();
-            }
+            setAdd(cs);
         }
     }
 

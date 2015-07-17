@@ -1,5 +1,16 @@
+#!/bin/bash
+
 #This is script template, which will be used to construct new script for RUN, ON, OFF operation
 #PLEASE DO NO MODIFY if you do not understand the working mechanism.
+#
+#This template will be interpreted through freemarker, therefore, below variable parameter will
+#follow the syntax of ftl
+
+AGENT_CTRL_IP=${agent_controller_ip}
+AGENT_CTRL_PORT=${agent_controller_port}
+AGENT_IMG_REPO=${agent_image_repo}
+AGENT_IMG_TAG=${agent_image_tag}
+AGENT_WORK_MODE=${agent_work_mode}
 
 ####################################################################################
 START_TIME=`date +%T`
