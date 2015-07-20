@@ -165,68 +165,6 @@ public class BaseController implements WebConstants {
 	}
 
 	/**
-	 * Provide the running node count of current system.
-	 *
-	 * @return running node count
-	 */
-	@ModelAttribute("runningNodeCount")
-	public int runningNodeCount() {
-		return dynamicAgentHandler.getRunningNodeCount();
-	}
-
-	/**
-	 * Provide the stopped node count of current system
-	 *
-	 * @return stopped node count
-	 */
-	@ModelAttribute("stoppedNodeCount")
-	public int stoppedNodeCount() {
-		return dynamicAgentHandler.getStoppedNodeCount();
-	}
-
-	/**
-	 * Provide the stopped node count of current system
-	 *
-	 * @return stopped node count
-	 */
-	@ModelAttribute("allowedNodeCount")
-	public int allowedNodeCount() {
-		return config.getAgentDynamicNodeMax();
-	}
-
-	/**
-	 * Provide the added node count of current system
-	 *
-	 * @return added node count
-	 */
-	@ModelAttribute("addedNodeCount")
-	public int addedNodeCount() {
-		return dynamicAgentHandler.getAddedNodeCount();
-	}
-
-	/**
-	 * Provide the boolean value representing that dynamic agent feature enabled or not as a model attributes.
-	 *
-	 * @return dynamic agent feature enabled mark
-	 */
-	@ModelAttribute("dynamicAgentEnabled")
-	public boolean isDynamicAgentEnabled() {
-		return config.isAgentDynamicEc2Enabled();
-	}
-
-	/**
-	 * Because the JCloud API operate the EC2 is very slow, only controller knows the status of existing system,
-	 * to allow user control dynamic agent.
-	 *
-	 * @return dynamic agent feature enabled mark
-	 */
-	@ModelAttribute("isListInfoDone")
-	public boolean isListInfoDone() {
-		return dynamicAgentHandler.getIsListInfoDone();
-	}
-
-
-	/**
 	 * Provide the help URL as a model attribute.
 	 *
 	 * @return help URL

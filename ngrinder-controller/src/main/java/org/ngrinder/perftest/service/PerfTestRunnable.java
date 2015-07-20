@@ -213,9 +213,9 @@ public class PerfTestRunnable implements ControllerConstants {
         long guardTime = config.getAgentDynamicGuardTime();
         long durationMillis = System.currentTimeMillis() - lastBeginningTime;
         long durationInMinutes = durationMillis / (60 * 1000);
-        if (durationInMinutes > guardTime && isDynamicAgentOff == false) {
+        if (durationInMinutes > guardTime && !isDynamicAgentOff) {
             lastBeginningTime = System.currentTimeMillis();
-            if (!dynamicAgentHandler.hasRunningTestInTestIdEc2NodeStatusMap()) {
+            if (!dynamicAgentHandler.hasRunningTestInTestIdEc2NodeStatus()) {
                 Runnable turnOffEc2AgentRunnable = new Runnable() {
                     @Override
                     public void run() {
@@ -236,7 +236,7 @@ public class PerfTestRunnable implements ControllerConstants {
      */
     private void turnOnDynamicAgents(final PerfTest test, final int realNeeds) {
         final String testIdentifier = test.getTestIdentifier();
-        Map<String, Long> nodeIpEc2UpTimeMap = dynamicAgentHandler.getTestIdEc2NodeStatusMap(testIdentifier);
+        Map<String, Long> nodeIpEc2UpTimeMap = dynamicAgentHandler.getTestIdEc2NodeStatus(testIdentifier);
         if (nodeIpEc2UpTimeMap == null) {
             Runnable turnOnEc2AgentRunnable = new Runnable() {
                 @Override
@@ -268,7 +268,6 @@ public class PerfTestRunnable implements ControllerConstants {
         }
 
         int size = dynamicAgentHandler.getAddedNodeCount();
-        int requiredAgents = test.getAgentCount();
         int allowedMaxDynamic = config.getAgentDynamicNodeMax();
         LOG.debug("allowedMaxDynamic {}, addedNode: {}", allowedMaxDynamic, size);
 
@@ -291,7 +290,7 @@ public class PerfTestRunnable implements ControllerConstants {
         }
 
         final String testIdentifier = test.getTestIdentifier();
-        Map<String, Long> nodeIpEc2UpTimeMap = dynamicAgentHandler.getTestIdEc2NodeStatusMap(testIdentifier);
+        Map<String, Long> nodeIpEc2UpTimeMap = dynamicAgentHandler.getTestIdEc2NodeStatus(testIdentifier);
         LOG.debug("Test ID: {}, nodeIpEc2UpTimeMap: {}", testIdentifier, nodeIpEc2UpTimeMap);
         boolean toCreate = false;
         if (nodeIpEc2UpTimeMap != null) {
@@ -314,7 +313,7 @@ public class PerfTestRunnable implements ControllerConstants {
             if (isDynamicAgentInitDone) {
                 toCreate = true;
             } else {
-                nodeIpEc2UpTimeMap = dynamicAgentHandler.getTestIdEc2NodeStatusMap(dynamicAgentHandler.KEY_FOR_STARTUP);
+                nodeIpEc2UpTimeMap = dynamicAgentHandler.getTestIdEc2NodeStatus(dynamicAgentHandler.KEY_FOR_STARTUP);
                 boolean ret = isToCreate(approvedAgentIPs, dynamicAgentHandler.KEY_FOR_STARTUP, nodeIpEc2UpTimeMap);
                 LOG.debug("isDynamicAgentInitFinished ret: {}", ret);
                 isDynamicAgentInitDone = ret;
@@ -356,11 +355,7 @@ public class PerfTestRunnable implements ControllerConstants {
             }
         }
         if (containedCount == nodeIpEc2UpTimeMap.size() && containedCount > 0) {
-            if (testIdentifier.equalsIgnoreCase(dynamicAgentHandler.KEY_FOR_STARTUP)) {
-                return true;
-            } else {
-                return false;
-            }
+            return testIdentifier.equalsIgnoreCase(dynamicAgentHandler.KEY_FOR_STARTUP);
         } else {
             if (timeOutCnt > 0) {
                 removeBadEc2Nodes(nodeIpEc2UpTimeMap, nodeIdList, ipList);
@@ -640,7 +635,7 @@ public class PerfTestRunnable implements ControllerConstants {
             LOG.info("Terminate {}", each.getId());
             SingleConsole consoleUsingPort = consoleManager.getConsoleUsingPort(each.getPort());
             doTerminate(each, consoleUsingPort);
-            dynamicAgentHandler.removeItemInTestIdEc2NodeStatusMap(each.getTestIdentifier());
+            dynamicAgentHandler.removeItemInTestIdEc2NodeStatus(each.getTestIdentifier());
             cleanUp(each);
             notifyFinish(each, StopReason.TOO_MANY_ERRORS);
         }
@@ -649,7 +644,7 @@ public class PerfTestRunnable implements ControllerConstants {
             LOG.info("Stop test {}", each.getId());
             SingleConsole consoleUsingPort = consoleManager.getConsoleUsingPort(each.getPort());
             doCancel(each, consoleUsingPort);
-            dynamicAgentHandler.removeItemInTestIdEc2NodeStatusMap(each.getTestIdentifier());
+            dynamicAgentHandler.removeItemInTestIdEc2NodeStatus(each.getTestIdentifier());
             cleanUp(each);
             notifyFinish(each, StopReason.CANCEL_BY_USER);
         }
@@ -658,7 +653,7 @@ public class PerfTestRunnable implements ControllerConstants {
             SingleConsole consoleUsingPort = consoleManager.getConsoleUsingPort(each.getPort());
             if (isTestFinishCandidate(each, consoleUsingPort)) {
                 doNormalFinish(each, consoleUsingPort);
-                dynamicAgentHandler.removeItemInTestIdEc2NodeStatusMap(each.getTestIdentifier());
+                dynamicAgentHandler.removeItemInTestIdEc2NodeStatus(each.getTestIdentifier());
                 cleanUp(each);
                 notifyFinish(each, StopReason.NORMAL);
             }

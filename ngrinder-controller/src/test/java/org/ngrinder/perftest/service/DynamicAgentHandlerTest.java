@@ -140,7 +140,7 @@ public class DynamicAgentHandlerTest {
         dah.addDynamicEc2Instance(testIdentifier, 1);
 
         assertThat(dah.getAddedNodeCount(), is(1));
-        assertThat(dah.getTestIdEc2NodeStatusMap(testIdentifier).containsKey("192.168.1.3"), is(true));
+        assertThat(dah.getTestIdEc2NodeStatus(testIdentifier).containsKey("192.168.1.3"), is(true));
         System.out.println("addDynamicEc2InstanceTest is passed");
     }
 
@@ -152,7 +152,7 @@ public class DynamicAgentHandlerTest {
 
         assertThat(dah.getStoppedNodeCount(), is(1));
         assertThat(dah.getAddedNodeCount(), is(2));
-        assertThat(dah.getTestIdEc2NodeStatusMap(MockDynamicAgentHandler.KEY_FOR_STARTUP).containsKey("192.168.1.1"), is(true));
+        assertThat(dah.getTestIdEc2NodeStatus(MockDynamicAgentHandler.KEY_FOR_STARTUP).containsKey("192.168.1.1"), is(true));
         System.out.println("initFirstOneEc2InstanceTest_only_list is passed");
     }
 
@@ -164,7 +164,7 @@ public class DynamicAgentHandlerTest {
 
         assertThat(dah.getStoppedNodeCount(), is(1));
         assertThat(dah.getAddedNodeCount(), is(2));
-        assertThat(dah.getTestIdEc2NodeStatusMap(MockDynamicAgentHandler.KEY_FOR_STARTUP).containsKey("192.168.1.1"), is(true));
+        assertThat(dah.getTestIdEc2NodeStatus(MockDynamicAgentHandler.KEY_FOR_STARTUP).containsKey("192.168.1.1"), is(true));
         System.out.println("initFirstOneEc2InstanceTest_list_on is passed");
     }
 
@@ -176,7 +176,7 @@ public class DynamicAgentHandlerTest {
 
         assertThat(dah.getStoppedNodeCount(), is(0));
         assertThat(dah.getAddedNodeCount(), is(1));
-        assertThat(dah.getTestIdEc2NodeStatusMap(MockDynamicAgentHandler.KEY_FOR_STARTUP).containsKey("192.168.1.3"), is(true));
+        assertThat(dah.getTestIdEc2NodeStatus(MockDynamicAgentHandler.KEY_FOR_STARTUP).containsKey("192.168.1.3"), is(true));
         System.out.println("initFirstOneEc2InstanceTest_list_add is passed");
     }
 
@@ -210,7 +210,7 @@ public class DynamicAgentHandlerTest {
 
         assertThat(dah.getStoppedNodeCount(), is(0));
         assertThat(dah.getAddedNodeCount(), is(2));
-        assertThat(dah.getTestIdEc2NodeStatusMap(testIdentifier).containsKey("192.168.1.2"), is(true));
+        assertThat(dah.getTestIdEc2NodeStatus(testIdentifier).containsKey("192.168.1.2"), is(true));
         System.out.println("turnOnEc2InstanceTest is passed");
     }
 
@@ -229,7 +229,7 @@ public class DynamicAgentHandlerTest {
 
         assertThat(dah.getStoppedNodeCount(), is(0));
         assertThat(dah.getAddedNodeCount(), is(1));
-        assertThat(dah.getTestIdEc2NodeStatusMap(MockDynamicAgentHandler.KEY_FOR_STARTUP).containsKey("192.168.1.2"), is(false));
+        assertThat(dah.getTestIdEc2NodeStatus(MockDynamicAgentHandler.KEY_FOR_STARTUP).containsKey("192.168.1.2"), is(false));
         System.out.println("terminateEc2InstanceTest is passed");
     }
 }

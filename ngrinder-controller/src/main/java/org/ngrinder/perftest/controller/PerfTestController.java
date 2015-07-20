@@ -213,6 +213,11 @@ public class PerfTestController extends BaseController {
 		model.addAttribute(PARAM_REGION_LIST, regionService.getAllVisibleRegionNames());
 		model.addAttribute(PARAM_PROCESS_THREAD_POLICY_SCRIPT, perfTestService.getProcessAndThreadPolicyScript());
 		addDefaultAttributeOnModel(model);
+
+		if(getConfig().isAgentDynamicEc2Enabled()) {
+			setModeAttrForDynamicAgentFeature(model, true);
+		}
+
 		return "perftest/detail";
 	}
 
@@ -287,7 +292,21 @@ public class PerfTestController extends BaseController {
 		model.addAttribute(PARAM_REGION_LIST, getRegions(agentCountMap));
 		addDefaultAttributeOnModel(model);
 		model.addAttribute(PARAM_PROCESS_THREAD_POLICY_SCRIPT, perfTestService.getProcessAndThreadPolicyScript());
+
+		if(getConfig().isAgentDynamicEc2Enabled()) {
+			setModeAttrForDynamicAgentFeature(model, true);
+		}
+
 		return "perftest/detail";
+	}
+
+	private void setModeAttrForDynamicAgentFeature(ModelMap model, boolean enabled) {
+		model.addAttribute(PARAM_AGENT_AUTO_SCALE_ADDED_COUNT, dynamicAgentHandler.getAddedNodeCount());
+		model.addAttribute(PARAM_AGENT_AUTO_SCALE_ALLOWED_COUNT, getConfig().getAgentDynamicNodeMax());
+		model.addAttribute(PARAM_AGENT_AUTO_SCALE_ENABLED, enabled);
+		model.addAttribute(PARAM_AGENT_AUTO_SCALE_LIST_DONE, dynamicAgentHandler.getIsListInfoDone());
+		model.addAttribute(PARAM_AGENT_AUTO_SCALE_RUNNING_COUNT, dynamicAgentHandler.getRunningNodeCount());
+		model.addAttribute(PARAM_AGENT_AUTO_SCALE_STOPPED_COUNT, dynamicAgentHandler.getStoppedNodeCount());
 	}
 
 	/**
@@ -372,7 +391,7 @@ public class PerfTestController extends BaseController {
 			int agentMaxCount = agentCountObj.intValue();
 			int reqCount = newOne.getAgentCount();
 			int max = getConfig().getAgentDynamicNodeMax();
-			int added = addedNodeCount();
+			int added = dynamicAgentHandler.getAddedNodeCount();
 			int maxCountAllowed = max - added + agentMaxCount;
 
 			checkArgument(reqCount <= maxCountAllowed, "current max allowed dynamic agent count %s should not exceed %s",	reqCount, maxCountAllowed);

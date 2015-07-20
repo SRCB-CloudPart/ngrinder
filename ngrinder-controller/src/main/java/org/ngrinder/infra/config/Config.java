@@ -712,7 +712,7 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
 	 * @return dynamic type
 	 */
 	public String getAgentDynamicType(){
-		return getDynamicAgentProperties().getProperty(PROP_AGENT_DYNAMIC_TYPE);
+		return getDynamicAgentProperties().getProperty(PROP_AGENT_AUTO_SCALE_TYPE);
 	}
 
 	/**
@@ -721,7 +721,7 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
 	 * @return node max
 	 */
 	public int getAgentDynamicNodeMax(){
-		return getDynamicAgentProperties().getPropertyInt(PROP_AGENT_DYNAMIC_MAX);
+		return getDynamicAgentProperties().getPropertyInt(PROP_AGENT_AUTO_SCALE_MAX);
 	}
 
 	/**
@@ -730,7 +730,7 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
 	 * @return credential username/access key
 	 */
 	public String getAgentDynamicEc2Identity(){
-		return getDynamicAgentProperties().getProperty(PROP_AGENT_DYNAMIC_AWS_IDENTITY);
+		return getDynamicAgentProperties().getProperty(PROP_AGENT_AUTO_SCALE_AWS_IDENTITY);
 	}
 
 	/**
@@ -739,7 +739,7 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
 	 * @return credential password/secret key
 	 */
 	public String getAgentDynamicEc2Credential(){
-		return getDynamicAgentProperties().getProperty(PROP_AGENT_DYNAMIC_AWS_CREDENTIAL);
+		return getDynamicAgentProperties().getProperty(PROP_AGENT_AUTO_SCALE_AWS_CREDENTIAL);
 	}
 
 	/**
@@ -749,7 +749,7 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
 	 * @return guard time
 	 */
 	public int getAgentDynamicGuardTime(){
-		int time = getDynamicAgentProperties().getPropertyInt(PROP_AGENT_DYNAMIC_GUARD_TIME);
+		int time = getDynamicAgentProperties().getPropertyInt(PROP_AGENT_AUTO_SCALE_GUARD_TIME);
 		if(time < 60){
 			LOG.warn("Guard time threshold should be greater than 60 minutes, change it to 60 minutes by system now...");
 			return 60;
@@ -763,7 +763,7 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
 	 * @return docker image repo
 	 */
 	public String getAgentDynamicDockerRepo(){
-		return getDynamicAgentProperties().getProperty(PROP_AGENT_DYNAMIC_DOCKER_REPO);
+		return getDynamicAgentProperties().getProperty(PROP_AGENT_AUTO_SCALE_DOCKER_REPO);
 	}
 
 
@@ -773,7 +773,7 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
 	 * @return docker image tag
 	 */
 	public String getAgentDynamicDockerTag(){
-		return getDynamicAgentProperties().getProperty(PROP_AGENT_DYNAMIC_DOCKER_TAG);
+		return getDynamicAgentProperties().getProperty(PROP_AGENT_AUTO_SCALE_DOCKER_TAG);
 	}
 
 	/**
@@ -782,7 +782,7 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
 	 * @return controller IP
 	 */
 	public String getAgentDynamicControllerIP(){
-		return getDynamicAgentProperties().getProperty(PROP_AGENT_DYNAMIC_CONTROLLER_IP);
+		return getDynamicAgentProperties().getProperty(PROP_AGENT_AUTO_SCALE_CONTROLLER_IP);
 	}
 
 
@@ -792,7 +792,7 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
 	 * @return controller port
 	 */
 	public String getAgentDynamicControllerPort(){
-		return getDynamicAgentProperties().getProperty(PROP_AGENT_DYNAMIC_CONTROLLER_PORT);
+		return getDynamicAgentProperties().getProperty(PROP_AGENT_AUTO_SCALE_CONTROLLER_PORT);
 	}
 
 	/**

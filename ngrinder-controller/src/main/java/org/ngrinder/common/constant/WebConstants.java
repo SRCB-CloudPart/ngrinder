@@ -48,4 +48,11 @@ public interface WebConstants {
 	public static final String PARAM_SAFE_FILE_DISTRIBUTION = "safeFileDistribution";
 
 	public static final String PARAM_SECURITY_MODE = "securityMode";
+
+	public static final String PARAM_AGENT_AUTO_SCALE_RUNNING_COUNT = "runningNodeCount";
+	public static final String PARAM_AGENT_AUTO_SCALE_STOPPED_COUNT = "stoppedNodeCount";
+	public static final String PARAM_AGENT_AUTO_SCALE_ALLOWED_COUNT = "allowedNodeCount";
+	public static final String PARAM_AGENT_AUTO_SCALE_ADDED_COUNT = "addedNodeCount";
+	public static final String PARAM_AGENT_AUTO_SCALE_ENABLED = "dynamicAgentEnabled";
+	public static final String PARAM_AGENT_AUTO_SCALE_LIST_DONE = "isListInfoDone";
 }

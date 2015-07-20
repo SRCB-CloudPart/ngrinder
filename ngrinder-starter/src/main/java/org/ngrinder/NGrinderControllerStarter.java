@@ -189,6 +189,29 @@ public class NGrinderControllerStarter {
 	@DynamicParameter(names = "-D", description = "Dynamic parameters", hidden = true)
 	private Map<String, String> params = new HashMap<String, String>();
 
+	@Parameter(names = {"-dat", "--dynamic-agent-type"}, description = "dynamic agent type")
+	private String daType = null;
+
+	@Parameter(names = {"-gt", "--guard-time"}, description = "the guard time which is for cost reduce")
+	private Integer guardTime = null;
+
+	@Parameter(names = {"-mn", "--max-node"}, description = "the allowed max node count can be created")
+	private Integer maxNodes = null;
+
+	@Parameter(names = {"-ai", "--AWS-identity"}, description = "indentity to login AWS")
+	private String awsIdentity = null;
+
+	@Parameter(names = {"-ac", "--AWS-credential"}, description = "credential to login AWS")
+	private String awsCredential = null;
+
+	@Parameter(names = {"-ci", "--controller-ip"}, description = "the controller ip for docker to download agent")
+	private String ctrlIp = null;
+
+	@Parameter(names = {"-dr", "--docker-repo"}, description = "the docker image repository")
+	private String dockerRepo = null;
+
+	@Parameter(names = {"-dt", "--docker-tag"}, description = "the docker image tag")
+	private String dockerTag = null;
 
 	public static boolean isEmpty(String str) {
 		return str == null || str.length() == 0;
@@ -300,6 +323,8 @@ public class NGrinderControllerStarter {
 			System.setProperty("ngrinder.ex.home", server.exHome);
 		}
 
+		setDynamiceAgentParameters(server);
+
 		final List<String> unknownOptions = commander.getUnknownOptions();
 		final ClusterMode clusterMode = ClusterMode.valueOf(server.clusterMode);
 		clusterMode.parseArgs(unknownOptions.toArray(new String[unknownOptions.size()]));
@@ -311,4 +336,32 @@ public class NGrinderControllerStarter {
 		return "java -XX:MaxPermSize=200m -jar  " + new File(getWarName()).getName();
 	}
 
+	private static void setDynamiceAgentParameters(NGrinderControllerStarter svr){
+		if(svr.daType != null){
+			System.setProperty("agent.auto_scale_type", svr.daType);
+		}
+		if(svr.awsIdentity != null){
+			System.setProperty("agent.auto_scale_aws_identity", svr.awsIdentity);
+		}
+		if(svr.awsCredential != null){
+			System.setProperty("agent.auto_scale_aws_credential", svr.awsCredential);
+		}
+		if(svr.ctrlIp != null){
+			System.setProperty("agent.auto_scale_controller_ip", svr.ctrlIp);
+		}
+		System.setProperty("agent.auto_scale_controller_port", String.valueOf(svr.port));
+
+		if(svr.dockerRepo != null){
+			System.setProperty("agent.auto_scale_docker_repo", svr.dockerRepo);
+		}
+		if(svr.dockerTag != null){
+			System.setProperty("agent.auto_scale_docker_tag", svr.dockerTag);
+		}
+		if(svr.guardTime != null){
+			System.setProperty("agent.auto_scale_guard_time", String.valueOf(svr.guardTime));
+		}
+		if(svr.maxNodes != null){
+			System.setProperty("agent.auto_scale_max", String.valueOf(svr.maxNodes));
+		}
+	}
 }
