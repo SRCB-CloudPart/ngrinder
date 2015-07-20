@@ -99,14 +99,12 @@ import static org.ngrinder.common.util.ExceptionUtils.processException;
 @Component("dynamicAgent")
 public class DynamicAgentHandler {
 
+    public final static String KEY_FOR_STARTUP = "CONTROLLER_STARTUP";
     private static final Logger LOG = LoggerFactory.getLogger(DynamicAgentHandler.class);
-
     @Autowired
     private Config config;
-
     @Autowired
     private ScheduledTaskService scheduledTaskService;
-
     private ComputeService compute = null;
     /*
      * This is a flag which is used to sync the operation in this bean and perfTestRunnable. Because this
@@ -117,16 +115,11 @@ public class DynamicAgentHandler {
      * case.
      */
     private AtomicBoolean initStartedFlag = new AtomicBoolean(false);
-
     /*
      * This flag is used to sync the web UI about the current existing node information, only list operation
      * is done, the running or stopped node count can be known.
      */
     private boolean isListInfoDone = false;
-    public boolean getIsListInfoDone(){
-        return this.isListInfoDone;
-    }
-
     /*
      * <PerfTest identifier, <EC2 instance private IP, time stamp when instance is created>
      *
@@ -136,7 +129,18 @@ public class DynamicAgentHandler {
      * approved agent list, treat this status as that the wanted new agent meets problem.
      */
     private Map<String, Map<String, Long>> testIdEc2NodeStatusMap = newHashMap();
-    public final static String KEY_FOR_STARTUP = "CONTROLLER_STARTUP";
+    /*
+     * Record the total count of EC2 nodes added to the specified group
+     */
+    private AtomicInteger addedNodeCount = new AtomicInteger(0);
+    private Map<String, String> runningNodeMap = newHashMap();
+    private Map<String, String> stoppedNodeMap = newHashMap();
+    private Set<String> turningOnSet = newHashSet();
+    private LoginCredentials addOnOffLogin = null;
+
+    public boolean getIsListInfoDone(){
+        return this.isListInfoDone;
+    }
 
     /**
      * Get the node status map with the specified test identifier, the map contains the timestamp when
@@ -195,17 +199,9 @@ public class DynamicAgentHandler {
         return (current - timeStamp) > monitoringAgentUpTimeThreshold;
     }
 
-    /*
-     * Record the total count of EC2 nodes added to the specified group
-     */
-    private AtomicInteger addedNodeCount = new AtomicInteger(0);
-
     public int getAddedNodeCount() {
         return this.addedNodeCount.get();
     }
-
-    private Map<String, String> runningNodeMap = newHashMap();
-    private Map<String, String> stoppedNodeMap = newHashMap();
 
     public int getStoppedNodeCount() {
         return stoppedNodeMap.size();
@@ -214,8 +210,6 @@ public class DynamicAgentHandler {
     public int getRunningNodeCount() {
         return runningNodeMap.size();
     }
-
-    private Set<String> turningOnSet = newHashSet();
 
     public int getTurningOnSetCount() {
         return turningOnSet.size();
@@ -229,13 +223,6 @@ public class DynamicAgentHandler {
         }
         return null;
     }
-
-
-    public enum Action {
-        ADD , ON , OFF, DESTROY, LIST
-    }
-
-    private LoginCredentials addOnOffLogin = null;
 
     /**
      * In order to ensure the group name is unique, use the controller IP as seed to generate the group name.
@@ -501,248 +488,6 @@ public class DynamicAgentHandler {
         return builder.buildView(ComputeServiceContext.class).getComputeService();
     }
 
-    class CommandContext{
-        private CommandHandler cmdHandler;
-
-        CommandContext(CommandHandler cmdHandler){
-            this.cmdHandler = cmdHandler;
-        }
-
-        void takeCommandAction(){
-            this.cmdHandler.takeAction();
-        }
-    }
-
-    abstract class CommandHandler {
-        protected ComputeService compute = null;
-        protected File scriptFile = null;
-        protected List<String> nodeIdList = null;
-        protected String groupName = generateUniqueGroupName();
-        protected String scriptName = null;
-        protected Map<String, Long> newAddedNodeMap = null;
-
-        void takeAction() {}
-    }
-
-    class AddHandler extends CommandHandler {
-
-        protected AddHandler(ComputeService compute, File scriptFile, Map<String, Long> newAddedNodeMap,  List<String> nodeList){
-            this.compute = compute;
-            this.scriptName = scriptFile.getName();
-            this.scriptFile = scriptFile;
-            this.newAddedNodeMap = newAddedNodeMap;
-            this.nodeIdList = nodeList;
-        }
-
-        @Override
-        void takeAction(){
-
-            checkNotNull(addOnOffLogin, "login is invalid, check user home and ssh path or ssh key whether they are existing");
-            checkNotNull(nodeIdList, "should provide node count to create via jclouds");
-            LOG.info(">> prepare to add {} node to group {}", nodeIdList.size(), groupName);
-
-            TemplateBuilder templateBuilder = compute.templateBuilder()
-                    .locationId("ap-southeast-1").hardwareId(InstanceType.M1_MEDIUM);
-
-            Statement bootInstructions = createAdminAccess();
-            templateBuilder.options(runScript(bootInstructions));
-            Template template = templateBuilder.build();
-
-            LOG.info(">> begin to create {} in group {}", nodeIdList.size(), groupName);
-            addedNodeCount.getAndAdd(nodeIdList.size());
-            List<String> addList = newArrayList();
-            Set<? extends NodeMetadata> nodes;
-            try {
-                nodes = compute.createNodesInGroup(groupName, nodeIdList.size(), template);
-            } catch (RunNodesException e) {
-                LOG.debug(e.getMessage());
-                throw ExceptionUtils.processException("RunNodesException: Create ec2 node error");
-            }
-
-            long addTimeStamp = System.currentTimeMillis();
-            for (NodeMetadata node : nodes) {
-                String id = node.getId();
-                String ip = getPrueIpString(node.getPrivateAddresses().toString());
-                LOG.info("<< added node: {} {}", id, concat(node.getPrivateAddresses(), node.getPublicAddresses()));
-                addList.add(id);
-                runningNodeMap.put(id, ip);
-                newAddedNodeMap.put(ip, addTimeStamp);
-            }
-
-            LOG.info(">> exec {} to initialize nodes as {}", scriptName, addOnOffLogin.identity);
-            Map<? extends NodeMetadata, ExecResponse> responseRun;
-            try {
-                responseRun = compute.runScriptOnNodesMatching(
-                        inGivenList(addList), Files.toString(scriptFile, Charsets.UTF_8),
-                        overrideLoginCredentials(addOnOffLogin).runAsRoot(false)
-                                .nameTask("_" + scriptFile.getName().replaceAll("\\..*", "")));
-            } catch (RunScriptOnNodesException e) {
-                LOG.debug(e.getMessage());
-                throw ExceptionUtils.processException("RunScriptOnNodesException: Run script on nodes error");
-            } catch (IOException e) {
-                LOG.debug(e.getMessage());
-                throw ExceptionUtils.processException("IOException: File IO error");
-            }
-
-            for (Entry<? extends NodeMetadata, ExecResponse> response : responseRun.entrySet()) {
-                LOG.info("<< {} status {}", response.getKey().getId(), response.getValue());
-            }
-        }
-    }
-
-    class OnHandler extends CommandHandler {
-
-        protected OnHandler(ComputeService compute, File scriptFile, Map<String, Long> newAddedNodeMap,  List<String> nodeList){
-            this.compute = compute;
-            this.scriptName = scriptFile.getName();
-            this.scriptFile = scriptFile;
-            this.newAddedNodeMap = newAddedNodeMap;
-            this.nodeIdList = nodeList;
-        }
-
-        @Override
-        void takeAction(){
-            checkNotNull(addOnOffLogin, "login is invalid, check user home and ssh path or ssh key whether they are existing");
-            LOG.info(">> begin to turn on node(s) in group {} as {}", groupName, addOnOffLogin.identity);
-            LOG.info(">> nodeIdList content: {}", nodeIdList);
-            Set<? extends NodeMetadata> turnOn = compute.resumeNodesMatching(Predicates.and(SUSPENDED, inGivenList(nodeIdList)));
-            long onTimeStamp = System.currentTimeMillis();
-            for (NodeMetadata node : turnOn) {
-                String id = node.getId();
-                String ip = getPrueIpString(node.getPrivateAddresses().toString());
-                LOG.info("<< turned on node: {}", id);
-                runningNodeMap.put(id, ip);
-                stoppedNodeMap.remove(id);
-                newAddedNodeMap.put(ip, onTimeStamp);
-            }
-
-            LOG.info(">> exec {} to initialize nodes", scriptName);
-            //after nodes are turned on, to start new docker container
-            Map<? extends NodeMetadata, ExecResponse> turnOnRun;
-            try {
-                turnOnRun = compute.runScriptOnNodesMatching(
-                        inGivenList(nodeIdList), Files.toString(scriptFile, Charsets.UTF_8), // passing in a string with the contents of the file
-                        overrideLoginCredentials(addOnOffLogin).runAsRoot(false)
-                                .nameTask("_" + scriptFile.getName().replaceAll("\\..*", "")));
-            } catch (RunScriptOnNodesException e) {
-                LOG.debug(e.getMessage());
-                throw ExceptionUtils.processException("RunScriptOnNodesException: Run script on nodes error");
-            } catch (IOException e) {
-                LOG.debug(e.getMessage());
-                throw ExceptionUtils.processException("IOException: File IO error");
-            }
-
-            for (Entry<? extends NodeMetadata, ExecResponse> response : turnOnRun.entrySet()) {
-                LOG.info("<< initialized node {}: {}", response.getKey().getId(),
-                        concat(response.getKey().getPrivateAddresses(), response.getKey().getPublicAddresses()));
-                LOG.info("<< {}", response.getValue());
-            }
-        }
-    }
-
-    class OffHandler extends CommandHandler {
-
-        protected OffHandler(ComputeService compute, File scriptFile, List<String> nodeList){
-            this.compute = compute;
-            this.scriptName = scriptFile.getName();
-            this.scriptFile = scriptFile;
-            this.nodeIdList = nodeList;
-        }
-
-        @Override
-        void takeAction(){
-            checkNotNull(addOnOffLogin, "login is invalid, check user home and ssh path or ssh key whether they are existing");
-            //1. before to do turn off the VMs, do stop and remove docker container
-            //2. turn off operation will suspend all the nodes in the given group
-            LOG.info(">> exec {} as {} ", scriptName, addOnOffLogin.identity);
-            Map<? extends NodeMetadata, ExecResponse> stopAndRemove;
-            try {
-                stopAndRemove = compute.runScriptOnNodesMatching(
-                        inGivenList(nodeIdList),
-                        Files.toString(scriptFile, Charsets.UTF_8),   // passing in a string with the contents of the file
-                        overrideLoginCredentials(addOnOffLogin).runAsRoot(false)
-                                .nameTask("_" + scriptFile.getName().replaceAll("\\..*", "")));
-            } catch (RunScriptOnNodesException e) {
-                LOG.debug(e.getMessage());
-                throw ExceptionUtils.processException("RunScriptOnNodesException: Run script on nodes error");
-            } catch (IOException e) {
-                LOG.debug(e.getMessage());
-                throw ExceptionUtils.processException("IOException: File IO error");
-            }
-
-            for (Entry<? extends NodeMetadata, ExecResponse> response : stopAndRemove.entrySet()) {
-                String id = response.getKey().getId();
-                LOG.info("<< node: {} {}", id, concat(response.getKey().getPrivateAddresses(), response.getKey().getPublicAddresses()));
-                LOG.info("<< stop and remove status: {}", response.getValue());
-            }
-
-            // you can use predicates to select which nodes you wish to turn off.
-            LOG.info(">> begin to turn off nodes in group {}", groupName);
-            Set<? extends NodeMetadata> turnOff = compute.suspendNodesMatching(Predicates.and(RUNNING, inGivenList(nodeIdList)));
-            for (NodeMetadata node : turnOff) {
-                String id = node.getId();
-                String tip = node.getPrivateAddresses().toString();
-                LOG.info("<< turn off node {}", node);
-                stoppedNodeMap.put(id, getPrueIpString(tip));
-                runningNodeMap.remove(id);
-            }
-            turningOnSet.clear();
-        }
-    }
-
-    class ListHandler extends CommandHandler {
-        protected ListHandler(ComputeService compute, Map<String, Long> newAddedNodeMap){
-            this.compute = compute;
-            this.newAddedNodeMap = newAddedNodeMap;
-        }
-
-        @Override
-        void takeAction(){
-            LOG.info(">> begin to list nodes status in group {}", groupName);
-            Set<? extends NodeMetadata> gnodes = compute.listNodesDetailsMatching(nodeNameStartsWith(groupName));
-            LOG.info(">> total number nodes/instances {} in group {}", gnodes.size(), groupName);
-            long listTimeStamp = System.currentTimeMillis();
-            for (NodeMetadata nodeData : gnodes) {
-                LOG.info("    >> " + nodeData);
-                Status status = nodeData.getStatus();
-                String ip = getPrueIpString(nodeData.getPrivateAddresses().toString());
-                if (status == Status.RUNNING) {
-                    runningNodeMap.put(nodeData.getId(), ip);
-                    newAddedNodeMap.put(ip, listTimeStamp);
-                } else if (status == Status.SUSPENDED) {
-                    stoppedNodeMap.put(nodeData.getId(), ip);
-                }
-            }
-            addedNodeCount.getAndSet(runningNodeMap.size() + stoppedNodeMap.size());
-            isListInfoDone = true;
-            LOG.info(">> total number available {} nodes in group {}", addedNodeCount.get(), groupName);
-        }
-    }
-
-    class DestroyHandler extends CommandHandler {
-        protected DestroyHandler(ComputeService compute, List<String> nodeList){
-            this.compute = compute;
-            this.nodeIdList = nodeList;
-        }
-
-        @Override
-        void takeAction(){
-            checkNotNull(nodeIdList, "which node(s) will be terminated should be specified");
-            LOG.info(">> destroy {} nodes in group {}", nodeIdList.size(), groupName);
-            // you can use predicates to select which nodes you wish to destroy.
-            Set<? extends NodeMetadata> destroyed = compute.destroyNodesMatching(inGivenList(nodeIdList));
-            for (NodeMetadata node : destroyed) {
-                String id = node.getId();
-                runningNodeMap.remove(id);
-                stoppedNodeMap.remove(id);
-                turningOnSet.remove(id);
-                addedNodeCount.getAndDecrement();
-                LOG.info("<< destroyed node: {}", node);
-            }
-            LOG.info("<< nodes are destroyed... ");
-        }
-    }
-
     /**
      * Major operation, according to the action which is enum value.
      *
@@ -989,5 +734,251 @@ public class DynamicAgentHandler {
         values.put("agent_image_tag", agent_docker_tag);
         values.put("agent_work_mode", cmd.toUpperCase());
         return getShellScriptViaTemplate(values, cmd);
+    }
+
+    public enum Action {
+        ADD , ON , OFF, DESTROY, LIST
+    }
+
+    class CommandContext{
+        private CommandHandler cmdHandler;
+
+        CommandContext(CommandHandler cmdHandler){
+            this.cmdHandler = cmdHandler;
+        }
+
+        void takeCommandAction(){
+            this.cmdHandler.takeAction();
+        }
+    }
+
+    abstract class CommandHandler {
+        protected ComputeService compute = null;
+        protected File scriptFile = null;
+        protected List<String> nodeIdList = null;
+        protected String groupName = generateUniqueGroupName();
+        protected String scriptName = null;
+        protected Map<String, Long> newAddedNodeMap = null;
+
+        void takeAction() {}
+    }
+
+    class AddHandler extends CommandHandler {
+
+        protected AddHandler(ComputeService compute, File scriptFile, Map<String, Long> newAddedNodeMap,  List<String> nodeList){
+            this.compute = compute;
+            this.scriptName = scriptFile.getName();
+            this.scriptFile = scriptFile;
+            this.newAddedNodeMap = newAddedNodeMap;
+            this.nodeIdList = nodeList;
+        }
+
+        @Override
+        void takeAction(){
+
+            checkNotNull(addOnOffLogin, "login is invalid, check user home and ssh path or ssh key whether they are existing");
+            checkNotNull(nodeIdList, "should provide node count to create via jclouds");
+            LOG.info(">> prepare to add {} node to group {}", nodeIdList.size(), groupName);
+
+            TemplateBuilder templateBuilder = compute.templateBuilder()
+                    .locationId("ap-southeast-1").hardwareId(InstanceType.M1_MEDIUM);
+
+            Statement bootInstructions = createAdminAccess();
+            templateBuilder.options(runScript(bootInstructions));
+            Template template = templateBuilder.build();
+
+            LOG.info(">> begin to create {} in group {}", nodeIdList.size(), groupName);
+            addedNodeCount.getAndAdd(nodeIdList.size());
+            List<String> addList = newArrayList();
+            Set<? extends NodeMetadata> nodes;
+            try {
+                nodes = compute.createNodesInGroup(groupName, nodeIdList.size(), template);
+            } catch (RunNodesException e) {
+                LOG.debug(e.getMessage());
+                throw ExceptionUtils.processException("RunNodesException: Create ec2 node error");
+            }
+
+            long addTimeStamp = System.currentTimeMillis();
+            for (NodeMetadata node : nodes) {
+                String id = node.getId();
+                String ip = getPrueIpString(node.getPrivateAddresses().toString());
+                LOG.info("<< added node: {} {}", id, concat(node.getPrivateAddresses(), node.getPublicAddresses()));
+                addList.add(id);
+                runningNodeMap.put(id, ip);
+                newAddedNodeMap.put(ip, addTimeStamp);
+            }
+
+            LOG.info(">> exec {} to initialize nodes as {}", scriptName, addOnOffLogin.identity);
+            Map<? extends NodeMetadata, ExecResponse> responseRun;
+            try {
+                responseRun = compute.runScriptOnNodesMatching(
+                        inGivenList(addList), Files.toString(scriptFile, Charsets.UTF_8),
+                        overrideLoginCredentials(addOnOffLogin).runAsRoot(false)
+                                .nameTask("_" + scriptFile.getName().replaceAll("\\..*", "")));
+            } catch (RunScriptOnNodesException e) {
+                LOG.debug(e.getMessage());
+                throw ExceptionUtils.processException("RunScriptOnNodesException: Run script on nodes error");
+            } catch (IOException e) {
+                LOG.debug(e.getMessage());
+                throw ExceptionUtils.processException("IOException: File IO error");
+            }
+
+            for (Entry<? extends NodeMetadata, ExecResponse> response : responseRun.entrySet()) {
+                LOG.info("<< {} status {}", response.getKey().getId(), response.getValue());
+            }
+        }
+    }
+
+    class OnHandler extends CommandHandler {
+
+        protected OnHandler(ComputeService compute, File scriptFile, Map<String, Long> newAddedNodeMap,  List<String> nodeList){
+            this.compute = compute;
+            this.scriptName = scriptFile.getName();
+            this.scriptFile = scriptFile;
+            this.newAddedNodeMap = newAddedNodeMap;
+            this.nodeIdList = nodeList;
+        }
+
+        @Override
+        void takeAction(){
+            checkNotNull(addOnOffLogin, "login is invalid, check user home and ssh path or ssh key whether they are existing");
+            LOG.info(">> begin to turn on node(s) in group {} as {}", groupName, addOnOffLogin.identity);
+            LOG.info(">> nodeIdList content: {}", nodeIdList);
+            Set<? extends NodeMetadata> turnOn = compute.resumeNodesMatching(Predicates.and(SUSPENDED, inGivenList(nodeIdList)));
+            long onTimeStamp = System.currentTimeMillis();
+            for (NodeMetadata node : turnOn) {
+                String id = node.getId();
+                String ip = getPrueIpString(node.getPrivateAddresses().toString());
+                LOG.info("<< turned on node: {}", id);
+                runningNodeMap.put(id, ip);
+                stoppedNodeMap.remove(id);
+                newAddedNodeMap.put(ip, onTimeStamp);
+            }
+
+            LOG.info(">> exec {} to initialize nodes", scriptName);
+            //after nodes are turned on, to start new docker container
+            Map<? extends NodeMetadata, ExecResponse> turnOnRun;
+            try {
+                turnOnRun = compute.runScriptOnNodesMatching(
+                        inGivenList(nodeIdList), Files.toString(scriptFile, Charsets.UTF_8), // passing in a string with the contents of the file
+                        overrideLoginCredentials(addOnOffLogin).runAsRoot(false)
+                                .nameTask("_" + scriptFile.getName().replaceAll("\\..*", "")));
+            } catch (RunScriptOnNodesException e) {
+                LOG.debug(e.getMessage());
+                throw ExceptionUtils.processException("RunScriptOnNodesException: Run script on nodes error");
+            } catch (IOException e) {
+                LOG.debug(e.getMessage());
+                throw ExceptionUtils.processException("IOException: File IO error");
+            }
+
+            for (Entry<? extends NodeMetadata, ExecResponse> response : turnOnRun.entrySet()) {
+                LOG.info("<< initialized node {}: {}", response.getKey().getId(),
+                        concat(response.getKey().getPrivateAddresses(), response.getKey().getPublicAddresses()));
+                LOG.info("<< {}", response.getValue());
+            }
+        }
+    }
+
+    class OffHandler extends CommandHandler {
+
+        protected OffHandler(ComputeService compute, File scriptFile, List<String> nodeList){
+            this.compute = compute;
+            this.scriptName = scriptFile.getName();
+            this.scriptFile = scriptFile;
+            this.nodeIdList = nodeList;
+        }
+
+        @Override
+        void takeAction(){
+            checkNotNull(addOnOffLogin, "login is invalid, check user home and ssh path or ssh key whether they are existing");
+            //1. before to do turn off the VMs, do stop and remove docker container
+            //2. turn off operation will suspend all the nodes in the given group
+            LOG.info(">> exec {} as {} ", scriptName, addOnOffLogin.identity);
+            Map<? extends NodeMetadata, ExecResponse> stopAndRemove;
+            try {
+                stopAndRemove = compute.runScriptOnNodesMatching(
+                        inGivenList(nodeIdList),
+                        Files.toString(scriptFile, Charsets.UTF_8),   // passing in a string with the contents of the file
+                        overrideLoginCredentials(addOnOffLogin).runAsRoot(false)
+                                .nameTask("_" + scriptFile.getName().replaceAll("\\..*", "")));
+            } catch (RunScriptOnNodesException e) {
+                LOG.debug(e.getMessage());
+                throw ExceptionUtils.processException("RunScriptOnNodesException: Run script on nodes error");
+            } catch (IOException e) {
+                LOG.debug(e.getMessage());
+                throw ExceptionUtils.processException("IOException: File IO error");
+            }
+
+            for (Entry<? extends NodeMetadata, ExecResponse> response : stopAndRemove.entrySet()) {
+                String id = response.getKey().getId();
+                LOG.info("<< node: {} {}", id, concat(response.getKey().getPrivateAddresses(), response.getKey().getPublicAddresses()));
+                LOG.info("<< stop and remove status: {}", response.getValue());
+            }
+
+            // you can use predicates to select which nodes you wish to turn off.
+            LOG.info(">> begin to turn off nodes in group {}", groupName);
+            Set<? extends NodeMetadata> turnOff = compute.suspendNodesMatching(Predicates.and(RUNNING, inGivenList(nodeIdList)));
+            for (NodeMetadata node : turnOff) {
+                String id = node.getId();
+                String tip = node.getPrivateAddresses().toString();
+                LOG.info("<< turn off node {}", node);
+                stoppedNodeMap.put(id, getPrueIpString(tip));
+                runningNodeMap.remove(id);
+            }
+            turningOnSet.clear();
+        }
+    }
+
+    class ListHandler extends CommandHandler {
+        protected ListHandler(ComputeService compute, Map<String, Long> newAddedNodeMap){
+            this.compute = compute;
+            this.newAddedNodeMap = newAddedNodeMap;
+        }
+
+        @Override
+        void takeAction(){
+            LOG.info(">> begin to list nodes status in group {}", groupName);
+            Set<? extends NodeMetadata> gnodes = compute.listNodesDetailsMatching(nodeNameStartsWith(groupName));
+            LOG.info(">> total number nodes/instances {} in group {}", gnodes.size(), groupName);
+            long listTimeStamp = System.currentTimeMillis();
+            for (NodeMetadata nodeData : gnodes) {
+                LOG.info("    >> " + nodeData);
+                Status status = nodeData.getStatus();
+                String ip = getPrueIpString(nodeData.getPrivateAddresses().toString());
+                if (status == Status.RUNNING) {
+                    runningNodeMap.put(nodeData.getId(), ip);
+                    newAddedNodeMap.put(ip, listTimeStamp);
+                } else if (status == Status.SUSPENDED) {
+                    stoppedNodeMap.put(nodeData.getId(), ip);
+                }
+            }
+            addedNodeCount.getAndSet(runningNodeMap.size() + stoppedNodeMap.size());
+            isListInfoDone = true;
+            LOG.info(">> total number available {} nodes in group {}", addedNodeCount.get(), groupName);
+        }
+    }
+
+    class DestroyHandler extends CommandHandler {
+        protected DestroyHandler(ComputeService compute, List<String> nodeList){
+            this.compute = compute;
+            this.nodeIdList = nodeList;
+        }
+
+        @Override
+        void takeAction(){
+            checkNotNull(nodeIdList, "which node(s) will be terminated should be specified");
+            LOG.info(">> destroy {} nodes in group {}", nodeIdList.size(), groupName);
+            // you can use predicates to select which nodes you wish to destroy.
+            Set<? extends NodeMetadata> destroyed = compute.destroyNodesMatching(inGivenList(nodeIdList));
+            for (NodeMetadata node : destroyed) {
+                String id = node.getId();
+                runningNodeMap.remove(id);
+                stoppedNodeMap.remove(id);
+                turningOnSet.remove(id);
+                addedNodeCount.getAndDecrement();
+                LOG.info("<< destroyed node: {}", node);
+            }
+            LOG.info("<< nodes are destroyed... ");
+        }
     }
 }
