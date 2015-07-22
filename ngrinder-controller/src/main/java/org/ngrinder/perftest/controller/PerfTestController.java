@@ -214,9 +214,7 @@ public class PerfTestController extends BaseController {
 		model.addAttribute(PARAM_PROCESS_THREAD_POLICY_SCRIPT, perfTestService.getProcessAndThreadPolicyScript());
 		addDefaultAttributeOnModel(model);
 
-		if(getConfig().isAgentDynamicEc2Enabled()) {
-			setModeAttrForDynamicAgentFeature(model, true);
-		}
+		setModeAttrForDynamicAgentFeature(model, getConfig().isAgentDynamicEc2Enabled());
 
 		return "perftest/detail";
 	}
@@ -293,9 +291,8 @@ public class PerfTestController extends BaseController {
 		addDefaultAttributeOnModel(model);
 		model.addAttribute(PARAM_PROCESS_THREAD_POLICY_SCRIPT, perfTestService.getProcessAndThreadPolicyScript());
 
-		if(getConfig().isAgentDynamicEc2Enabled()) {
-			setModeAttrForDynamicAgentFeature(model, true);
-		}
+		setModeAttrForDynamicAgentFeature(model, getConfig().isAgentDynamicEc2Enabled());
+
 
 		return "perftest/detail";
 	}
