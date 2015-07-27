@@ -33,13 +33,13 @@ import static org.junit.Assert.assertThat;
 import static org.mockito.Mockito.when;
 
 @RunWith(MockitoJUnitRunner.class)
-public class DynamicAgentHandlerTest {
+public class AgentAutoScaleHandlerTest {
 
     @Mock
     private Config config;
 
     @InjectMocks
-    private MockDynamicAgentHandler dah = new MockDynamicAgentHandler();
+    private MockAgentAutoScaleHandler dah = new MockAgentAutoScaleHandler();
 
 
 
@@ -62,15 +62,15 @@ public class DynamicAgentHandlerTest {
         String repo = "ngrinder/agent";
         String tag = "3.3";
 
-        when(config.getAgentDynamicType()).thenReturn(type);
-        when(config.getAgentDynamicEc2Identity()).thenReturn(identity);
-        when(config.getAgentDynamicEc2Credential()).thenReturn(credential);
-        when(config.getAgentDynamicControllerIP()).thenReturn(ctrlIP);
-        when(config.getAgentDynamicControllerPort()).thenReturn(ctrlPort);
-        when(config.getAgentDynamicDockerRepo()).thenReturn(repo);
-        when(config.getAgentDynamicDockerTag()).thenReturn(tag);
-        when(config.getAgentDynamicNodeMax()).thenReturn(2);
-        when(config.getAgentDynamicGuardTime()).thenReturn(60);
+        when(config.getAgentAutoScaleType()).thenReturn(type);
+        when(config.getAgentAutoScaleIdentity()).thenReturn(identity);
+        when(config.getAgentAutoScaleCredential()).thenReturn(credential);
+        when(config.getAgentAutoScaleControllerIP()).thenReturn(ctrlIP);
+        when(config.getAgentAutoScaleControllerPort()).thenReturn(ctrlPort);
+        when(config.getAgentAutoScaleDockerRepo()).thenReturn(repo);
+        when(config.getAgentAutoScaleDockerTag()).thenReturn(tag);
+        when(config.getAgentAutoScaleMaxNodes()).thenReturn(2);
+        when(config.getAgentAutoScaleGuardTime()).thenReturn(60);
 
         prepareSshEnv();
         dah.ctrlIp = ctrlIP;
@@ -152,7 +152,7 @@ public class DynamicAgentHandlerTest {
 
         assertThat(dah.getStoppedNodeCount(), is(1));
         assertThat(dah.getAddedNodeCount(), is(2));
-        assertThat(dah.getTestIdEc2NodeStatus(MockDynamicAgentHandler.KEY_FOR_STARTUP).containsKey("192.168.1.1"), is(true));
+        assertThat(dah.getTestIdEc2NodeStatus(MockAgentAutoScaleHandler.KEY_FOR_STARTUP).containsKey("192.168.1.1"), is(true));
         System.out.println("initFirstOneEc2InstanceTest_only_list is passed");
     }
 
@@ -164,7 +164,7 @@ public class DynamicAgentHandlerTest {
 
         assertThat(dah.getStoppedNodeCount(), is(1));
         assertThat(dah.getAddedNodeCount(), is(2));
-        assertThat(dah.getTestIdEc2NodeStatus(MockDynamicAgentHandler.KEY_FOR_STARTUP).containsKey("192.168.1.1"), is(true));
+        assertThat(dah.getTestIdEc2NodeStatus(MockAgentAutoScaleHandler.KEY_FOR_STARTUP).containsKey("192.168.1.1"), is(true));
         System.out.println("initFirstOneEc2InstanceTest_list_on is passed");
     }
 
@@ -176,7 +176,7 @@ public class DynamicAgentHandlerTest {
 
         assertThat(dah.getStoppedNodeCount(), is(0));
         assertThat(dah.getAddedNodeCount(), is(1));
-        assertThat(dah.getTestIdEc2NodeStatus(MockDynamicAgentHandler.KEY_FOR_STARTUP).containsKey("192.168.1.3"), is(true));
+        assertThat(dah.getTestIdEc2NodeStatus(MockAgentAutoScaleHandler.KEY_FOR_STARTUP).containsKey("192.168.1.3"), is(true));
         System.out.println("initFirstOneEc2InstanceTest_list_add is passed");
     }
 
@@ -229,7 +229,7 @@ public class DynamicAgentHandlerTest {
 
         assertThat(dah.getStoppedNodeCount(), is(0));
         assertThat(dah.getAddedNodeCount(), is(1));
-        assertThat(dah.getTestIdEc2NodeStatus(MockDynamicAgentHandler.KEY_FOR_STARTUP).containsKey("192.168.1.2"), is(false));
+        assertThat(dah.getTestIdEc2NodeStatus(MockAgentAutoScaleHandler.KEY_FOR_STARTUP).containsKey("192.168.1.2"), is(false));
         System.out.println("terminateEc2InstanceTest is passed");
     }
 }

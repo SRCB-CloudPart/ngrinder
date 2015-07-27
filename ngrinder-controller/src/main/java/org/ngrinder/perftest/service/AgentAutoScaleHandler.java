@@ -87,11 +87,11 @@ import static org.ngrinder.common.util.ExceptionUtils.processException;
  * @since 3.4
  */
 @Profile("production")
-@Component("dynamicAgent")
-public class DynamicAgentHandler {
+@Component("agentAutoScaleHandler")
+public class AgentAutoScaleHandler {
 
     public final static String KEY_FOR_STARTUP = "CONTROLLER_STARTUP";
-    private static final Logger LOG = LoggerFactory.getLogger(DynamicAgentHandler.class);
+    private static final Logger LOG = LoggerFactory.getLogger(AgentAutoScaleHandler.class);
     @Autowired
     private Config config;
     @Autowired
@@ -128,7 +128,7 @@ public class DynamicAgentHandler {
     private ConcurrentHashMap<String, String> stoppedIdNodes = new ConcurrentHashMap<String, String>();
     private ConcurrentSkipListSet<String> turningOnNodes = new ConcurrentSkipListSet<String>();
 
-    public boolean getIsListInfoDone(){
+    public boolean getIsListInfoDone() {
         return this.isListInfoDone;
     }
 
@@ -222,7 +222,7 @@ public class DynamicAgentHandler {
      */
     private String generateUniqueGroupName() {
         String groupName = "agt";
-        String ctrl_ip = config.getAgentDynamicControllerIP();
+        String ctrl_ip = config.getAgentAutoScaleControllerIP();
         ctrl_ip = ctrl_ip.replaceAll("\\.", "d");
         return groupName + ctrl_ip;
     }
@@ -236,13 +236,13 @@ public class DynamicAgentHandler {
 
         initStartAndEndEnvironment();
 
-        Action.setClassParameters(runningIdNodes, stoppedIdNodes, turningOnNodes,testIdEc2NodeStatus, addedNodeCount, addOnOffLogin);
+        Action.setClassParameters(runningIdNodes, stoppedIdNodes, turningOnNodes, testIdEc2NodeStatus, addedNodeCount, addOnOffLogin);
     }
 
     @PreDestroy
     public void destroy() {
         LOG.info("compute service context is closed when bean destroy...");
-        if(compute != null){
+        if (compute != null) {
             compute.getContext().close();
         }
     }
@@ -252,7 +252,7 @@ public class DynamicAgentHandler {
         registerShutdownHook();
     }
 
-    private PropertyChangeListener initDynamicAgentEnvListener(){
+    private PropertyChangeListener initDynamicAgentEnvListener() {
         return new PropertyChangeListener() {
             @Override
             public void propertyChange(PropertyChangeEvent evt) {
@@ -262,7 +262,7 @@ public class DynamicAgentHandler {
     }
 
     private void initDynamicAgentNodeEnvironment() {
-        if (config.isAgentDynamicEc2Enabled()) {
+        if (config.isAgentAutoScaleEnabled()) {
 
             //If the EC2 node initialization is not done, before the first case to test, should do list operation to
             //get the existing node information.
@@ -328,7 +328,6 @@ public class DynamicAgentHandler {
      */
     public void addDynamicEc2Instance(String testIdentifier, int requiredNum) {
         setTestIdEc2NodeStatus(testIdentifier);
-
         Action.ADD.setScriptFile(new File(getEnvToGenerateScript("add")));
         Action.ADD.setGroupName(generateUniqueGroupName());
         Action.ADD.setComputeService(getComputeService());
@@ -418,7 +417,7 @@ public class DynamicAgentHandler {
         Thread thread = new Thread() {
             @Override
             public void run() {
-                if (config.isAgentDynamicEc2Enabled()) {
+                if (config.isAgentAutoScaleEnabled()) {
                     LOG.info("dynamic agent is destroyed via shutdown hook....");
                     List<String> termIds = newArrayList();
                     for (String id : runningIdNodes.keySet()) {
@@ -437,10 +436,10 @@ public class DynamicAgentHandler {
     }
 
     private String getEnvToGenerateScript(String cmd) {
-        String dockerImageRepo = config.getAgentDynamicDockerRepo();
-        String dockerImageTag = config.getAgentDynamicDockerTag();
-        String controllerIP = config.getAgentDynamicControllerIP();
-        String controllerPort = config.getAgentDynamicControllerPort();
+        String dockerImageRepo = config.getAgentAutoScaleDockerRepo();
+        String dockerImageTag = config.getAgentAutoScaleDockerTag();
+        String controllerIP = config.getAgentAutoScaleControllerIP();
+        String controllerPort = config.getAgentAutoScaleControllerPort();
 
         return generateScriptBasedOnTemplate(controllerIP, controllerPort, dockerImageRepo, dockerImageTag, cmd);
     }
@@ -471,10 +470,10 @@ public class DynamicAgentHandler {
     }
 
     private ComputeService getComputeService() {
-        if(compute == null) {
-            String identity = config.getAgentDynamicEc2Identity();
-            String credential = config.getAgentDynamicEc2Credential();
-            String type = config.getAgentDynamicType();
+        if (compute == null) {
+            String identity = config.getAgentAutoScaleIdentity();
+            String credential = config.getAgentAutoScaleCredential();
+            String type = config.getAgentAutoScaleType();
 
             checkNotNull(type, "cloud provider can not be null or empty");
             checkNotNull(credential, "credential can not be null or empty");
@@ -588,7 +587,7 @@ public class DynamicAgentHandler {
      * Get the initial script with the given value map for operation EC2 node.
      *
      * @param values map of initial script referencing values.
-     * @param cmd the operation name which maybe add, on and off
+     * @param cmd    the operation name which maybe add, on and off
      * @return String the file name of the generated script.
      */
     public String getShellScriptViaTemplate(Map<String, Object> values, String cmd) {
@@ -636,7 +635,7 @@ public class DynamicAgentHandler {
      * @return String script file name
      */
     private String generateScriptBasedOnTemplate(String ctrl_IP, String ctrl_port, String agent_docker_repo,
-                                               String agent_docker_tag, String cmd) {
+                                                 String agent_docker_tag, String cmd) {
 
         Map<String, Object> values = newHashMap();
         values.put("agent_controller_ip", ctrl_IP);

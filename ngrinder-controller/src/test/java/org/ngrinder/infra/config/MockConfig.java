@@ -23,7 +23,7 @@ import java.util.Properties;
 @Component
 public class MockConfig extends Config {
 	private PropertiesWrapper wrapper = new PropertiesWrapper(new Properties(), controllerPropertiesKeyMapper);
-	private PropertiesWrapper daWrapper = new PropertiesWrapper(new Properties(), dynamicAgentPropertiesKeyMapper);
+	private PropertiesWrapper daWrapper = new PropertiesWrapper(new Properties(), agentAutoScalePropertiesKeyMapper);
 
 	public boolean cluster;
 	public boolean doRealOnRegion = false;
@@ -42,7 +42,7 @@ public class MockConfig extends Config {
 	}
 
 	@Override
-	public PropertiesWrapper getDynamicAgentProperties() {
+	public PropertiesWrapper getAgentAutoScaleProperties() {
 		return daWrapper;
 	}
 

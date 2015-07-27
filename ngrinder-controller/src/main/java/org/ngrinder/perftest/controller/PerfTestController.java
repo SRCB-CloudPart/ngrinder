@@ -33,7 +33,7 @@ import org.ngrinder.infra.logger.CoreLogger;
 import org.ngrinder.infra.spring.RemainedPath;
 import org.ngrinder.model.*;
 import org.ngrinder.perftest.service.AgentManager;
-import org.ngrinder.perftest.service.DynamicAgentHandler;
+import org.ngrinder.perftest.service.AgentAutoScaleHandler;
 import org.ngrinder.perftest.service.PerfTestService;
 import org.ngrinder.perftest.service.TagService;
 import org.ngrinder.region.service.RegionService;
@@ -111,7 +111,7 @@ public class PerfTestController extends BaseController {
 	private Gson fileEntryGson;
 
 	@Autowired
-	private DynamicAgentHandler dynamicAgentHandler;
+	private AgentAutoScaleHandler agentAutoScaleHandler;
 
 	/**
 	 * Initialize.
@@ -214,7 +214,7 @@ public class PerfTestController extends BaseController {
 		model.addAttribute(PARAM_PROCESS_THREAD_POLICY_SCRIPT, perfTestService.getProcessAndThreadPolicyScript());
 		addDefaultAttributeOnModel(model);
 
-		setModeAttrForDynamicAgentFeature(model, getConfig().isAgentDynamicEc2Enabled());
+		setModeAttrForDynamicAgentFeature(model, getConfig().isAgentAutoScaleEnabled());
 
 		return "perftest/detail";
 	}
@@ -291,19 +291,19 @@ public class PerfTestController extends BaseController {
 		addDefaultAttributeOnModel(model);
 		model.addAttribute(PARAM_PROCESS_THREAD_POLICY_SCRIPT, perfTestService.getProcessAndThreadPolicyScript());
 
-		setModeAttrForDynamicAgentFeature(model, getConfig().isAgentDynamicEc2Enabled());
+		setModeAttrForDynamicAgentFeature(model, getConfig().isAgentAutoScaleEnabled());
 
 
 		return "perftest/detail";
 	}
 
 	private void setModeAttrForDynamicAgentFeature(ModelMap model, boolean enabled) {
-		model.addAttribute(PARAM_AGENT_AUTO_SCALE_ADDED_COUNT, dynamicAgentHandler.getAddedNodeCount());
-		model.addAttribute(PARAM_AGENT_AUTO_SCALE_ALLOWED_COUNT, getConfig().getAgentDynamicNodeMax());
+		model.addAttribute(PARAM_AGENT_AUTO_SCALE_ADDED_COUNT, agentAutoScaleHandler.getAddedNodeCount());
+		model.addAttribute(PARAM_AGENT_AUTO_SCALE_ALLOWED_COUNT, getConfig().getAgentAutoScaleMaxNodes());
 		model.addAttribute(PARAM_AGENT_AUTO_SCALE_ENABLED, enabled);
-		model.addAttribute(PARAM_AGENT_AUTO_SCALE_LIST_DONE, dynamicAgentHandler.getIsListInfoDone());
-		model.addAttribute(PARAM_AGENT_AUTO_SCALE_RUNNING_COUNT, dynamicAgentHandler.getRunningNodeCount());
-		model.addAttribute(PARAM_AGENT_AUTO_SCALE_STOPPED_COUNT, dynamicAgentHandler.getStoppedNodeCount());
+		model.addAttribute(PARAM_AGENT_AUTO_SCALE_LIST_DONE, agentAutoScaleHandler.getIsListInfoDone());
+		model.addAttribute(PARAM_AGENT_AUTO_SCALE_RUNNING_COUNT, agentAutoScaleHandler.getRunningNodeCount());
+		model.addAttribute(PARAM_AGENT_AUTO_SCALE_STOPPED_COUNT, agentAutoScaleHandler.getStoppedNodeCount());
 	}
 
 	/**
@@ -377,7 +377,7 @@ public class PerfTestController extends BaseController {
 		/*
 		 * If dynamic agent provision feature is enabled, bypass the validation
 		 */
-		if(!getConfig().isAgentDynamicEc2Enabled()) {
+		if(!getConfig().isAgentAutoScaleEnabled()) {
 			int agentMaxCount = agentCountObj.intValue();
 			checkArgument(newOne.getAgentCount() <= agentMaxCount, "test agent should be equal to or less than %s",
 					agentMaxCount);
@@ -387,8 +387,8 @@ public class PerfTestController extends BaseController {
 		}else{
 			int agentMaxCount = agentCountObj.intValue();
 			int reqCount = newOne.getAgentCount();
-			int max = getConfig().getAgentDynamicNodeMax();
-			int added = dynamicAgentHandler.getAddedNodeCount();
+			int max = getConfig().getAgentAutoScaleMaxNodes();
+			int added = agentAutoScaleHandler.getAddedNodeCount();
 			int maxCountAllowed = max - added + agentMaxCount;
 
 			checkArgument(reqCount <= maxCountAllowed, "current max allowed dynamic agent count %s should not exceed %s",	reqCount, maxCountAllowed);

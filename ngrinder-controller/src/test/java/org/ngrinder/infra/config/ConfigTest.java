@@ -15,7 +15,7 @@ package org.ngrinder.infra.config;
 
 import org.junit.Before;
 import org.junit.Test;
-import org.ngrinder.common.constant.AgentDynamicConstants;
+import org.ngrinder.common.constant.AgentAutoScaleConstants;
 import org.ngrinder.common.constant.ClusterConstants;
 import org.ngrinder.common.constant.ControllerConstants;
 import org.ngrinder.common.model.Home;
@@ -30,7 +30,7 @@ import static org.junit.Assert.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-public class ConfigTest implements ControllerConstants, ClusterConstants, AgentDynamicConstants {
+public class ConfigTest implements ControllerConstants, ClusterConstants, AgentAutoScaleConstants {
 
 	private MockConfig config;
 
@@ -126,32 +126,32 @@ public class ConfigTest implements ControllerConstants, ClusterConstants, AgentD
 		config.setDynamicAgentProperties(wrapper);
 
 		when(wrapper.getProperty(PROP_AGENT_AUTO_SCALE_TYPE)).thenReturn("EC2");
-		assertThat(config.getAgentDynamicType(), is("EC2"));
+		assertThat(config.getAgentAutoScaleType(), is("EC2"));
 
 		when(wrapper.getPropertyInt(PROP_AGENT_AUTO_SCALE_MAX_NODES)).thenReturn(10);
-		assertThat(config.getAgentDynamicNodeMax(), is(10));
+		assertThat(config.getAgentAutoScaleMaxNodes(), is(10));
 
 		when(wrapper.getProperty(PROP_AGENT_AUTO_SCALE_IDENTITY)).thenReturn("abcd");
-		assertThat(config.getAgentDynamicEc2Identity(), is("abcd"));
+		assertThat(config.getAgentAutoScaleIdentity(), is("abcd"));
 
 		when(wrapper.getProperty(PROP_AGENT_AUTO_SCALE_CREDENTIAL)).thenReturn("abcd111");
-		assertThat(config.getAgentDynamicEc2Credential(), is("abcd111"));
+		assertThat(config.getAgentAutoScaleCredential(), is("abcd111"));
 
 		when(wrapper.getPropertyInt(PROP_AGENT_AUTO_SCALE_GUARD_TIME)).thenReturn(60);
-		assertThat(config.getAgentDynamicGuardTime(), is(60));
+		assertThat(config.getAgentAutoScaleGuardTime(), is(60));
 
 		when(wrapper.getProperty(PROP_AGENT_AUTO_SCALE_DOCKER_REPO)).thenReturn("ngrinder/agent");
-		assertThat(config.getAgentDynamicDockerRepo(), is("ngrinder/agent"));
+		assertThat(config.getAgentAutoScaleDockerRepo(), is("ngrinder/agent"));
 
 		when(wrapper.getProperty(PROP_AGENT_AUTO_SCALE_DOCKER_TAG)).thenReturn("3.3");
-		assertThat(config.getAgentDynamicDockerTag(), is("3.3"));
+		assertThat(config.getAgentAutoScaleDockerTag(), is("3.3"));
 
 		when(wrapper.getProperty(PROP_AGENT_AUTO_SCALE_CONTROLLER_IP)).thenReturn("1.2.3.4");
-		assertThat(config.getAgentDynamicControllerIP(), is("1.2.3.4"));
+		assertThat(config.getAgentAutoScaleControllerIP(), is("1.2.3.4"));
 
 		when(wrapper.getProperty(PROP_AGENT_AUTO_SCALE_CONTROLLER_PORT)).thenReturn("8080");
-		assertThat(config.getAgentDynamicControllerPort(), is("8080"));
+		assertThat(config.getAgentAutoScaleControllerPort(), is("8080"));
 
-		assertThat(config.isAgentDynamicEc2Enabled(), is(true));
+		assertThat(config.isAgentAutoScaleEnabled(), is(true));
 	}
 }

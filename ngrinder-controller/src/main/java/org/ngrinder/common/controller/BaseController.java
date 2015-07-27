@@ -22,7 +22,7 @@ import org.ngrinder.common.exception.NGrinderRuntimeException;
 import org.ngrinder.infra.config.Config;
 import org.ngrinder.model.User;
 import org.ngrinder.operation.service.AnnouncementService;
-import org.ngrinder.perftest.service.DynamicAgentHandler;
+import org.ngrinder.perftest.service.AgentAutoScaleHandler;
 import org.ngrinder.region.service.RegionService;
 import org.ngrinder.user.service.UserContext;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -82,7 +82,7 @@ public class BaseController implements WebConstants {
 	private RegionService regionService;
 
 	@Autowired
-	private DynamicAgentHandler dynamicAgentHandler;
+	private AgentAutoScaleHandler agentAutoScaleHandler;
 
 	@PostConstruct
 	void initJSON() {

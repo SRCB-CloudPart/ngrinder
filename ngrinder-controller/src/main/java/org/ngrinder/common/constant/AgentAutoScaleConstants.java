@@ -18,7 +18,7 @@ package org.ngrinder.common.constant;
  *
  * @since 3.4
  */
-public interface AgentDynamicConstants {
+public interface AgentAutoScaleConstants {
     String PROP_AGENT_AUTO_SCALE_TYPE = "agent.auto_scale.type";
     String PROP_AGENT_AUTO_SCALE_IDENTITY = "agent.auto_scale.identity";
     String PROP_AGENT_AUTO_SCALE_CREDENTIAL = "agent.auto_scale.credential";

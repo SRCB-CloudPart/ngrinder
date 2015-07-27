@@ -13,7 +13,7 @@ import org.jclouds.compute.domain.Template;
 import org.jclouds.compute.domain.TemplateBuilder;
 import org.jclouds.compute.options.TemplateOptions;
 import org.jclouds.scriptbuilder.domain.Statement;
-import org.ngrinder.common.constant.AgentDynamicConstants;
+import org.ngrinder.common.constant.AgentAutoScaleConstants;
 
 import java.util.Map;
 import java.util.Set;
@@ -25,7 +25,7 @@ import static org.mockito.Matchers.anyList;
 import static org.mockito.Matchers.anyString;
 import static org.mockito.Mockito.*;
 
-public class MockDynamicAgentHandler extends DynamicAgentHandler implements AgentDynamicConstants{
+public class MockAgentAutoScaleHandler extends AgentAutoScaleHandler implements AgentAutoScaleConstants {
 
     // 0: only list, 1: list + on, 2: list + add, 3: off, 4: on, 5: destroy, 6: add
     protected int condition = 0;
