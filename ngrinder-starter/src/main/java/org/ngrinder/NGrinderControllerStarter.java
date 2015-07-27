@@ -33,335 +33,330 @@ import java.util.Map;
 @Parameters(separators = "= ")
 public class NGrinderControllerStarter {
 
-	@Parameters(separators = "= ")
-	enum ClusterMode {
-		none {
-			@Parameter(names = {"-cp", "--controller-port"}, description = "controller port for agent connection",
-					validateValueWith = PortAvailabilityValidator.class)
-			public Integer controllerPort = 16001;
+    @Parameters(separators = "= ")
+    enum ClusterMode {
+        none {
+            @Parameter(names = {"-cp", "--controller-port"}, description = "controller port for agent connection",
+                    validateValueWith = PortAvailabilityValidator.class)
+            public Integer controllerPort = 16001;
 
-			public void process() {
-				if (controllerPort != null) {
-					System.setProperty("controller.controller_port", controllerPort.toString());
-				}
-			}
-		},
-		easy {
-			@Parameter(names = {"-clh", "--cluster-host"}, required = false,
-					description = "This cluster member's cluster communication host. The default value is the " +
-							"first non-localhost address. if it's localhost, " +
-							"it can only communicate with the other cluster members in the same machine.")
-			private String clusterHost = null;
+            public void process() {
+                if (controllerPort != null) {
+                    System.setProperty("controller.controller_port", controllerPort.toString());
+                }
+            }
+        },
+        easy {
+            @Parameter(names = {"-clh", "--cluster-host"}, required = false,
+                    description = "This cluster member's cluster communication host. The default value is the " +
+                            "first non-localhost address. if it's localhost, " +
+                            "it can only communicate with the other cluster members in the same machine.")
+            private String clusterHost = null;
 
-			@Parameter(names = {"-clp", "--cluster-port"}, required = true,
-					description = "This cluster member's cluster communication port. Each cluster member should " +
-							"be run with unique cluster port.",
-					validateValueWith = PortAvailabilityValidator.class)
-			private Integer clusterPort = null;
+            @Parameter(names = {"-clp", "--cluster-port"}, required = true,
+                    description = "This cluster member's cluster communication port. Each cluster member should " +
+                            "be run with unique cluster port.",
+                    validateValueWith = PortAvailabilityValidator.class)
+            private Integer clusterPort = null;
 
-			@Parameter(names = {"-cp", "--controller-port"}, required = true,
-					description = "This cluster member's agent connection port",
-					validateValueWith = PortAvailabilityValidator.class)
-			private Integer controllerPort = null;
+            @Parameter(names = {"-cp", "--controller-port"}, required = true,
+                    description = "This cluster member's agent connection port",
+                    validateValueWith = PortAvailabilityValidator.class)
+            private Integer controllerPort = null;
 
-			@Parameter(names = {"-r", "--region"}, required = true,
-					description = "This cluster member's region name")
-			private String region = null;
-
-
-			@Parameter(names = {"-dh", "--database-host"}, required = false,
-					description = "database host. The default value is localhost")
-			private String databaseHost = "localhost";
-
-			@Parameter(names = {"-dp", "--database-port"}, required = false,
-					description = "database port. The default value is 9092 when h2 is used and " +
-							"33000 when cubrid is used."
-			)
-			private Integer databasePort = null;
-
-			@Parameter(names = {"-dt", "--database-type"}, required = false,
-					description = "database type", hidden = true)
-			private String databaseType = "h2";
-
-			@SuppressWarnings("SpellCheckingInspection")
-			public void process() {
-				System.setProperty("cluster.mode", "easy");
-				if (clusterHost != null) {
-					System.setProperty("cluster.host", clusterHost);
-				}
-				System.setProperty("cluster.port", clusterPort.toString());
-				System.setProperty("cluster.region", region);
-				System.setProperty("controller.controller_port", controllerPort.toString());
-				System.setProperty("database.type", databaseType);
-				if ("h2".equals(databaseType)) {
-					if (databasePort == null) {
-						databasePort = 9092;
-					}
-					if (!tryConnection(databaseHost, databasePort)) {
-						throw new ParameterException("Failed to connect h2 db " + databaseHost + ":" + databasePort
-								+ ".\nPlease run the h2 TcpServer in advance\n"
-								+ "or set the correct -database-host and -database-port parameters");
-					}
-					System.setProperty("database.url", "tcp://" + this.databaseHost + ":" + databasePort + "/db/ngrinder");
-				} else {
-					if (databasePort == null) {
-						databasePort = 33000;
-					}
-					if (!tryConnection(databaseHost, databasePort)) {
-						throw new ParameterException("Failed to connect cubrid db.\n" +
-								"Please run the cubrid db " + databaseHost + ":" + databasePort + "in advance\n" +
-								"or set the correct -database-host and -database-port parameters");
-					}
-					System.setProperty("database.url", this.databaseHost + ":" + this.databasePort);
-				}
-			}
-
-		},
-		advanced {
-			public void process() {
-				System.setProperty("cluster.mode", "advanced");
-			}
-		};
-
-		public void parseArgs(String[] args) {
-			JCommander commander = new JCommander(ClusterMode.this);
-			String clusterModeOption = "";
-			if (this != ClusterMode.none) {
-				clusterModeOption = " --cluster-mode=" + name();
-			}
-			commander.setProgramName(getRunningCommand() + clusterModeOption);
-			try {
-				commander.parse(args);
-				process();
-			} catch (Exception e) {
-				System.err.println("[Configuration Error]");
-				System.err.println(e.getMessage());
-				commander.usage();
-				System.exit(-1);
-			}
-		}
-
-		abstract void process();
-	}
-
-	public static boolean tryConnection(String byConnecting, int port) {
-
-		Socket socket = null;
-		try {
-			socket = new Socket();
-			socket.connect(new InetSocketAddress(byConnecting, port), 2000); // 2 seconds timeout
-		} catch (Exception e) {
-			return false;
-		} finally {
-			if (socket != null) {
-				try {
-					socket.close();
-				} catch (Exception e) {
-					//
-				}
-			}
-		}
-		return true;
-	}
+            @Parameter(names = {"-r", "--region"}, required = true,
+                    description = "This cluster member's region name")
+            private String region = null;
 
 
-	private static final String NGRINDER_DEFAULT_FOLDER = ".ngrinder";
-	@Parameter(names = {"-p", "--port"}, description = "HTTP port of the server. The default port is 8080.",
-			validateValueWith = PortAvailabilityValidator.class)
-	private Integer port = null;
+            @Parameter(names = {"-dh", "--database-host"}, required = false,
+                    description = "database host. The default value is localhost")
+            private String databaseHost = "localhost";
 
-	@Parameter(names = {"-c", "--context-path"}, description = "context path of the embedded web application.")
-	private String contextPath = "/";
+            @Parameter(names = {"-dp", "--database-port"}, required = false,
+                    description = "database port. The default value is 9092 when h2 is used and " +
+                            "33000 when cubrid is used."
+            )
+            private Integer databasePort = null;
 
-	@Parameter(names = {"-cm", "--cluster-mode"}, description = "cluster-mode can be easy or advanced  ")
-	private String clusterMode = "none";
+            @Parameter(names = {"-dt", "--database-type"}, required = false,
+                    description = "database type", hidden = true)
+            private String databaseType = "h2";
 
-	@Parameter(names = {"-nh", "--ngrinder-home"}, description = "nGridner home directory")
-	private String home = null;
+            @SuppressWarnings("SpellCheckingInspection")
+            public void process() {
+                System.setProperty("cluster.mode", "easy");
+                if (clusterHost != null) {
+                    System.setProperty("cluster.host", clusterHost);
+                }
+                System.setProperty("cluster.port", clusterPort.toString());
+                System.setProperty("cluster.region", region);
+                System.setProperty("controller.controller_port", controllerPort.toString());
+                System.setProperty("database.type", databaseType);
+                if ("h2".equals(databaseType)) {
+                    if (databasePort == null) {
+                        databasePort = 9092;
+                    }
+                    if (!tryConnection(databaseHost, databasePort)) {
+                        throw new ParameterException("Failed to connect h2 db " + databaseHost + ":" + databasePort
+                                + ".\nPlease run the h2 TcpServer in advance\n"
+                                + "or set the correct -database-host and -database-port parameters");
+                    }
+                    System.setProperty("database.url", "tcp://" + this.databaseHost + ":" + databasePort + "/db/ngrinder");
+                } else {
+                    if (databasePort == null) {
+                        databasePort = 33000;
+                    }
+                    if (!tryConnection(databaseHost, databasePort)) {
+                        throw new ParameterException("Failed to connect cubrid db.\n" +
+                                "Please run the cubrid db " + databaseHost + ":" + databasePort + "in advance\n" +
+                                "or set the correct -database-host and -database-port parameters");
+                    }
+                    System.setProperty("database.url", this.databaseHost + ":" + this.databasePort);
+                }
+            }
 
-	@SuppressWarnings("SpellCheckingInspection")
-	@Parameter(names = {"-exh", "--ex-home"}, description = "nGridner extended home directory")
-	private String exHome = null;
+        },
+        advanced {
+            public void process() {
+                System.setProperty("cluster.mode", "advanced");
+            }
+        };
 
-	@Parameter(names = {"-help", "-?", "-h"}, description = "prints this message")
-	private Boolean help = false;
+        public void parseArgs(String[] args) {
+            JCommander commander = new JCommander(ClusterMode.this);
+            String clusterModeOption = "";
+            if (this != ClusterMode.none) {
+                clusterModeOption = " --cluster-mode=" + name();
+            }
+            commander.setProgramName(getRunningCommand() + clusterModeOption);
+            try {
+                commander.parse(args);
+                process();
+            } catch (Exception e) {
+                System.err.println("[Configuration Error]");
+                System.err.println(e.getMessage());
+                commander.usage();
+                System.exit(-1);
+            }
+        }
 
-	@DynamicParameter(names = "-D", description = "Dynamic parameters", hidden = true)
-	private Map<String, String> params = new HashMap<String, String>();
+        abstract void process();
+    }
 
-	@Parameter(names = {"-dat", "--dynamic-agent-type"}, description = "dynamic agent type")
-	private String daType = null;
+    public static boolean tryConnection(String byConnecting, int port) {
 
-	@Parameter(names = {"-gt", "--guard-time"}, description = "the guard time which is for cost reduce")
-	private Integer guardTime = null;
-
-	@Parameter(names = {"-mn", "--max-node"}, description = "the allowed max node count can be created")
-	private Integer maxNodes = null;
-
-	@Parameter(names = {"-ai", "--AWS-identity"}, description = "indentity to login AWS")
-	private String awsIdentity = null;
-
-	@Parameter(names = {"-ac", "--AWS-credential"}, description = "credential to login AWS")
-	private String awsCredential = null;
-
-	@Parameter(names = {"-ci", "--controller-ip"}, description = "the controller ip for docker to download agent")
-	private String ctrlIp = null;
-
-	@Parameter(names = {"-dr", "--docker-repo"}, description = "the docker image repository")
-	private String dockerRepo = null;
-
-	@Parameter(names = {"-dt", "--docker-tag"}, description = "the docker image tag")
-	private String dockerTag = null;
-
-	public static boolean isEmpty(String str) {
-		return str == null || str.length() == 0;
-	}
-
-	public static String defaultIfEmpty(String str, String defaultStr) {
-		return isEmpty(str) ? defaultStr : str;
-	}
-
-	public File resolveHome() {
-		String userHomeFromEnv = System.getenv("NGRINDER_HOME");
-		String userHomeFromProperty = System.getProperty("ngrinder.home");
-		String userHome = defaultIfEmpty(userHomeFromProperty, userHomeFromEnv);
-		return (!isEmpty(userHome)) ? new File(userHome) : new File(
-				System.getProperty("user.home"), NGRINDER_DEFAULT_FOLDER);
-	}
-
-
-	private void run() {
-		Server server = new Server();
-		SocketConnector connector = new SocketConnector();
-		// Set some timeout options to make debugging easier.
-		connector.setMaxIdleTime(1000 * 60 * 60);
-		connector.setSoLingerTime(-1);
-		connector.setPort(port);
-		server.setConnectors(new Connector[]{connector});
-
-		WebAppContext context = new WebAppContext();
-		final File home = resolveHome();
-		//noinspection ResultOfMethodCallIgnored
-		home.mkdirs();
-		context.setTempDirectory(home);
-		context.setServer(server);
-		if (!contextPath.startsWith("/")) {
-			contextPath = "/" + contextPath;
-		}
-		context.setContextPath(contextPath);
-
-		String war = getWarName();
-		context.setWar(war);
-		server.setHandler(context);
-		try {
-			server.start();
-			//noinspection StatementWithEmptyBody
-			while (System.in.read() != 'q') {
-				Thread.sleep(1000);
-			}
-			server.stop();
-			server.join();
-		} catch (Exception ex) {
-			ex.printStackTrace();
-			System.exit(-1);
-		}
-	}
-
-	private static String getWarName() {
-		ProtectionDomain protectionDomain = NGrinderControllerStarter.class.getProtectionDomain();
-		String warName = protectionDomain.getCodeSource().getLocation().toExternalForm();
-		if (warName.endsWith("/classes/")) {
-			warName = "ngrinder-controller-X.X.war";
-		}
-		return warName;
-	}
-
-	private static long getMaxPermGen() {
-		for (MemoryPoolMXBean each : ManagementFactory.getMemoryPoolMXBeans()) {
-			if (each.getName().endsWith("Perm Gen")) {
-				return each.getUsage().getMax();
-			}
-		}
-		return Long.MAX_VALUE;
-	}
-
-	public static void main(String[] args) throws Exception {
-		if (System.getProperty("unit-test") == null && getMaxPermGen() < (1024 * 1024 * 200)) {
-			System.out.println(
-					"nGrinder needs quite big perm-gen memory.\n" +
-							"Please run nGrinder with the following command.\n" +
-							getRunningCommand());
-			System.exit(-1);
-		}
-		NGrinderControllerStarter server = new NGrinderControllerStarter();
-		JCommander commander = new JCommander(server);
-		commander.setAcceptUnknownOptions(true);
-		commander.setProgramName("ngrinder");
-		PortAvailabilityValidator validator = new PortAvailabilityValidator();
-		try {
-			commander.parse(args);
-			if (server.port == null) {
-				server.port = 8080;
-			}
-			validator.validate("-p / --port", server.port);
-		} catch (Exception e) {
-			System.err.println(e.getMessage());
-			commander.usage();
-			System.exit(0);
-		}
+        Socket socket = null;
+        try {
+            socket = new Socket();
+            socket.connect(new InetSocketAddress(byConnecting, port), 2000); // 2 seconds timeout
+        } catch (Exception e) {
+            return false;
+        } finally {
+            if (socket != null) {
+                try {
+                    socket.close();
+                } catch (Exception e) {
+                    //
+                }
+            }
+        }
+        return true;
+    }
 
 
-		if (server.help) {
-			commander.usage();
-			System.exit(0);
-		}
+    private static final String NGRINDER_DEFAULT_FOLDER = ".ngrinder";
+    @Parameter(names = {"-p", "--port"}, description = "HTTP port of the server. The default port is 8080.",
+            validateValueWith = PortAvailabilityValidator.class)
+    private Integer port = null;
 
-		if (server.home != null) {
-			System.setProperty("ngrinder.home", server.home);
-		}
-		if (server.exHome != null) {
-			System.setProperty("ngrinder.ex.home", server.exHome);
-		}
+    @Parameter(names = {"-c", "--context-path"}, description = "context path of the embedded web application.")
+    private String contextPath = "/";
 
-		setDynamiceAgentParameters(server);
+    @Parameter(names = {"-cm", "--cluster-mode"}, description = "cluster-mode can be easy or advanced  ")
+    private String clusterMode = "none";
 
-		final List<String> unknownOptions = commander.getUnknownOptions();
-		final ClusterMode clusterMode = ClusterMode.valueOf(server.clusterMode);
-		clusterMode.parseArgs(unknownOptions.toArray(new String[unknownOptions.size()]));
-		System.getProperties().putAll(server.params);
-		server.run();
-	}
+    @Parameter(names = {"-nh", "--ngrinder-home"}, description = "nGridner home directory")
+    private String home = null;
 
-	private static String getRunningCommand() {
-		return "java -XX:MaxPermSize=200m -jar  " + new File(getWarName()).getName();
-	}
+    @SuppressWarnings("SpellCheckingInspection")
+    @Parameter(names = {"-exh", "--ex-home"}, description = "nGridner extended home directory")
+    private String exHome = null;
 
-	private static void setDynamiceAgentParameters(NGrinderControllerStarter svr){
-		if(svr.daType != null){
-			System.setProperty("agent.auto_scale_type", svr.daType);
-		}
-		if(svr.awsIdentity != null){
-			System.setProperty("agent.auto_scale_aws_identity", svr.awsIdentity);
-		}
-		if(svr.awsCredential != null){
-			System.setProperty("agent.auto_scale_aws_credential", svr.awsCredential);
-		}
-		if(svr.ctrlIp != null){
-			System.setProperty("agent.auto_scale_controller_ip", svr.ctrlIp);
-		}
-		System.setProperty("agent.auto_scale_controller_port", String.valueOf(svr.port));
+    @Parameter(names = {"-help", "-?", "-h"}, description = "prints this message")
+    private Boolean help = false;
 
-		if(svr.dockerRepo != null){
-			System.setProperty("agent.auto_scale_docker_repo", svr.dockerRepo);
-		}
-		if(svr.dockerTag != null){
-			System.setProperty("agent.auto_scale_docker_tag", svr.dockerTag);
-		}
-		if(svr.guardTime != null){
-			System.setProperty("agent.auto_scale_guard_time", String.valueOf(svr.guardTime));
-		}
-		if(svr.maxNodes != null){
-			System.setProperty("agent.auto_scale_max", String.valueOf(svr.maxNodes));
-		}
-	}
+    @DynamicParameter(names = "-D", description = "Dynamic parameters", hidden = true)
+    private Map<String, String> params = new HashMap<String, String>();
+
+    /**
+     * Agent auto scale related props
+     */
+    @Parameter(names = {"-ast", "--auto-scale-type"}, description = "agent auto scale - type")
+    private String agentAutoScaleType = null;
+
+    @Parameter(names = {"-asgt", "--auto-scale-guard-time"}, description = "agent auto scale - the guard time for agent shutdown")
+    private Integer agentAutoScaleGuardTime = null;
+
+    @Parameter(names = {"-asmn", "--auto-scale-max-nodes"}, description = "agent auto scale - the max node count can be created")
+    private Integer agentAutoScaleMaxNodes = null;
+
+    @Parameter(names = {"-asi", "--auto-scale-identity"}, description = "agent auto scale - identity to login to the cloud provider")
+    private String agentAutoScaleIdentity = null;
+
+    @Parameter(names = {"-asc", "--auto-scale-credential"}, description = "agent auto scale - credential to login to cloud provider")
+    private String agentAutoScaleCredential = null;
+
+    @Parameter(names = {"-asci", "--auto-scale-controller-ip"}, description = "agent auto scale - the controller ip for docker to download agent")
+    private String agentAutoScaleControllerIP = null;
+
+    @Parameter(names = {"-asci", "--auto-scale-controller-port"}, description = "agent auto scale - the controller port for docker to download agent")
+    private Integer agentAutoScaleControllerPort = null;
+
+    @Parameter(names = {"-asdr", "--auto-scale-docker-repo"}, description = "agent auto scale - the docker image repository")
+    private String agentAutoScaleDockerRepo = null;
+
+    @Parameter(names = {"-asdt", "--auto-scale-docker-tag"}, description = "agent auto scale - the docker image tag")
+    private String agentAutoScaleDockerTag = null;
+
+    public static boolean isEmpty(String str) {
+        return str == null || str.length() == 0;
+    }
+
+    public static String defaultIfEmpty(String str, String defaultStr) {
+        return isEmpty(str) ? defaultStr : str;
+    }
+
+    public File resolveHome() {
+        String userHomeFromEnv = System.getenv("NGRINDER_HOME");
+        String userHomeFromProperty = System.getProperty("ngrinder.home");
+        String userHome = defaultIfEmpty(userHomeFromProperty, userHomeFromEnv);
+        return (!isEmpty(userHome)) ? new File(userHome) : new File(
+                System.getProperty("user.home"), NGRINDER_DEFAULT_FOLDER);
+    }
+
+
+    private void run() {
+        Server server = new Server();
+        SocketConnector connector = new SocketConnector();
+        // Set some timeout options to make debugging easier.
+        connector.setMaxIdleTime(1000 * 60 * 60);
+        connector.setSoLingerTime(-1);
+        connector.setPort(port);
+        server.setConnectors(new Connector[]{connector});
+
+        WebAppContext context = new WebAppContext();
+        final File home = resolveHome();
+        //noinspection ResultOfMethodCallIgnored
+        home.mkdirs();
+        context.setTempDirectory(home);
+        context.setServer(server);
+        if (!contextPath.startsWith("/")) {
+            contextPath = "/" + contextPath;
+        }
+        context.setContextPath(contextPath);
+
+        String war = getWarName();
+        context.setWar(war);
+        server.setHandler(context);
+        try {
+            server.start();
+            //noinspection StatementWithEmptyBody
+            while (System.in.read() != 'q') {
+                Thread.sleep(1000);
+            }
+            server.stop();
+            server.join();
+        } catch (Exception ex) {
+            ex.printStackTrace();
+            System.exit(-1);
+        }
+    }
+
+    private static String getWarName() {
+        ProtectionDomain protectionDomain = NGrinderControllerStarter.class.getProtectionDomain();
+        String warName = protectionDomain.getCodeSource().getLocation().toExternalForm();
+        if (warName.endsWith("/classes/")) {
+            warName = "ngrinder-controller-X.X.war";
+        }
+        return warName;
+    }
+
+    private static long getMaxPermGen() {
+        for (MemoryPoolMXBean each : ManagementFactory.getMemoryPoolMXBeans()) {
+            if (each.getName().endsWith("Perm Gen")) {
+                return each.getUsage().getMax();
+            }
+        }
+        return Long.MAX_VALUE;
+    }
+
+    public static void main(String[] args) throws Exception {
+        if (System.getProperty("unit-test") == null && getMaxPermGen() < (1024 * 1024 * 200)) {
+            System.out.println(
+                    "nGrinder needs quite big perm-gen memory.\n" +
+                            "Please run nGrinder with the following command.\n" +
+                            getRunningCommand());
+            System.exit(-1);
+        }
+        NGrinderControllerStarter server = new NGrinderControllerStarter();
+        JCommander commander = new JCommander(server);
+        commander.setAcceptUnknownOptions(true);
+        commander.setProgramName("ngrinder");
+        PortAvailabilityValidator validator = new PortAvailabilityValidator();
+        try {
+            commander.parse(args);
+            if (server.port == null) {
+                server.port = 8080;
+            }
+            validator.validate("-p / --port", server.port);
+        } catch (Exception e) {
+            System.err.println(e.getMessage());
+            commander.usage();
+            System.exit(0);
+        }
+
+
+        if (server.help) {
+            commander.usage();
+            System.exit(0);
+        }
+
+        if (server.home != null) {
+            System.setProperty("ngrinder.home", server.home);
+        }
+        if (server.exHome != null) {
+            System.setProperty("ngrinder.ex.home", server.exHome);
+        }
+
+        setAgentAutoScaleParameters(server);
+        final List<String> unknownOptions = commander.getUnknownOptions();
+        final ClusterMode clusterMode = ClusterMode.valueOf(server.clusterMode);
+        clusterMode.parseArgs(unknownOptions.toArray(new String[unknownOptions.size()]));
+        System.getProperties().putAll(server.params);
+        server.run();
+    }
+
+    private static String getRunningCommand() {
+        return "java -XX:MaxPermSize=200m -jar  " + new File(getWarName()).getName();
+    }
+
+    private static void setAgentAutoScaleParameters(NGrinderControllerStarter svr) {
+        setSystemProp("agent.auto_scale.type", svr.agentAutoScaleType);
+        setSystemProp("agent.auto_scale.identity", svr.agentAutoScaleIdentity);
+        setSystemProp("agent.auto_scale.credential", svr.agentAutoScaleCredential);
+        setSystemProp("agent.auto_scale.controller_ip", svr.agentAutoScaleControllerIP);
+        setSystemProp("agent.auto_scale.controller_port", svr.agentAutoScaleControllerPort);
+        setSystemProp("agent.auto_scale.docker_repo", svr.agentAutoScaleDockerRepo);
+        setSystemProp("agent.auto_scale.docker_tag", svr.agentAutoScaleDockerTag);
+        setSystemProp("agent.auto_scale.guard_time", svr.agentAutoScaleGuardTime);
+        setSystemProp("agent.auto_scale.max_nodes", svr.agentAutoScaleMaxNodes);
+    }
+
+    private static void setSystemProp(String key, Object value) {
+        if (value != null) {
+            System.setProperty(key, value.toString());
+        }
+
+    }
 }

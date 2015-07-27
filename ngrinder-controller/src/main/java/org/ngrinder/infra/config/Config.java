@@ -721,7 +721,7 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
 	 * @return node max
 	 */
 	public int getAgentDynamicNodeMax(){
-		return getDynamicAgentProperties().getPropertyInt(PROP_AGENT_AUTO_SCALE_MAX);
+		return getDynamicAgentProperties().getPropertyInt(PROP_AGENT_AUTO_SCALE_MAX_NODES);
 	}
 
 	/**
@@ -730,7 +730,7 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
 	 * @return credential username/access key
 	 */
 	public String getAgentDynamicEc2Identity(){
-		return getDynamicAgentProperties().getProperty(PROP_AGENT_AUTO_SCALE_AWS_IDENTITY);
+		return getDynamicAgentProperties().getProperty(PROP_AGENT_AUTO_SCALE_IDENTITY);
 	}
 
 	/**
@@ -739,7 +739,7 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
 	 * @return credential password/secret key
 	 */
 	public String getAgentDynamicEc2Credential(){
-		return getDynamicAgentProperties().getProperty(PROP_AGENT_AUTO_SCALE_AWS_CREDENTIAL);
+		return getDynamicAgentProperties().getProperty(PROP_AGENT_AUTO_SCALE_CREDENTIAL);
 	}
 
 	/**

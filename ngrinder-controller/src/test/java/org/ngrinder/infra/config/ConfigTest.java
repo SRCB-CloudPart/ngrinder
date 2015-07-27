@@ -128,13 +128,13 @@ public class ConfigTest implements ControllerConstants, ClusterConstants, AgentD
 		when(wrapper.getProperty(PROP_AGENT_AUTO_SCALE_TYPE)).thenReturn("EC2");
 		assertThat(config.getAgentDynamicType(), is("EC2"));
 
-		when(wrapper.getPropertyInt(PROP_AGENT_AUTO_SCALE_MAX)).thenReturn(10);
+		when(wrapper.getPropertyInt(PROP_AGENT_AUTO_SCALE_MAX_NODES)).thenReturn(10);
 		assertThat(config.getAgentDynamicNodeMax(), is(10));
 
-		when(wrapper.getProperty(PROP_AGENT_AUTO_SCALE_AWS_IDENTITY)).thenReturn("abcd");
+		when(wrapper.getProperty(PROP_AGENT_AUTO_SCALE_IDENTITY)).thenReturn("abcd");
 		assertThat(config.getAgentDynamicEc2Identity(), is("abcd"));
 
-		when(wrapper.getProperty(PROP_AGENT_AUTO_SCALE_AWS_CREDENTIAL)).thenReturn("abcd111");
+		when(wrapper.getProperty(PROP_AGENT_AUTO_SCALE_CREDENTIAL)).thenReturn("abcd111");
 		assertThat(config.getAgentDynamicEc2Credential(), is("abcd111"));
 
 		when(wrapper.getPropertyInt(PROP_AGENT_AUTO_SCALE_GUARD_TIME)).thenReturn(60);
