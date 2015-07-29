@@ -80,6 +80,8 @@ public final class MonitorServer implements MonitorConstants {
 		this.jmxServer = JMXConnectorServerFactory.newJMXConnectorServer(jmxUrl, null, mBeanServer);
 		RegisterMXBean.getInstance().addDefaultMXBean(mBeanServer);
 		LOG.info("Service URL:{} is initiated.", jmxUrl);
+		CommunicationServer.getInstance().setAgentConfig(agentConfig);
+		CommunicationServer.getInstance().bind();
 	}
 
 	/**

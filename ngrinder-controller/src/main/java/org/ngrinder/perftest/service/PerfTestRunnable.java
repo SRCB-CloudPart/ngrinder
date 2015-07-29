@@ -35,6 +35,7 @@ import org.ngrinder.infra.schedule.ScheduledTaskService;
 import org.ngrinder.model.PerfTest;
 import org.ngrinder.model.Status;
 import org.ngrinder.perftest.model.NullSingleConsole;
+import org.ngrinder.perftest.service.monitor.CommunicationClient;
 import org.ngrinder.perftest.service.samplinglistener.*;
 import org.ngrinder.script.handler.ScriptHandler;
 import org.slf4j.Logger;
@@ -47,6 +48,7 @@ import javax.annotation.PostConstruct;
 import javax.annotation.PreDestroy;
 import java.io.File;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static com.google.common.collect.Sets.newHashSet;
 import static org.apache.commons.lang.ObjectUtils.defaultIfNull;
@@ -100,6 +102,8 @@ public class PerfTestRunnable implements ControllerConstants {
     private boolean isDynamicAgentOff = false;
 
     private boolean isDynamicAgentInitDone = false;
+
+	private ConcurrentHashMap<Long, CommunicationClient> testMap = new ConcurrentHashMap<Long, CommunicationClient>();
 
     @Autowired
     private AgentAutoScaleHandler agentAutoScaleHandler;
@@ -425,6 +429,11 @@ public class PerfTestRunnable implements ControllerConstants {
         SingleConsole singleConsole = null;
         try {
             singleConsole = startConsole(perfTest);
+            LOG.info("notify monitor the test start...");
+	        CommunicationClient comm = new CommunicationClient();
+	        comm.init(config, perfTest);
+	        comm.startMonitor(perfTest);
+	        testMap.put(perfTest.getId(), comm);
             ScriptHandler prepareDistribution = perfTestService.prepareDistribution(perfTest);
             GrinderProperties grinderProperties = perfTestService.getGrinderProperties(perfTest, prepareDistribution);
             startAgentsOn(perfTest, grinderProperties, checkCancellation(singleConsole));
@@ -631,6 +640,7 @@ public class PerfTestRunnable implements ControllerConstants {
     }
 
     void doFinish() {
+        CommunicationClient comm;
         for (PerfTest each : perfTestService.getAllAbnormalTesting()) {
             LOG.info("Terminate {}", each.getId());
             SingleConsole consoleUsingPort = consoleManager.getConsoleUsingPort(each.getPort());
@@ -638,6 +648,11 @@ public class PerfTestRunnable implements ControllerConstants {
             agentAutoScaleHandler.removeItemInTestIdEc2NodeStatus(each.getTestIdentifier());
             cleanUp(each);
             notifyFinish(each, StopReason.TOO_MANY_ERRORS);
+            if(testMap.containsKey(each.getId())) {
+		        comm = testMap.get(each.getId());
+		        comm.stopMonitor(each);
+                testMap.remove(each);
+	        }
         }
 
         for (PerfTest each : perfTestService.getAllStopRequested()) {
@@ -647,6 +662,11 @@ public class PerfTestRunnable implements ControllerConstants {
             agentAutoScaleHandler.removeItemInTestIdEc2NodeStatus(each.getTestIdentifier());
             cleanUp(each);
             notifyFinish(each, StopReason.CANCEL_BY_USER);
+            if(testMap.containsKey(each.getId())) {
+		        comm = testMap.get(each.getId());
+		        comm.stopMonitor(each);
+                testMap.remove(each);
+	        }
         }
 
         for (PerfTest each : perfTestService.getAllTesting()) {
@@ -656,6 +676,11 @@ public class PerfTestRunnable implements ControllerConstants {
                 agentAutoScaleHandler.removeItemInTestIdEc2NodeStatus(each.getTestIdentifier());
                 cleanUp(each);
                 notifyFinish(each, StopReason.NORMAL);
+                if(testMap.containsKey(each.getId())) {
+		            comm = testMap.get(each.getId());
+		            comm.stopMonitor(each);
+                    testMap.remove(each);
+		        }
             }
         }
     }

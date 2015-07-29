@@ -135,6 +135,30 @@ public abstract class CollectionUtils {
 	}
 
 	/**
+	 * Build Map with 3 pairs.
+	 *
+	 * @param <K>    key type
+	 * @param <V>    value type
+	 * @param key1   key
+	 * @param value1 value
+	 * @param key2   key
+	 * @param value2 value
+	 * @param key3   key
+	 * @param value3 value
+	 * @param key3   key
+	 * @param value3 value
+	 * @return create map
+	 */
+	public static <K, V> Map<K, V> buildMap(K key1, V value1, K key2, V value2, K key3, V value3, K key4, V value4) {
+		Map<K, V> map = new HashMap<K, V>(3);
+		map.put(key1, value1);
+		map.put(key2, value2);
+		map.put(key3, value3);
+		map.put(key4, value4);
+		return map;
+	}
+
+	/**
 	 * Select the given number of elements from the given set.
 	 *
 	 * @param <T>   encapsulated type

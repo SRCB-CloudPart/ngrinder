@@ -64,6 +64,7 @@ public interface ControllerConstants {
     String PROP_CONTROLLER_MAX_RUN_HOUR = "controller.max_run_hour";
     String PROP_CONTROLLER_MAX_VUSER_PER_AGENT = "controller.max_vuser_per_agent";
     String PROP_CONTROLLER_MONITOR_PORT = "controller.monitor_port";
+    String PROP_CONTROLLER_MONITOR_MESSAGE_PORT = "controller.monitor_message_port";
     String PROP_CONTROLLER_PLUGIN_SUPPORT = "controller.plugin_support";
     String PROP_CONTROLLER_SAFE_DIST = "controller.safe_dist";
     String PROP_CONTROLLER_SAFE_DIST_THRESHOLD = "controller.safe_dist_threshold";

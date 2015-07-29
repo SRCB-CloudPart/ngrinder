@@ -204,6 +204,15 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
     }
 
     /**
+	 * Get the monitor port from the configuration.
+	 *
+	 * @return monitor port
+	 */
+	public int getMonitorMessagePort() {
+		return getControllerProperties().getPropertyInt(PROP_CONTROLLER_MONITOR_MESSAGE_PORT);
+	}
+
+    /**
      * Check if the periodic usage report is enabled.
      *
      * @return true if enabled.

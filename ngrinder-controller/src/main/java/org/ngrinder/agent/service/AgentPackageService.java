@@ -187,7 +187,7 @@ public class AgentPackageService {
 						addFileToTar(tarOutputStream, eachClassPath, libPath + eachClassPath.getName());
 					}
 				}
-				addMonitorConfToTar(tarOutputStream, basePath, config.getMonitorPort());
+				addMonitorConfToTar(tarOutputStream, basePath, config.getMonitorPort(), config.getMonitorMessagePort());
 			} catch (IOException e) {
 				LOGGER.error("Error while generating an monitor package" + e.getMessage());
 			} finally {
@@ -265,9 +265,9 @@ public class AgentPackageService {
 	}
 
 	private void addMonitorConfToTar(TarArchiveOutputStream tarOutputStream, String basePath,
-	                                 Integer monitorPort) throws IOException {
+	                                 Integer monitorPort, Integer messagePort) throws IOException {
 		final String config = getAgentConfigContent("agent_monitor.conf", buildMap("monitorPort",
-				(Object) String.valueOf(monitorPort)));
+				(Object) String.valueOf(monitorPort), "messagePort", (Object) String.valueOf(messagePort)));
 		final byte[] bytes = config.getBytes();
 		addInputStreamToTar(tarOutputStream, new ByteArrayInputStream(bytes), basePath + "__agent.conf",
 				bytes.length, TarArchiveEntry.DEFAULT_FILE_MODE);

@@ -301,6 +301,10 @@ public class AgentConfig implements AgentConstants, MonitorConstants, CommonCons
 		return checkNotNull(monitorProperties);
 	}
 
+	public int getMessagePort() {
+		return getMonitorProperties().getPropertyInt(PROP_MONITOR_BINDING_MESSAGE_PORT);
+	}
+
 	/**
 	 * Get internal properties.
 	 *
