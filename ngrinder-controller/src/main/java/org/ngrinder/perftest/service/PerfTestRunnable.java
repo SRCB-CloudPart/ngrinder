@@ -13,19 +13,17 @@
  */
 package org.ngrinder.perftest.service;
 
-import com.google.common.collect.Lists;
 import net.grinder.SingleConsole;
 import net.grinder.SingleConsole.ConsoleShutdownListener;
 import net.grinder.StopReason;
 import net.grinder.common.GrinderProperties;
-import net.grinder.common.processidentity.AgentIdentity;
 import net.grinder.console.model.ConsoleProperties;
-import net.grinder.engine.controller.AgentControllerIdentityImplementation;
 import net.grinder.util.ListenerHelper;
 import net.grinder.util.ListenerSupport;
 import net.grinder.util.UnitUtils;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang.time.DateUtils;
+import org.ngrinder.agent.service.AgentAutoScaleService;
 import org.ngrinder.common.constant.ControllerConstants;
 import org.ngrinder.extension.OnTestLifeCycleRunnable;
 import org.ngrinder.extension.OnTestSamplingRunnable;
@@ -46,9 +44,10 @@ import org.springframework.stereotype.Component;
 import javax.annotation.PostConstruct;
 import javax.annotation.PreDestroy;
 import java.io.File;
-import java.util.*;
+import java.util.Calendar;
+import java.util.Date;
+import java.util.List;
 
-import static com.google.common.collect.Sets.newHashSet;
 import static org.apache.commons.lang.ObjectUtils.defaultIfNull;
 import static org.ngrinder.common.constant.ClusterConstants.PROP_CLUSTER_SAFE_DIST;
 import static org.ngrinder.common.util.AccessUtils.getSafe;
@@ -93,16 +92,8 @@ public class PerfTestRunnable implements ControllerConstants {
 
     private Runnable finishRunnable;
 
-    private Runnable agentRunnable;
-
-    private long lastBeginningTime = System.currentTimeMillis();
-
-    private boolean isDynamicAgentOff = false;
-
-    private boolean isDynamicAgentInitDone = false;
-
     @Autowired
-    private AgentAutoScaleHandler agentAutoScaleHandler;
+    private AgentAutoScaleService agentAutoScaleService;
 
     @PostConstruct
     public void init() {
@@ -123,21 +114,12 @@ public class PerfTestRunnable implements ControllerConstants {
             }
         };
         scheduledTaskService.addFixedDelayedScheduledTask(finishRunnable, PERFTEST_RUN_FREQUENCY_MILLISECONDS);
-
-        this.agentRunnable = new Runnable() {
-            @Override
-            public void run() {
-                turnOffDynamicAgents();
-            }
-        };
-        scheduledTaskService.addFixedDelayedScheduledTask(agentRunnable, PERFTEST_RUN_FREQUENCY_MILLISECONDS);
     }
 
     @PreDestroy
     public void destroy() {
         scheduledTaskService.removeScheduledJob(this.startRunnable);
         scheduledTaskService.removeScheduledJob(this.finishRunnable);
-        scheduledTaskService.removeScheduledJob(this.agentRunnable);
     }
 
     /**
@@ -174,213 +156,23 @@ public class PerfTestRunnable implements ControllerConstants {
         }
 
         if (!hasEnoughFreeAgents(runCandidate)) {
-            runDynamicAgentEC2(runCandidate);
-
+            scaleUpAgent(runCandidate);
             return;
         }
-
-        // Update the time of the latest perftest under running
-        lastBeginningTime = System.currentTimeMillis();
 
         doTest(runCandidate);
     }
 
-    private void runDynamicAgentEC2(PerfTest runCandidate) {
+    private void scaleUpAgent(PerfTest runCandidate) {
         if (config.isAgentAutoScaleEnabled()) {
-
-            int stopped_nodes = agentAutoScaleHandler.getStoppedNodeCount();
-            int turning_nodes = agentAutoScaleHandler.getTurningOnSetCount();
-            int needed_nodes = runCandidate.getAgentCount();
-            int free_agents = agentManager.getAllFreeApprovedAgentsForUser(runCandidate.getCreatedUser()).size();
-            int real_needs = needed_nodes - free_agents;
-            /*
-			 * Do not care the operation turn on and add new node at the same time for one test case,
-			 * because this loop check mechanism is very frequent, it can be done in the next loop for condition
-			 * that there is stopped node and it is not match the required node count for this test case.
-			 */
-            if ((stopped_nodes - turning_nodes) >= real_needs) {
-                turnOnDynamicAgents(runCandidate, real_needs);
-            } else {
-                addDynamicAgents(runCandidate, real_needs);
+            int requiredAgentCount = runCandidate.getAgentCount() -
+                    agentManager.getAllFreeApprovedAgentsForUser(runCandidate.getCreatedUser()).size();
+            if (!agentAutoScaleService.isActivationProgress()) {
+                agentAutoScaleService.activateNodes(requiredAgentCount);
             }
         }
     }
 
-    /**
-     * To turn off the created EC2 instance in order to reduce code
-     */
-    private void turnOffDynamicAgents() {
-        long guardTime = config.getAgentAutoScaleGuardTime();
-        long durationMillis = System.currentTimeMillis() - lastBeginningTime;
-        long durationInMinutes = durationMillis / (60 * 1000);
-        if (durationInMinutes > guardTime && !isDynamicAgentOff) {
-            lastBeginningTime = System.currentTimeMillis();
-            if (!agentAutoScaleHandler.hasRunningTestInTestIdEc2NodeStatus()) {
-                Runnable turnOffEc2AgentRunnable = new Runnable() {
-                    @Override
-                    public void run() {
-                        LOG.info("Begin to turn off EC2 instances...");
-                        agentAutoScaleHandler.turnOffEc2Instance();
-                        isDynamicAgentOff = true;
-                    }
-                };
-                scheduledTaskService.runAsync(turnOffEc2AgentRunnable);
-            }
-        }
-    }
-
-    /**
-     * To turn on the created EC2 instances which are turned off
-     *
-     * @param test {@link PerfTest}
-     */
-    private void turnOnDynamicAgents(final PerfTest test, final int realNeeds) {
-        final String testIdentifier = test.getTestIdentifier();
-        Map<String, Long> nodeIpEc2UpTimeMap = agentAutoScaleHandler.getTestIdEc2NodeStatus(testIdentifier);
-        if (nodeIpEc2UpTimeMap == null) {
-            Runnable turnOnEc2AgentRunnable = new Runnable() {
-                @Override
-                public void run() {
-                    if (realNeeds > 0) {
-                        LOG.info("Begin to turn on {} EC2 instances...", realNeeds);
-                        agentAutoScaleHandler.turnOnEc2Instance(testIdentifier, realNeeds);
-                        //when all the stopped nodes are turned on, change the flag isDynamicAgentOff to false
-                        if (agentAutoScaleHandler.getStoppedNodeCount() == 0) {
-                            isDynamicAgentOff = false;
-                        }
-                    }
-                }
-            };
-            scheduledTaskService.runAsync(turnOnEc2AgentRunnable);
-        }
-    }
-
-    /**
-     * add dynamic agent for the given perfTest
-     *
-     * @param test      PerfTest
-     * @param realNeeds the real needed agent count
-     */
-    private void addDynamicAgents(PerfTest test, final int realNeeds) {
-        String dynamicType = config.getAgentAutoScaleType();
-        if (dynamicType == null || dynamicType.equals("")) {
-            return;
-        }
-
-        int size = agentAutoScaleHandler.getAddedNodeCount();
-        int allowedMaxDynamic = config.getAgentAutoScaleMaxNodes();
-        LOG.debug("allowedMaxDynamic {}, addedNode: {}", allowedMaxDynamic, size);
-
-        if (size + realNeeds > allowedMaxDynamic) {
-            LOG.debug("New test case required agents will exceed the max {}, can not deploy...", allowedMaxDynamic);
-            return;
-        }
-
-		/*
-		 * Because the gap is very long between EC2 instance created and agent is ready, avoid to create not
-		 * wanted EC2 instance, to check whether the new auto installed agent is ready through the IP from running
-		 * node set.
-		 */
-        Set<String> approvedAgentIPs = newHashSet();
-        Set<AgentIdentity> agentSets = agentManager.getAllApprovedAgents();
-        for (AgentIdentity ai : agentSets) {
-            AgentControllerIdentityImplementation acii = agentManager.convert(ai);
-            approvedAgentIPs.add(acii.getIp());
-            LOG.debug("Approved IP: " + acii.getIp());
-        }
-
-        final String testIdentifier = test.getTestIdentifier();
-        Map<String, Long> nodeIpEc2UpTimeMap = agentAutoScaleHandler.getTestIdEc2NodeStatus(testIdentifier);
-        LOG.debug("Test ID: {}, nodeIpEc2UpTimeMap: {}", testIdentifier, nodeIpEc2UpTimeMap);
-        boolean toCreate = false;
-        if (nodeIpEc2UpTimeMap != null) {
-			/*
-			 * If any one of the EC2 node ip is not in the approved agent IP list, which means the new agent
-			 * in the docker container running in the new created EC2 node is not ready.
-			 * Then to check the timer whether it is expired, if yes, which means the agent has some problem,
-			 * allow to create new one.
-			 */
-            if (nodeIpEc2UpTimeMap.isEmpty()) {
-                toCreate = false;
-            } else {
-                toCreate = isToCreate(approvedAgentIPs, testIdentifier, nodeIpEc2UpTimeMap);
-            }
-        } else {
-			/*
-			 * ngrinder controller startup condition, if the agent is not ready from create/on operation, wait until
-			 * the initialization is done
-			 */
-            if (isDynamicAgentInitDone) {
-                toCreate = true;
-            } else {
-                nodeIpEc2UpTimeMap = agentAutoScaleHandler.getTestIdEc2NodeStatus(agentAutoScaleHandler.KEY_FOR_STARTUP);
-                boolean ret = isToCreate(approvedAgentIPs, agentAutoScaleHandler.KEY_FOR_STARTUP, nodeIpEc2UpTimeMap);
-                LOG.debug("isDynamicAgentInitFinished ret: {}", ret);
-                isDynamicAgentInitDone = ret;
-            }
-        }
-        LOG.debug("toCreate flag: {}", toCreate);
-
-        if (toCreate) {
-            Runnable addEc2AgentRunnable = new Runnable() {
-                @Override
-                public void run() {
-                    LOG.info("Begin to add {} EC2 instances...", realNeeds);
-                    agentAutoScaleHandler.addDynamicEc2Instance(testIdentifier, realNeeds);
-                }
-            };
-            scheduledTaskService.runAsync(addEc2AgentRunnable);
-        }
-    }
-
-    private boolean isToCreate(Set<String> approvedAgentIPs, String testIdentifier, Map<String, Long> nodeIpEc2UpTimeMap) {
-        int containedCount = 0;
-        final List<String> nodeIdList = Lists.newArrayList();
-        List<String> ipList = Lists.newArrayList();
-        int timeOutCnt = 0;
-        for (String ip : nodeIpEc2UpTimeMap.keySet()) {
-            if (approvedAgentIPs.contains(ip)) {
-                LOG.debug("ip: {} is in approved agent list", ip);
-                containedCount++;
-            } else {
-                boolean timeOut = agentAutoScaleHandler.isTimeoutOfAgentRunningUp(nodeIpEc2UpTimeMap.get(ip));
-                if (timeOut) {
-                    ipList.add(ip);
-                    String id = agentAutoScaleHandler.getNodeIdByPrivateIp(ip);
-                    if (id != null) {
-                        nodeIdList.add(id);
-                    }
-                    timeOutCnt++;
-                }
-            }
-        }
-        if (containedCount == nodeIpEc2UpTimeMap.size() && containedCount > 0) {
-            return testIdentifier.equalsIgnoreCase(agentAutoScaleHandler.KEY_FOR_STARTUP);
-        } else {
-            if (timeOutCnt > 0) {
-                removeBadEc2Nodes(nodeIpEc2UpTimeMap, nodeIdList, ipList);
-                return true;
-            } else {
-                return false;
-            }
-        }
-    }
-
-    private void removeBadEc2Nodes(Map<String, Long> nodeIpEc2UpTimeMap, final List<String> nodeIdList, List<String> ipList) {
-        if (nodeIdList.size() > 0) {
-            LOG.info("Begin to terminate {} nodes because of timeout..", nodeIdList.size());
-            for (String ip : ipList) {
-                nodeIpEc2UpTimeMap.remove(ip);
-            }
-            Runnable termEc2NodeRunnable = new Runnable() {
-                @Override
-                public void run() {
-                    agentAutoScaleHandler.terminateEc2Instance(nodeIdList);
-                }
-            };
-            scheduledTaskService.runAsync(termEc2NodeRunnable);
-        }
-    }
 
     private PerfTest getRunnablePerfTest() {
         return perfTestService.getNextRunnablePerfTestPerfTestCandidate();
@@ -635,7 +427,6 @@ public class PerfTestRunnable implements ControllerConstants {
             LOG.info("Terminate {}", each.getId());
             SingleConsole consoleUsingPort = consoleManager.getConsoleUsingPort(each.getPort());
             doTerminate(each, consoleUsingPort);
-            agentAutoScaleHandler.removeItemInTestIdEc2NodeStatus(each.getTestIdentifier());
             cleanUp(each);
             notifyFinish(each, StopReason.TOO_MANY_ERRORS);
         }
@@ -644,7 +435,6 @@ public class PerfTestRunnable implements ControllerConstants {
             LOG.info("Stop test {}", each.getId());
             SingleConsole consoleUsingPort = consoleManager.getConsoleUsingPort(each.getPort());
             doCancel(each, consoleUsingPort);
-            agentAutoScaleHandler.removeItemInTestIdEc2NodeStatus(each.getTestIdentifier());
             cleanUp(each);
             notifyFinish(each, StopReason.CANCEL_BY_USER);
         }
@@ -653,7 +443,6 @@ public class PerfTestRunnable implements ControllerConstants {
             SingleConsole consoleUsingPort = consoleManager.getConsoleUsingPort(each.getPort());
             if (isTestFinishCandidate(each, consoleUsingPort)) {
                 doNormalFinish(each, consoleUsingPort);
-                agentAutoScaleHandler.removeItemInTestIdEc2NodeStatus(each.getTestIdentifier());
                 cleanUp(each);
                 notifyFinish(each, StopReason.NORMAL);
             }

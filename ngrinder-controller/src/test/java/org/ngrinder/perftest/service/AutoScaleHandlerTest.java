@@ -33,7 +33,7 @@ import static org.junit.Assert.assertThat;
 import static org.mockito.Mockito.when;
 
 @RunWith(MockitoJUnitRunner.class)
-public class AgentAutoScaleHandlerTest {
+public class AutoScaleHandlerTest {
 
     @Mock
     private Config config;
@@ -148,7 +148,7 @@ public class AgentAutoScaleHandlerTest {
     public void initFirstOneEc2InstanceTest_only_list() {
         dah.doList = true;
         dah.condition = 0;
-        dah.initFirstOneEc2Instance();
+        dah.initNodes();
 
         assertThat(dah.getStoppedNodeCount(), is(1));
         assertThat(dah.getAddedNodeCount(), is(2));
@@ -160,7 +160,7 @@ public class AgentAutoScaleHandlerTest {
     public void initFirstOneEc2InstanceTest_list_on() {
         dah.doList = true;
         dah.condition = 1;
-        dah.initFirstOneEc2Instance();
+        dah.initNodes();
 
         assertThat(dah.getStoppedNodeCount(), is(1));
         assertThat(dah.getAddedNodeCount(), is(2));
@@ -172,7 +172,7 @@ public class AgentAutoScaleHandlerTest {
     public void initFirstOneEc2InstanceTest_list_add() {
         dah.doList = true;
         dah.condition = 2;
-        dah.initFirstOneEc2Instance();
+        dah.initNodes();
 
         assertThat(dah.getStoppedNodeCount(), is(0));
         assertThat(dah.getAddedNodeCount(), is(1));
@@ -185,7 +185,7 @@ public class AgentAutoScaleHandlerTest {
         //first to list out current nodes
         dah.doList = true;
         dah.condition = 0;
-        dah.initFirstOneEc2Instance();
+        dah.initNodes();
 
         //turn off the running nodes
         dah.condition = 3;
@@ -201,7 +201,7 @@ public class AgentAutoScaleHandlerTest {
         //first to list out current nodes
         dah.doList = true;
         dah.condition = 0;
-        dah.initFirstOneEc2Instance();
+        dah.initNodes();
 
         //turn off the running nodes
         String testIdentifier = "PerfTest_1_user";
@@ -219,7 +219,7 @@ public class AgentAutoScaleHandlerTest {
         //first to list out current nodes
         dah.doList = true;
         dah.condition = 0;
-        dah.initFirstOneEc2Instance();
+        dah.initNodes();
 
         //term the specified nodes
         dah.condition = 5;

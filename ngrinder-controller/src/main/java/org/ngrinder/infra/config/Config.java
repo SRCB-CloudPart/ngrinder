@@ -64,6 +64,7 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
     private static final String NGRINDER_DEFAULT_FOLDER = ".ngrinder";
     private static final String NGRINDER_EX_FOLDER = ".ngrinder_ex";
     private static final Logger LOG = LoggerFactory.getLogger(Config.class);
+
     private Home home = null;
     private Home exHome = null;
     private PropertiesWrapper internalProperties;
@@ -698,6 +699,24 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
     }
 
     /**
+     * Get proxy host if the controller is behind proxy.
+     *
+     * @return proxy host
+     */
+    public String getProxyHost() {
+        return getControllerProperties().getProperty(PROP_CONTROLLER_PROXY_HOST);
+    }
+
+    /**
+     * Get proxy port if the controller is behind proxy.
+     *
+     * @return proxy port
+     */
+    public int getProxyPort() {
+        return getControllerProperties().getPropertyInt(PROP_CONTROLLER_PROXY_PORT, 0);
+    }
+
+    /**
      * Get the agent dynamic properties.
      *
      * @return {@link PropertiesWrapper} which is loaded from system.conf.
@@ -707,18 +726,28 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
     }
 
     /**
-     * Get the configured dynamic agent type, it may be EC2 or MESOS
+     * Get the configured agent auto scale type, it may be aws or mesos
      *
-     * @return dynamic type
+     * @return agent auto scale type
      */
     public String getAgentAutoScaleType() {
         return getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_TYPE);
     }
 
     /**
-     * Get the configured max instance node
+     * Get the configured agent auto scale region.
      *
-     * @return node max
+     * @return
+     */
+    public String getAgentAutoScaleRegion() {
+        return getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_REGION);
+    }
+
+
+    /**
+     * Get the configured max instance node for agent auto scale.
+     *
+     * @return max no count
      */
     public int getAgentAutoScaleMaxNodes() {
         return getAgentAutoScaleProperties().getPropertyInt(PROP_AGENT_AUTO_SCALE_MAX_NODES);
@@ -795,6 +824,7 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
         return getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_CONTROLLER_PORT);
     }
 
+
     /**
      * check whether the agent auto scale is enabled.
      *
@@ -807,4 +837,6 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
                 StringUtils.isNotEmpty(getAgentAutoScaleControllerIP()) &&
                 StringUtils.isNotEmpty(getAgentAutoScaleControllerPort()));
     }
+
+
 }

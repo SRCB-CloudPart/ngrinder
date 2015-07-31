@@ -14,6 +14,8 @@ import org.jclouds.compute.domain.TemplateBuilder;
 import org.jclouds.compute.options.TemplateOptions;
 import org.jclouds.scriptbuilder.domain.Statement;
 import org.ngrinder.common.constant.AgentAutoScaleConstants;
+import org.ngrinder.agent.service.AgentAutoScaleAction;
+import org.ngrinder.agent.service.AgentAutoScaleService;
 
 import java.util.Map;
 import java.util.Set;
@@ -25,7 +27,7 @@ import static org.mockito.Matchers.anyList;
 import static org.mockito.Matchers.anyString;
 import static org.mockito.Mockito.*;
 
-public class MockAgentAutoScaleHandler extends AgentAutoScaleHandler implements AgentAutoScaleConstants {
+public class MockAgentAutoScaleHandler extends AgentAutoScaleService implements AgentAutoScaleConstants {
 
     // 0: only list, 1: list + on, 2: list + add, 3: off, 4: on, 5: destroy, 6: add
     protected int condition = 0;
@@ -108,7 +110,7 @@ public class MockAgentAutoScaleHandler extends AgentAutoScaleHandler implements 
         ExecResponse res = mock(ExecResponse.class);
         adds.put(node, res);
         try {
-            when(cs.runScriptOnNodesMatching(Action.inGivenList(anyList()), anyString(), any(TemplateOptions.class))).thenReturn(adds);
+            when(cs.runScriptOnNodesMatching(AgentAutoScaleAction.inGivenList(anyList()), anyString(), any(TemplateOptions.class))).thenReturn(adds);
             when(node.getId()).thenReturn(id);
         } catch (RunScriptOnNodesException e) {
             e.printStackTrace();
@@ -134,7 +136,7 @@ public class MockAgentAutoScaleHandler extends AgentAutoScaleHandler implements 
         offNodes.put(nm1, res1);
 
         try {
-            when(cs.runScriptOnNodesMatching(Action.inGivenList(anyList()), anyString(), any(TemplateOptions.class))).thenReturn(offNodes);
+            when(cs.runScriptOnNodesMatching(AgentAutoScaleAction.inGivenList(anyList()), anyString(), any(TemplateOptions.class))).thenReturn(offNodes);
             when(nm1.getId()).thenReturn("201507070001");
             when(nm2.getId()).thenReturn("201507070002");
             when(nm1.getPrivateAddresses()).thenReturn(node1PriIp);
@@ -148,7 +150,7 @@ public class MockAgentAutoScaleHandler extends AgentAutoScaleHandler implements 
         Set turnOff = Sets.newHashSet();
         turnOff.add(nm1);
 
-        when(cs.suspendNodesMatching(Predicates.and(RUNNING, Action.inGivenList(anyList())))).thenReturn(turnOff);
+        when(cs.suspendNodesMatching(Predicates.and(RUNNING, AgentAutoScaleAction.inGivenList(anyList())))).thenReturn(turnOff);
     }
 
     @SuppressWarnings("unchecked")
@@ -161,7 +163,7 @@ public class MockAgentAutoScaleHandler extends AgentAutoScaleHandler implements 
         Set turnOn = Sets.newHashSet();
         turnOn.add(nm2);
 
-        when(cs.resumeNodesMatching(Predicates.and(SUSPENDED, Action.inGivenList(anyList())))).thenReturn(turnOn);
+        when(cs.resumeNodesMatching(Predicates.and(SUSPENDED, AgentAutoScaleAction.inGivenList(anyList())))).thenReturn(turnOn);
         when(nm2.getId()).thenReturn("201507070002");
         when(nm2.getPrivateAddresses()).thenReturn(node2PriIp);
         when(nm2.getPublicAddresses()).thenReturn(node2PubIp);
@@ -171,7 +173,7 @@ public class MockAgentAutoScaleHandler extends AgentAutoScaleHandler implements 
         ExecResponse res2 = mock(ExecResponse.class);
         onNodes.put(nm2, res2);
         try {
-            when(cs.runScriptOnNodesMatching(Action.inGivenList(anyList()), anyString(), any(TemplateOptions.class))).thenReturn(onNodes);
+            when(cs.runScriptOnNodesMatching(AgentAutoScaleAction.inGivenList(anyList()), anyString(), any(TemplateOptions.class))).thenReturn(onNodes);
         } catch (RunScriptOnNodesException e) {
             e.printStackTrace();
         }
@@ -192,7 +194,7 @@ public class MockAgentAutoScaleHandler extends AgentAutoScaleHandler implements 
 
         termNodes.add(nm2);
         //when(cs.destroyNodesMatching(Predicates.and(not(TERMINATED), inGivenList(anyList())))).thenReturn(termNodes);
-        when(cs.destroyNodesMatching(Action.inGivenList(anyList()))).thenReturn(termNodes);
+        when(cs.destroyNodesMatching(AgentAutoScaleAction.inGivenList(anyList()))).thenReturn(termNodes);
 
         when(nm1.getId()).thenReturn("201507070001");
         when(nm1.getPrivateAddresses()).thenReturn(node1PriIp);
@@ -210,7 +212,7 @@ public class MockAgentAutoScaleHandler extends AgentAutoScaleHandler implements 
     private void setOnlyList(ComputeService cs, NodeMetadata nm1, NodeMetadata nm2, Set groupNodes){
         when(nm1.getStatus()).thenReturn(NodeMetadata.Status.RUNNING);
         when(nm2.getStatus()).thenReturn(NodeMetadata.Status.SUSPENDED);
-        when(cs.listNodesDetailsMatching(Action.nodeNameStartsWith(anyString()))).thenReturn(groupNodes);
+        when(cs.listNodesDetailsMatching(AgentAutoScaleAction.nodeNameStartsWith(anyString()))).thenReturn(groupNodes);
     }
 
     protected String getGroupName(String ctrl_ip){
@@ -226,7 +228,7 @@ public class MockAgentAutoScaleHandler extends AgentAutoScaleHandler implements 
             //list condition
             when(nm1.getStatus()).thenReturn(NodeMetadata.Status.TERMINATED);
             when(nm2.getStatus()).thenReturn(NodeMetadata.Status.TERMINATED);
-            when(cs.listNodesDetailsMatching(Action.nodeNameStartsWith(anyString()))).thenReturn(groupNodes);
+            when(cs.listNodesDetailsMatching(AgentAutoScaleAction.nodeNameStartsWith(anyString()))).thenReturn(groupNodes);
             doList = false;
         }else {
             //add condition
@@ -240,7 +242,7 @@ public class MockAgentAutoScaleHandler extends AgentAutoScaleHandler implements 
             //list condition
             when(nm1.getStatus()).thenReturn(NodeMetadata.Status.SUSPENDED);
             when(nm2.getStatus()).thenReturn(NodeMetadata.Status.SUSPENDED);
-            when(cs.listNodesDetailsMatching(Action.nodeNameStartsWith(anyString()))).thenReturn(groupNodes);
+            when(cs.listNodesDetailsMatching(AgentAutoScaleAction.nodeNameStartsWith(anyString()))).thenReturn(groupNodes);
             doList = false;
         }else {
             //on condition
@@ -250,7 +252,7 @@ public class MockAgentAutoScaleHandler extends AgentAutoScaleHandler implements 
             nodeIp.add("192.168.1.1");
             nodePubIp.add("54.167.1.11");
             onNodes.add(nm1);
-            when(cs.resumeNodesMatching(Predicates.and(SUSPENDED, Action.inGivenList(anyList())))).thenReturn(onNodes);
+            when(cs.resumeNodesMatching(Predicates.and(SUSPENDED, AgentAutoScaleAction.inGivenList(anyList())))).thenReturn(onNodes);
             when(nm1.getId()).thenReturn("201507070001");
             when(nm1.getPrivateAddresses()).thenReturn(nodeIp);
             when(nm1.getPublicAddresses()).thenReturn(nodePubIp);
@@ -259,7 +261,7 @@ public class MockAgentAutoScaleHandler extends AgentAutoScaleHandler implements 
             ExecResponse res = mock(ExecResponse.class);
             turnOns.put(nm1, res);
             try {
-                when(cs.runScriptOnNodesMatching(Action.inGivenList(anyList()), anyString(), any(TemplateOptions.class))).thenReturn(turnOns);
+                when(cs.runScriptOnNodesMatching(AgentAutoScaleAction.inGivenList(anyList()), anyString(), any(TemplateOptions.class))).thenReturn(turnOns);
                 when(nm1.getId()).thenReturn("201507070001");
 
             } catch (RunScriptOnNodesException e) {

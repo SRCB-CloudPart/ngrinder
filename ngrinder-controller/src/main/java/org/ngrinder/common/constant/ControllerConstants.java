@@ -82,4 +82,6 @@ public interface ControllerConstants {
     String PROP_CONTROLLER_AGENT_FORCE_UPDATE = "controller.agent_force_update";
     String PROP_CONTROLLER_UPDATE_CHUNK_SIZE = "controller.update_chunk_size";
     String PROP_CONTROLLER_INACTIVE_CLIENT_TIME_OUT = "controller.inactive_client_time_out";
+    String PROP_CONTROLLER_PROXY_HOST = "controller.proxy_host";
+    String PROP_CONTROLLER_PROXY_PORT = "controller.proxy_port";
 }
