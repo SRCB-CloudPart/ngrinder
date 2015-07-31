@@ -167,9 +167,7 @@ public class PerfTestRunnable implements ControllerConstants {
         if (config.isAgentAutoScaleEnabled()) {
             int requiredAgentCount = runCandidate.getAgentCount() -
                     agentManager.getAllFreeApprovedAgentsForUser(runCandidate.getCreatedUser()).size();
-            if (!agentAutoScaleService.isActivationProgress()) {
-                agentAutoScaleService.activateNodes(requiredAgentCount);
-            }
+            agentAutoScaleService.activateNodes(requiredAgentCount);
         }
     }
 

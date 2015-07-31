@@ -1,9 +1,5 @@
 package org.ngrinder.agent.service;
 
-import com.google.common.base.Predicate;
-import org.jclouds.compute.ComputeService;
-import org.jclouds.compute.domain.NodeMetadata;
-
 /**
  * Created by junoyoon on 15. 7. 28.
  */
@@ -31,8 +27,7 @@ public class AgentAutoScaleScriptExecutor {
         return dockerTag;
     }
 
-    public void run(ComputeService computeService, Predicate<NodeMetadata> filter, AgentAutoScaleAction action) {
-        computeService.runScriptOnNode()
+    public void run() {
     }
 
 }

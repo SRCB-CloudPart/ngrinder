@@ -1,6 +1,7 @@
 package org.ngrinder.agent.service.autoscale;
 
 import org.ngrinder.agent.service.AgentAutoScaleAction;
+import org.ngrinder.infra.config.Config;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
@@ -30,5 +31,10 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction {
     @Override
     public boolean isInProgress() {
         return false;
+    }
+
+    @Override
+    public void init(Config config) {
+
     }
 }

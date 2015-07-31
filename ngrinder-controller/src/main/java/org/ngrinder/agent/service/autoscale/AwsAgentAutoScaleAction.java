@@ -1,8 +1,5 @@
 package org.ngrinder.agent.service.autoscale;
 
-import com.github.dockerjava.api.DockerClient;
-import com.github.dockerjava.core.DockerClientBuilder;
-import com.github.dockerjava.core.DockerClientConfig;
 import org.apache.commons.lang3.StringUtils;
 import org.dasein.cloud.Cloud;
 import org.dasein.cloud.CloudProvider;
@@ -10,11 +7,13 @@ import org.dasein.cloud.ContextRequirements;
 import org.dasein.cloud.ProviderContext;
 import org.dasein.cloud.aws.AWSCloud;
 import org.dasein.cloud.compute.ComputeServices;
+import org.dasein.cloud.compute.VMFilterOptions;
+import org.dasein.cloud.compute.VirtualMachine;
+import org.dasein.cloud.compute.VirtualMachineSupport;
 import org.ngrinder.agent.service.AgentAutoScaleAction;
 import org.ngrinder.infra.config.Config;
 import org.springframework.beans.factory.annotation.Qualifier;
 
-import java.io.UnsupportedEncodingException;
 import java.util.List;
 
 import static org.ngrinder.common.util.ExceptionUtils.processException;
@@ -28,11 +27,10 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction {
 
     private Config config;
 
-    private ComputeServices computeServices;
+    private VirtualMachineSupport virtualMachineSupport;
 
     @Override
-    public void init(Config config) throws InstantiationException, IllegalAccessException, UnsupportedEncodingException {
-
+    public void init(Config config) {
         this.config = config;
         initComputeService(config);
         initDockerService(config);
@@ -60,7 +58,6 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction {
             int i = 0;
 
             for (ContextRequirements.Field f : fields) {
-                System.out.print("Loading '" + f.name + "' from ");
                 if (f.type.equals(ContextRequirements.FieldType.KEYPAIR)) {
                     String shared = checkNotNull(config.getAgentAutoScaleIdentity(), "agent.auto_scale.identity option should be provided to activate the AWS agent auto scale.");
                     String secret = checkNotNull(config.getAgentAutoScaleCredential(), "agent.auto_scale.credential option should be provided to activate the AWS agent auto scale.");
@@ -77,14 +74,27 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction {
 
             ProviderContext ctx = cloud.createContext("", regionId, values);
             CloudProvider provier = ctx.connect();
-            computeServices = provier.getComputeServices();
+            virtualMachineSupport = checkNotNull(provier.getComputeServices()).getVirtualMachineSupport();
         } catch (Exception e) {
-            processException("Exception occured while setting up AWS agent auto scale", e);
+            throw processException("Exception occured while setting up AWS agent auto scale", e);
         }
     }
 
     @Override
     public void initNodes(int count) {
+        try {
+            String agentAutoScaleControllerIP = config.getAgentAutoScaleControllerIP();
+            VMFilterOptions vmFilterOptions = VMFilterOptions.getInstance().withLabels(agentAutoScaleControllerIP);
+            List<VirtualMachine> result = (List<VirtualMachine>) virtualMachineSupport.listVirtualMachines(vmFilterOptions);
+            int size = result.size();
+            if (size > count) {
+                // TODO: fill the node termination code.
+            } else if (size < count) {
+                // TODO: fill the node launch code.
+            }
+        } catch (Exception e) {
+            throw processException(e);
+        }
     }
 
     @Override

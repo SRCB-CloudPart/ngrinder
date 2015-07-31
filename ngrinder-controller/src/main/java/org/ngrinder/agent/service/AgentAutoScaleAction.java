@@ -24,8 +24,9 @@ public abstract class AgentAutoScaleAction {
 
     /**
      * Initialize nodes.
-     *
+     * <p/>
      * This is the place
+     *
      * @param count
      */
     public abstract void initNodes(int count);
@@ -36,5 +37,5 @@ public abstract class AgentAutoScaleAction {
 
     public abstract boolean isInProgress();
 
-    public abstract void init(Config config) throws InstantiationException, IllegalAccessException, UnsupportedEncodingException;
+    public abstract void init(Config config);
 }
