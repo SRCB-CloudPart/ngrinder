@@ -306,6 +306,15 @@ public class AgentConfig implements AgentConstants, MonitorConstants, CommonCons
 	}
 
 	/**
+	 * Get the server log path which is to be monitored
+	 *
+	 * @return server log file path
+	 */
+	public String getMonitorServerLog() {
+		return getMonitorProperties().getProperty(PROP_MONITOR_SERVER_LOG);
+	}
+
+	/**
 	 * Get internal properties.
 	 *
 	 * @return internalProperties

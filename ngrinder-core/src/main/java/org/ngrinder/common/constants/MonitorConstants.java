@@ -22,6 +22,7 @@ public interface MonitorConstants {
 	public static final String PROP_MONITOR_BINDING_IP = "monitor.binding_ip";
 	public static final String PROP_MONITOR_BINDING_PORT = "monitor.binding_port";
 	public static final String PROP_MONITOR_BINDING_MESSAGE_PORT = "monitor.message_port";
+	public static final String PROP_MONITOR_SERVER_LOG = "monitor.server_log";
 
 	/**
 	 * Monitor Constant

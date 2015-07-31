@@ -1,3 +1,5 @@
 monitor.binding_ip,,monitor.listen.ip
 monitor.binding_port,13243,monitor.listen.port
 monitor.message_port,18000,monitor.message_port
+
+monitor.server_log,,monitor.server_log

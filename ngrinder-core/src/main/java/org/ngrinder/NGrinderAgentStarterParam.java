@@ -24,6 +24,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import static org.ngrinder.common.constants.AgentConstants.*;
+import static org.ngrinder.common.constants.MonitorConstants.*;
 
 /**
  * Starter parameters.
@@ -86,9 +87,15 @@ public class NGrinderAgentStarterParam {
 			}
 		},
 		monitor("run_monitor") {
+
+			@Parameter(names = {"-sl", "--server-log"}, required = false, description = "the server log to be monitored")
+			public String serverLog = null;
+
 			@Override
 			protected void processInternal() {
-				// Do nothing
+				if (serverLog != null) {
+					System.setProperty(PROP_MONITOR_SERVER_LOG, serverLog);
+				}
 			}
 		};
 
