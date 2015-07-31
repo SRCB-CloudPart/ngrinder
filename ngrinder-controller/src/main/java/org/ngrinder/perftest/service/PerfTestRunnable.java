@@ -108,6 +108,9 @@ public class PerfTestRunnable implements ControllerConstants {
     @Autowired
     private AgentAutoScaleHandler agentAutoScaleHandler;
 
+    @Autowired
+    private NgrinderFramework ngrinderFramework;
+
     @PostConstruct
     public void init() {
         // Clean up db first.
@@ -131,7 +134,7 @@ public class PerfTestRunnable implements ControllerConstants {
         this.agentRunnable = new Runnable() {
             @Override
             public void run() {
-                turnOffDynamicAgents();
+                releaseDynamicAgents();
             }
         };
         scheduledTaskService.addFixedDelayedScheduledTask(agentRunnable, PERFTEST_RUN_FREQUENCY_MILLISECONDS);
@@ -178,7 +181,7 @@ public class PerfTestRunnable implements ControllerConstants {
         }
 
         if (!hasEnoughFreeAgents(runCandidate)) {
-            runDynamicAgentEC2(runCandidate);
+            runDynamicAgent(runCandidate);
 
             return;
         }
@@ -189,7 +192,7 @@ public class PerfTestRunnable implements ControllerConstants {
         doTest(runCandidate);
     }
 
-    private void runDynamicAgentEC2(PerfTest runCandidate) {
+    private void runDynamicAgent(PerfTest runCandidate) {
         if (config.isAgentAutoScaleEnabled()) {
 
             int stopped_nodes = agentAutoScaleHandler.getStoppedNodeCount();
@@ -207,6 +210,14 @@ public class PerfTestRunnable implements ControllerConstants {
             } else {
                 addDynamicAgents(runCandidate, real_needs);
             }
+        }
+        else if (config.isAgentAutoScaleMesosEnabled() && ngrinderFramework.isMesosFrameworkStarted()) {
+
+            int needAgents = runCandidate.getAgentCount();
+            int freeAgents = agentManager.getAllFreeApprovedAgentsForUser(runCandidate.getCreatedUser()).size();
+            int requireAgents = needAgents-freeAgents;
+
+            ngrinderFramework.addNewRequest(runCandidate.getTestIdentifier(), requireAgents);
         }
     }
 
@@ -230,6 +241,15 @@ public class PerfTestRunnable implements ControllerConstants {
                 };
                 scheduledTaskService.runAsync(turnOffEc2AgentRunnable);
             }
+        }
+    }
+
+    private void releaseDynamicAgents() {
+        if (ngrinderFramework.isMesosFrameworkStarted()) {
+            ngrinderFramework.removeHangUpAgent();
+        }
+        else {
+            turnOffDynamicAgents();
         }
     }
 

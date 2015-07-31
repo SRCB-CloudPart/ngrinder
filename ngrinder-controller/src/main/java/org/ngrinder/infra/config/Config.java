@@ -810,10 +810,90 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
      * @return true if enabled
      */
     public boolean isAgentAutoScaleEnabled() {
-        return (StringUtils.isNotEmpty(getAgentAutoScaleType()) &&
+        return ((StringUtils.isNotEmpty(getAgentAutoScaleType()) && getAgentAutoScaleType().equals("EC2")) &&
                 StringUtils.isNotEmpty(getAgentAutoScaleIdentity()) &&
                 StringUtils.isNotEmpty(getAgentAutoScaleCredential()) &&
                 StringUtils.isNotEmpty(getAgentAutoScaleControllerIP()) &&
                 StringUtils.isNotEmpty(getAgentAutoScaleControllerPort()));
+    }
+
+
+    /**
+     * Get the mesos nGrinder framework name if the agent_auto_scale_type is set to mesos
+     *
+     * @return String nGrinder framework name
+     */
+    public String getAgentAutoScaleMesosFrameworkName() {
+        return getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_MESOS_FRAMEWORK_NAME);
+    }
+
+    /**
+     * Get the user that mesos task should be launched as on mesos slave.
+     *
+     * @return String User
+     */
+    public  String getAgentAutoScaleMesosUser() {
+        return getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_MESOS_USER);
+    }
+
+    /**
+     * Get the principal if the agent_auto_scale_type is set to mesos
+     *
+     * @return String principal
+     */
+    public String getAgentAutoScaleMesosPrincipal() {
+        return getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_MESOS_PRINCIPAL);
+    }
+
+    /**
+     * Get the secret if the agent_auto_scale_type is set to mesos
+     *
+     * @return String secret
+     */
+    public String getAgentAutoScaleMesosSecret() {
+        return getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_MESOS_SECRET);
+    }
+    /**
+     * Get the mesos master ip which will be used if the agent_auto_scale_type is set to mesos
+     *
+     * @return mesos master ip
+     */
+    public String getAgentAutoScaleMesosMaster(){
+        return getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_MESOS_MASTER).replace("&",",");
+    }
+
+    /**
+     * Get the mesos library path which will be used if the agent_auto_scale_type is set to mesos.
+     *
+     * @return mesos library path
+     */
+    public String getAgentAutoScaleMesosLibPath(){
+        return getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_MESOS_LIB_PATH);
+    }
+
+    /**
+     * Get the mesos slave attributes if the agent_auto_scale_type is set to mesos.
+     * These attributes should be matched with the attributes of mesos-slave.
+     *
+     * @return mesos slave attributes
+     */
+    public  String getAgentAutoScaleMesosSlaveAttributes() {
+        return getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_MESOS_SLAVE_ATTRIBUTES);
+    }
+
+    /**
+     * check whether the agent_auto_scale_type mesos is enable
+     *
+     * @return true or false
+     */
+    public boolean isAgentAutoScaleMesosEnabled(){
+        return ((StringUtils.isNotEmpty(getAgentAutoScaleType()) && getAgentAutoScaleType().equals("mesos"))
+                && StringUtils.isNotEmpty(getAgentAutoScaleControllerIP())
+                && StringUtils.isNotEmpty(getAgentAutoScaleControllerPort())
+                && StringUtils.isNotEmpty(getAgentAutoScaleDockerRepo())
+                && StringUtils.isNotEmpty(getAgentAutoScaleDockerTag())
+                && StringUtils.isNotEmpty(getAgentAutoScaleMesosFrameworkName())
+                && StringUtils.isNotEmpty(getAgentAutoScaleMesosMaster())
+                && StringUtils.isNotEmpty(getAgentAutoScaleMesosLibPath()));
     }
 }

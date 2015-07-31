@@ -415,6 +415,13 @@
 			<artifactId>jsr305</artifactId>
 			<version>3.0.0</version>
 		</dependency>
+
+		<!-- mesos -->
+		<dependency>
+			<groupId>org.apache.mesos</groupId>
+			<artifactId>mesos</artifactId>
+			<version>0.22.1</version>
+		</dependency>
 	</dependencies>
 
 	<build>

@@ -28,4 +28,11 @@ public interface AgentAutoScaleConstants {
     String PROP_AGENT_AUTO_SCALE_DOCKER_TAG = "agent.auto_scale.docker_tag";
     String PROP_AGENT_AUTO_SCALE_CONTROLLER_IP = "agent.auto_scale.controller_ip";
     String PROP_AGENT_AUTO_SCALE_CONTROLLER_PORT = "agent.auto_scale.controller_port";
+    String PROP_AGENT_AUTO_SCALE_MESOS_FRAMEWORK_NAME = "agent.auto_scale_mesos_framework_name";
+    String PROP_AGENT_AUTO_SCALE_MESOS_USER = "agent.auto_scale_mesos_user";
+    String PROP_AGENT_AUTO_SCALE_MESOS_PRINCIPAL = "agent.auto_scale_mesos_principal";
+    String PROP_AGENT_AUTO_SCALE_MESOS_SECRET = "agent.auto_scale_mesos_secret";
+    String PROP_AGENT_AUTO_SCALE_MESOS_MASTER = "agent.auto_scale_mesos_master";
+    String PROP_AGENT_AUTO_SCALE_MESOS_LIB_PATH = "agent.auto_scale_mesos_lib_path";
+    String PROP_AGENT_AUTO_SCALE_MESOS_SLAVE_ATTRIBUTES = "agent.auto_scale_mesos_slave_attributes";
 }

@@ -975,6 +975,12 @@ function changeAgentMaxCount(region, isValid) {
 	if (count === undefined) {
 		count = 0;
 	}
+<#if agentAutoScaleMesosEnabled == true>
+    if (count != 0) {
+        count = count - ${agentAutoScaleMesosRunningCount};
+    }
+    count = count + ${agentAutoScaleMesosAllowedCount};
+</#if>
 	$("#maxAgentCount").text(count);
 
 	var $agentCountObj = $("#agent_count");

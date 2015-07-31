@@ -32,10 +32,7 @@ import org.ngrinder.infra.config.Config;
 import org.ngrinder.infra.logger.CoreLogger;
 import org.ngrinder.infra.spring.RemainedPath;
 import org.ngrinder.model.*;
-import org.ngrinder.perftest.service.AgentManager;
-import org.ngrinder.perftest.service.AgentAutoScaleHandler;
-import org.ngrinder.perftest.service.PerfTestService;
-import org.ngrinder.perftest.service.TagService;
+import org.ngrinder.perftest.service.*;
 import org.ngrinder.region.service.RegionService;
 import org.ngrinder.script.handler.ScriptHandlerFactory;
 import org.ngrinder.script.model.FileCategory;
@@ -112,6 +109,9 @@ public class PerfTestController extends BaseController {
 
 	@Autowired
 	private AgentAutoScaleHandler agentAutoScaleHandler;
+
+	@Autowired
+	private NgrinderFramework ngrinderFramework;
 
 	/**
 	 * Initialize.
@@ -215,6 +215,7 @@ public class PerfTestController extends BaseController {
 		addDefaultAttributeOnModel(model);
 
 		setModeAttrForDynamicAgentFeature(model, getConfig().isAgentAutoScaleEnabled());
+		setModeAttrForAgentAutoScaleMesos(model, getConfig().isAgentAutoScaleMesosEnabled());
 
 		return "perftest/detail";
 	}
@@ -292,7 +293,7 @@ public class PerfTestController extends BaseController {
 		model.addAttribute(PARAM_PROCESS_THREAD_POLICY_SCRIPT, perfTestService.getProcessAndThreadPolicyScript());
 
 		setModeAttrForDynamicAgentFeature(model, getConfig().isAgentAutoScaleEnabled());
-
+		setModeAttrForAgentAutoScaleMesos(model, getConfig().isAgentAutoScaleMesosEnabled());
 
 		return "perftest/detail";
 	}
@@ -304,6 +305,18 @@ public class PerfTestController extends BaseController {
 		model.addAttribute(PARAM_AGENT_AUTO_SCALE_LIST_DONE, agentAutoScaleHandler.getIsListInfoDone());
 		model.addAttribute(PARAM_AGENT_AUTO_SCALE_RUNNING_COUNT, agentAutoScaleHandler.getRunningNodeCount());
 		model.addAttribute(PARAM_AGENT_AUTO_SCALE_STOPPED_COUNT, agentAutoScaleHandler.getStoppedNodeCount());
+	}
+
+	/**
+	 * Add special variables into model if mesos type is enabled.
+	 *
+	 * @param model		model
+	 * @param enabled	if mesos is enabled
+	 */
+	private void setModeAttrForAgentAutoScaleMesos(ModelMap model, boolean enabled){
+		model.addAttribute(PARAM_AGENT_AUTO_SCALE_MESOS_ENABLED, enabled);
+		model.addAttribute(PARAM_AGENT_AUTO_SCALE_MESOS_ALLOWED_COUNT, ngrinderFramework.getMesosAllowedAgentCount());
+		model.addAttribute(PARAM_AGent_AUTO_SCALE_MESOS_RUNNING_COUNT, ngrinderFramework.getMesosRunningAgentCount());
 	}
 
 	/**
@@ -361,9 +374,17 @@ public class PerfTestController extends BaseController {
 				"status only allows SAVE or READY");
 		if (newOne.isThresholdRunCount()) {
 			final Integer runCount = newOne.getRunCount();
-			checkArgument(runCount > 0 && runCount <= agentManager
-					.getMaxRunCount(),
-					"runCount should be equal to or less than %s", agentManager.getMaxRunCount());
+			if (getConfig().isAgentAutoScaleMesosEnabled()) {
+				int maxAgentCount = agentManager.getMaxRunCount() - ngrinderFramework.getMesosRunningAgentCount()
+						+ ngrinderFramework.getMesosAllowedAgentCount();
+				checkArgument(runCount > 0 && runCount <= maxAgentCount,
+						"runCount should be equal to or less than %s", maxAgentCount);
+			}
+			else {
+				checkArgument(runCount > 0 && runCount <= agentManager
+								.getMaxRunCount(),
+						"runCount should be equal to or less than %s", agentManager.getMaxRunCount());
+			}
 		} else {
 			final Long duration = newOne.getDuration();
 			checkArgument(duration > 0 && duration <= (((long) agentManager.getMaxRunHour()) *
@@ -378,7 +399,15 @@ public class PerfTestController extends BaseController {
 		 * If dynamic agent provision feature is enabled, bypass the validation
 		 */
 		if(!getConfig().isAgentAutoScaleEnabled()) {
-			int agentMaxCount = agentCountObj.intValue();
+			int agentMaxCount;
+			if (getConfig().isAgentAutoScaleMesosEnabled())
+			{
+				agentMaxCount = agentCountObj.intValue() - ngrinderFramework.getMesosRunningAgentCount()
+						+ ngrinderFramework.getMesosAllowedAgentCount();
+			}
+			else {
+				agentMaxCount = agentCountObj.intValue();
+			}
 			checkArgument(newOne.getAgentCount() <= agentMaxCount, "test agent should be equal to or less than %s",
 					agentMaxCount);
 			if (newOne.getStatus().equals(Status.READY)) {

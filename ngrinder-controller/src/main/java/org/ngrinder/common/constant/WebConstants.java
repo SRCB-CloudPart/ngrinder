@@ -55,4 +55,9 @@ public interface WebConstants {
     String PARAM_AGENT_AUTO_SCALE_ADDED_COUNT = "addedNodeCount";
     String PARAM_AGENT_AUTO_SCALE_ENABLED = "dynamicAgentEnabled";
     String PARAM_AGENT_AUTO_SCALE_LIST_DONE = "isListInfoDone";
+
+    String PARAM_AGENT_AUTO_SCALE_MESOS_ENABLED = "agentAutoScaleMesosEnabled";
+    String PARAM_AGENT_AUTO_SCALE_MESOS_ALLOWED_COUNT = "agentAutoScaleMesosAllowedCount";
+    String PARAM_AGent_AUTO_SCALE_MESOS_RUNNING_COUNT = "agentAutoScaleMesosRunningCount";
+
 }
