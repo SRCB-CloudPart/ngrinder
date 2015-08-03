@@ -15,27 +15,28 @@ package org.ngrinder.agent.service;
 
 import org.ngrinder.infra.config.Config;
 
-import java.io.UnsupportedEncodingException;
-
 /**
  * Abstract class for Auto Scale Action. The subclass should handle the specific auto scale action depending on the cloud provider.
  */
 public abstract class AgentAutoScaleAction {
 
     /**
-     * Initialize nodes.
-     * <p/>
-     * This is the place
+     * Initialize the AgentAutoScaleAction.
      *
-     * @param count
+     * @param config              config
+     * @param agentManagerService agentManagerService for the current activated nodes.
      */
-    public abstract void initNodes(int count);
+    public abstract void init(Config config, AgentManagerService agentManagerService);
 
+    /**
+     * Activate the given count of node.
+     *
+     * @param count node to be activated.
+     */
     public abstract void activateNodes(int count);
 
-    public abstract void suspendNodes(int count);
-
-    public abstract boolean isInProgress();
-
-    public abstract void init(Config config);
+    /**
+     * Suspend unnecessary nodes.
+     */
+    public abstract void suspendNodes();
 }

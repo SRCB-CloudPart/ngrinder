@@ -6,17 +6,18 @@ import org.dasein.cloud.CloudProvider;
 import org.dasein.cloud.ContextRequirements;
 import org.dasein.cloud.ProviderContext;
 import org.dasein.cloud.aws.AWSCloud;
-import org.dasein.cloud.compute.ComputeServices;
 import org.dasein.cloud.compute.VMFilterOptions;
 import org.dasein.cloud.compute.VirtualMachine;
 import org.dasein.cloud.compute.VirtualMachineSupport;
 import org.ngrinder.agent.service.AgentAutoScaleAction;
+import org.ngrinder.agent.service.AgentManagerService;
 import org.ngrinder.infra.config.Config;
 import org.springframework.beans.factory.annotation.Qualifier;
 
 import java.util.List;
 
 import static org.ngrinder.common.util.ExceptionUtils.processException;
+import static org.ngrinder.common.util.Preconditions.checkNotEmpty;
 import static org.ngrinder.common.util.Preconditions.checkNotNull;
 
 /**
@@ -27,13 +28,17 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction {
 
     private Config config;
 
+    private AgentManagerService agentManagerService;
+
     private VirtualMachineSupport virtualMachineSupport;
 
     @Override
-    public void init(Config config) {
+    public void init(Config config, AgentManagerService agentManagerService) {
         this.config = config;
+        this.agentManagerService = agentManagerService;
         initComputeService(config);
         initDockerService(config);
+        initNodes(config.getAgentAutoScaleControllerIP(), config.getAgentAutoScaleMaxNodes());
     }
 
     private void initDockerService(Config config) {
@@ -59,8 +64,8 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction {
 
             for (ContextRequirements.Field f : fields) {
                 if (f.type.equals(ContextRequirements.FieldType.KEYPAIR)) {
-                    String shared = checkNotNull(config.getAgentAutoScaleIdentity(), "agent.auto_scale.identity option should be provided to activate the AWS agent auto scale.");
-                    String secret = checkNotNull(config.getAgentAutoScaleCredential(), "agent.auto_scale.credential option should be provided to activate the AWS agent auto scale.");
+                    String shared = checkNotEmpty(config.getAgentAutoScaleIdentity(), "agent.auto_scale.identity option should be provided to activate the AWS agent auto scale.");
+                    String secret = checkNotEmpty(config.getAgentAutoScaleCredential(), "agent.auto_scale.credential option should be provided to activate the AWS agent auto scale.");
                     values[i] = ProviderContext.Value.parseValue(f, shared, secret);
                 } else {
                     if (f.name.equals("proxyHost") && StringUtils.isNotBlank(proxyHost)) {
@@ -80,11 +85,10 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction {
         }
     }
 
-    @Override
-    public void initNodes(int count) {
+    public void initNodes(String label, int count) {
         try {
-            String agentAutoScaleControllerIP = config.getAgentAutoScaleControllerIP();
-            VMFilterOptions vmFilterOptions = VMFilterOptions.getInstance().withLabels(agentAutoScaleControllerIP);
+            // Get the nodes which has the controller ip label.
+            VMFilterOptions vmFilterOptions = VMFilterOptions.getInstance().withLabels(label);
             List<VirtualMachine> result = (List<VirtualMachine>) virtualMachineSupport.listVirtualMachines(vmFilterOptions);
             int size = result.size();
             if (size > count) {
@@ -99,18 +103,14 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction {
 
     @Override
     public void activateNodes(int count) {
+        // TODO : fill the node activation code.
+        // TODO : list the stopped nodes and restart them if the count of stopped node is greater than the given count
         //config.getAgentAutoScaleMaxNodes()
     }
 
     @Override
-    public void suspendNodes(int count) {
-
+    public void suspendNodes() {
+        // TODO : fill the node stopping code
+        // TODO :
     }
-
-    @Override
-    public boolean isInProgress() {
-        return false;
-    }
-
-
 }

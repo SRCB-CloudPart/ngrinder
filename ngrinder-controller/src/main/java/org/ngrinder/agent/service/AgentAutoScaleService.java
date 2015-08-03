@@ -13,6 +13,12 @@
  */
 package org.ngrinder.agent.service;
 
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
+import com.google.common.cache.RemovalListener;
+import com.google.common.cache.RemovalNotification;
+import net.grinder.common.processidentity.AgentIdentity;
+import net.grinder.engine.controller.AgentControllerIdentityImplementation;
 import org.ngrinder.agent.service.autoscale.NullAgentAutoScaleAction;
 import org.ngrinder.infra.config.Config;
 import org.ngrinder.infra.schedule.ScheduledTaskService;
@@ -22,11 +28,15 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Profile;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 
 import javax.annotation.PostConstruct;
 import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
+import java.util.List;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantLock;
 
 import static org.ngrinder.common.util.ExceptionUtils.processException;
 
@@ -55,17 +65,23 @@ import static org.ngrinder.common.util.ExceptionUtils.processException;
  */
 @Profile("production")
 @Component("agentAutoScaleService")
-public class AgentAutoScaleService {
+public class AgentAutoScaleService implements RemovalListener<String, Long> {
     private static final Logger LOG = LoggerFactory.getLogger(AgentAutoScaleService.class);
 
     @Autowired
     private Config config;
 
     @Autowired
+    private AgentManagerService agentManagerService;
+
+    @Autowired
     private ScheduledTaskService scheduledTaskService;
     private static final AgentAutoScaleAction NULL_AGENT_AUTO_SCALE_ACTION = new NullAgentAutoScaleAction();
     private AgentAutoScaleAction agentAutoScaleAction = NULL_AGENT_AUTO_SCALE_ACTION;
 
+    private ReentrantLock lock = new ReentrantLock();
+
+    Cache<String, Long> cache = CacheBuilder.newBuilder().expireAfterWrite(60, TimeUnit.MINUTES).removalListener(this).build();
 
     @PostConstruct
     public void init() {
@@ -76,6 +92,11 @@ public class AgentAutoScaleService {
             }
         });
         initAgentAutoScaleService();
+    }
+
+    private void initAgentAutoScaleService() {
+        agentAutoScaleAction = createAgentAutoScaleAction();
+        agentAutoScaleAction.init(config, agentManagerService);
     }
 
 
@@ -94,7 +115,6 @@ public class AgentAutoScaleService {
                     }
                 }
                 action = type.newInstance();
-                action.init(config);
             } catch (InstantiationException e) {
                 throw processException(e);
             } catch (IllegalAccessException e) {
@@ -104,16 +124,43 @@ public class AgentAutoScaleService {
         return action;
     }
 
-    private void initAgentAutoScaleService() {
-        agentAutoScaleAction = createAgentAutoScaleAction();
-        // Prepare the necessary nodes at the first time.
-        agentAutoScaleAction.initNodes(config.getAgentAutoScaleMaxNodes());
+    public void touchNode(String name) {
+//        Long lastAccessTime = cache.getIfPresent(name);
+//        if (lastAccessTime == null) {
+//            cache.put(name, System.currentTimeMillis());
+//        } else if (System.currentTimeMillis() - 60 * lastAccessTime)
+//
+//        cache.put(name, );
     }
 
-    public synchronized void activateNodes(int count) {
-        if (agentAutoScaleAction.isInProgress()) {
-            return;
+    @Async
+    public void activateNodes(int count) {
+        lock.lock();
+        try {
+            agentAutoScaleAction.activateNodes(count);
+        } finally {
+            lock.unlock();
         }
-        agentAutoScaleAction.activateNodes(count);
     }
+
+    @Async
+    public void suspendNodes() {
+        lock.lock();
+        try {
+            agentAutoScaleAction.suspendNodes();
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public boolean isInProgress() {
+        return lock.isLocked();
+    }
+
+    @Override
+    public void onRemoval(RemovalNotification<String, Long> removalNotification) {
+
+    }
+
+
 }
