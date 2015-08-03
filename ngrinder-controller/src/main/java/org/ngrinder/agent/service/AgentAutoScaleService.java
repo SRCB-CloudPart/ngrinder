@@ -133,7 +133,7 @@ public class AgentAutoScaleService implements RemovalListener<String, Long> {
 //        cache.put(name, );
     }
 
-    @Async
+
     public void activateNodes(int count) {
         lock.lock();
         try {
@@ -143,7 +143,7 @@ public class AgentAutoScaleService implements RemovalListener<String, Long> {
         }
     }
 
-    @Async
+
     public void suspendNodes() {
         lock.lock();
         try {
