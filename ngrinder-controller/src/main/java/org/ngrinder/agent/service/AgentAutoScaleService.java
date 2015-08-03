@@ -35,6 +35,7 @@ import javax.annotation.PostConstruct;
 import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -78,7 +79,7 @@ public class AgentAutoScaleService implements RemovalListener<String, Long> {
     private ScheduledTaskService scheduledTaskService;
     private static final AgentAutoScaleAction NULL_AGENT_AUTO_SCALE_ACTION = new NullAgentAutoScaleAction();
     private AgentAutoScaleAction agentAutoScaleAction = NULL_AGENT_AUTO_SCALE_ACTION;
-
+    private Set<Class<? extends AgentAutoScaleAction>> agentAutoScaleActions = new Reflections("org.ngrinder.agent.service.autoscale").getSubTypesOf(AgentAutoScaleAction.class);
     private ReentrantLock lock = new ReentrantLock();
 
     Cache<String, Long> cache = CacheBuilder.newBuilder().expireAfterWrite(60, TimeUnit.MINUTES).removalListener(this).build();
@@ -105,11 +106,10 @@ public class AgentAutoScaleService implements RemovalListener<String, Long> {
         if (config.isAgentAutoScaleEnabled()) {
             String agentAutoScaleType = config.getAgentAutoScaleType();
             try {
-                Reflections reflections = new Reflections("org.ngrinder.agent.service.autoscale");
                 Class<? extends AgentAutoScaleAction> type = NullAgentAutoScaleAction.class;
-                for (Class<? extends AgentAutoScaleAction> each : reflections.getSubTypesOf(AgentAutoScaleAction.class)) {
+                for (Class<? extends AgentAutoScaleAction> each : agentAutoScaleActions) {
                     Qualifier annotation = each.getAnnotation(Qualifier.class);
-                    if (annotation.equals(reflections)) {
+                    if (annotation.value().equals(agentAutoScaleType)) {
                         type = each;
                         break;
                     }
