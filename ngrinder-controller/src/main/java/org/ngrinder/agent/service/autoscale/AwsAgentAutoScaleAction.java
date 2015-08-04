@@ -1,12 +1,14 @@
 package org.ngrinder.agent.service.autoscale;
 
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
+import com.google.common.cache.RemovalListener;
+import com.google.common.cache.RemovalNotification;
 import org.apache.commons.lang3.StringUtils;
-import org.dasein.cloud.Cloud;
-import org.dasein.cloud.CloudProvider;
-import org.dasein.cloud.ContextRequirements;
-import org.dasein.cloud.ProviderContext;
+import org.dasein.cloud.*;
 import org.dasein.cloud.aws.AWSCloud;
 import org.dasein.cloud.compute.VMFilterOptions;
+import org.dasein.cloud.compute.VMLaunchOptions;
 import org.dasein.cloud.compute.VirtualMachine;
 import org.dasein.cloud.compute.VirtualMachineSupport;
 import org.ngrinder.agent.service.AgentAutoScaleAction;
@@ -14,7 +16,9 @@ import org.ngrinder.agent.service.AgentManagerService;
 import org.ngrinder.infra.config.Config;
 import org.springframework.beans.factory.annotation.Qualifier;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 import static org.ngrinder.common.util.ExceptionUtils.processException;
 import static org.ngrinder.common.util.Preconditions.checkNotEmpty;
@@ -24,13 +28,24 @@ import static org.ngrinder.common.util.Preconditions.checkNotNull;
  * Created by junoyoon on 15. 7. 29.
  */
 @Qualifier("aws")
-public class AwsAgentAutoScaleAction extends AgentAutoScaleAction {
+public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements RemovalListener<String, Long> {
 
     private Config config;
 
     private AgentManagerService agentManagerService;
 
     private VirtualMachineSupport virtualMachineSupport;
+
+    /**
+     * Cache b/w host name and last touched date
+     */
+    private Cache<String, Long> touchCache = CacheBuilder.newBuilder().expireAfterWrite(60, TimeUnit.MINUTES).removalListener(this).build();
+
+    /**
+     * Cache b/w host name and vmId
+     */
+    private Cache<String, AutoScaleNode> vmCache = CacheBuilder.newBuilder().expireAfterWrite(10, TimeUnit.MINUTES).build();
+
 
     @Override
     public void init(Config config, AgentManagerService agentManagerService) {
@@ -50,7 +65,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction {
             String cloudName = "AWS";
             String providerName = "Amazon";
             String proxyHost = config.getProxyHost();
-            String proxyPort = String.valueOf(config.getProxyPort());
+            int proxyPort = config.getProxyPort();
             // Use that information to register the cloud
             @SuppressWarnings("unchecked") Cloud cloud = Cloud.register(providerName, cloudName, "", AWSCloud.class);
 
@@ -59,25 +74,22 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction {
             List<ContextRequirements.Field> fields = requirements.getConfigurableValues();
 
             // Load the values for the required fields from the system properties
-            ProviderContext.Value[] values = new ProviderContext.Value[fields.size()];
-            int i = 0;
-
+            List<ProviderContext.Value> values = new ArrayList<ProviderContext.Value>();
             for (ContextRequirements.Field f : fields) {
                 if (f.type.equals(ContextRequirements.FieldType.KEYPAIR)) {
                     String shared = checkNotEmpty(config.getAgentAutoScaleIdentity(), "agent.auto_scale.identity option should be provided to activate the AWS agent auto scale.");
                     String secret = checkNotEmpty(config.getAgentAutoScaleCredential(), "agent.auto_scale.credential option should be provided to activate the AWS agent auto scale.");
-                    values[i] = ProviderContext.Value.parseValue(f, shared, secret);
+                    values.add(ProviderContext.Value.parseValue(f, shared, secret));
                 } else {
                     if (f.name.equals("proxyHost") && StringUtils.isNotBlank(proxyHost)) {
-                        values[i] = ProviderContext.Value.parseValue(f, proxyHost);
-                    } else if (f.name.equals("proxyPort") && StringUtils.isNotBlank(proxyPort)) {
-                        values[i] = ProviderContext.Value.parseValue(f, proxyPort);
+                        values.add(ProviderContext.Value.parseValue(f, proxyHost));
+                        ;
+                    } else if (f.name.equals("proxyPort") && proxyPort != 0) {
+                        values.add(ProviderContext.Value.parseValue(f, String.valueOf(proxyPort)));
                     }
                 }
-                i++;
             }
-
-            ProviderContext ctx = cloud.createContext("", regionId, values);
+            ProviderContext ctx = cloud.createContext("", regionId, values.toArray(new ProviderContext.Value[]{}));
             CloudProvider provier = ctx.connect();
             virtualMachineSupport = checkNotNull(provier.getComputeServices()).getVirtualMachineSupport();
         } catch (Exception e) {
@@ -101,6 +113,14 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction {
         }
     }
 
+    public void getNodes(String label) throws CloudException, InternalException {
+
+    }
+
+    public void getVmId(String hostName) {
+
+    }
+
     @Override
     public void activateNodes(int count) {
         // TODO : fill the node activation code.
@@ -112,5 +132,15 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction {
     public void suspendNodes() {
         // TODO : fill the node stopping code
         // TODO :
+    }
+
+    @Override
+    public void touch(String name) {
+        touchCache.put(name, System.currentTimeMillis());
+    }
+
+    @Override
+    public void onRemoval(RemovalNotification<String, Long> removal) {
+        String key = removal.getKey();
     }
 }

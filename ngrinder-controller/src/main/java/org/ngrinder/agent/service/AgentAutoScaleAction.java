@@ -13,12 +13,17 @@
  */
 package org.ngrinder.agent.service;
 
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
 import org.ngrinder.infra.config.Config;
+
+import java.util.concurrent.TimeUnit;
 
 /**
  * Abstract class for Auto Scale Action. The subclass should handle the specific auto scale action depending on the cloud provider.
  */
 public abstract class AgentAutoScaleAction {
+
 
     /**
      * Initialize the AgentAutoScaleAction.
@@ -39,4 +44,11 @@ public abstract class AgentAutoScaleAction {
      * Suspend unnecessary nodes.
      */
     public abstract void suspendNodes();
+
+    /**
+     * Touch the given node
+     *
+     * @param name node name
+     */
+    public abstract void touch(String name);
 }
