@@ -60,7 +60,7 @@ public class AgentAutoScaleService {
     private static final Logger LOG = LoggerFactory.getLogger(AgentAutoScaleService.class);
 
     @Autowired
-    private Config config;
+    Config config;
 
     @Autowired
     private AgentManagerService agentManagerService;
@@ -82,13 +82,13 @@ public class AgentAutoScaleService {
         initAgentAutoScaleService();
     }
 
-    private void initAgentAutoScaleService() {
+    void initAgentAutoScaleService() {
         agentAutoScaleAction = createAgentAutoScaleAction();
         agentAutoScaleAction.init(config, agentManagerService);
     }
 
 
-    private AgentAutoScaleAction createAgentAutoScaleAction() {
+    AgentAutoScaleAction createAgentAutoScaleAction() {
         AgentAutoScaleAction action = NULL_AGENT_AUTO_SCALE_ACTION;
         if (config.isAgentAutoScaleEnabled()) {
             String agentAutoScaleType = config.getAgentAutoScaleType();

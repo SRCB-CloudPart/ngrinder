@@ -19,10 +19,12 @@ import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.RemovalListener;
 import com.google.common.cache.RemovalNotification;
 import org.apache.commons.lang3.StringUtils;
-import org.dasein.cloud.*;
+import org.dasein.cloud.Cloud;
+import org.dasein.cloud.CloudProvider;
+import org.dasein.cloud.ContextRequirements;
+import org.dasein.cloud.ProviderContext;
 import org.dasein.cloud.aws.AWSCloud;
 import org.dasein.cloud.compute.VMFilterOptions;
-import org.dasein.cloud.compute.VMLaunchOptions;
 import org.dasein.cloud.compute.VirtualMachine;
 import org.dasein.cloud.compute.VirtualMachineSupport;
 
@@ -124,6 +126,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
                     String secret = checkNotEmpty(config.getAgentAutoScaleCredential(), "agent.auto_scale.credential option should be provided to activate the AWS agent auto scale.");
                     values.add(ProviderContext.Value.parseValue(f, shared, secret));
                 } else {
+                    // This is for the controller is behind the proxy.
                     if (f.name.equals("proxyHost") && StringUtils.isNotBlank(proxyHost)) {
                         values.add(ProviderContext.Value.parseValue(f, proxyHost));
                         ;
