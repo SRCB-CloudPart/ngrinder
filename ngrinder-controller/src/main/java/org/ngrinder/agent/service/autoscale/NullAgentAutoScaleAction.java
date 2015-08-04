@@ -22,6 +22,11 @@ public class NullAgentAutoScaleAction extends AgentAutoScaleAction {
     }
 
     @Override
+    public void touch(String name) {
+
+    }
+
+    @Override
     public void init(Config config, AgentManagerService agentManagerService) {
 
     }

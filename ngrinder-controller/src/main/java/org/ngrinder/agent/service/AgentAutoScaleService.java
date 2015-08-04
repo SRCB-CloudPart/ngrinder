@@ -13,29 +13,20 @@
  */
 package org.ngrinder.agent.service;
 
-import com.google.common.cache.Cache;
-import com.google.common.cache.CacheBuilder;
-import com.google.common.cache.RemovalListener;
-import com.google.common.cache.RemovalNotification;
-import net.grinder.common.processidentity.AgentIdentity;
-import net.grinder.engine.controller.AgentControllerIdentityImplementation;
 import org.ngrinder.agent.service.autoscale.NullAgentAutoScaleAction;
 import org.ngrinder.infra.config.Config;
-import org.ngrinder.infra.schedule.ScheduledTaskService;
 import org.reflections.Reflections;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Profile;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 
 import javax.annotation.PostConstruct;
 import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
-import java.util.List;
-import java.util.concurrent.TimeUnit;
+import java.util.Set;
 import java.util.concurrent.locks.ReentrantLock;
 
 import static org.ngrinder.common.util.ExceptionUtils.processException;
@@ -65,7 +56,7 @@ import static org.ngrinder.common.util.ExceptionUtils.processException;
  */
 @Profile("production")
 @Component("agentAutoScaleService")
-public class AgentAutoScaleService implements RemovalListener<String, Long> {
+public class AgentAutoScaleService {
     private static final Logger LOG = LoggerFactory.getLogger(AgentAutoScaleService.class);
 
     @Autowired
@@ -74,14 +65,11 @@ public class AgentAutoScaleService implements RemovalListener<String, Long> {
     @Autowired
     private AgentManagerService agentManagerService;
 
-    @Autowired
-    private ScheduledTaskService scheduledTaskService;
     private static final AgentAutoScaleAction NULL_AGENT_AUTO_SCALE_ACTION = new NullAgentAutoScaleAction();
     private AgentAutoScaleAction agentAutoScaleAction = NULL_AGENT_AUTO_SCALE_ACTION;
-
+    private Set<Class<? extends AgentAutoScaleAction>> agentAutoScaleActions = new Reflections("org.ngrinder.agent.service.autoscale").getSubTypesOf(AgentAutoScaleAction.class);
     private ReentrantLock lock = new ReentrantLock();
 
-    Cache<String, Long> cache = CacheBuilder.newBuilder().expireAfterWrite(60, TimeUnit.MINUTES).removalListener(this).build();
 
     @PostConstruct
     public void init() {
@@ -105,9 +93,8 @@ public class AgentAutoScaleService implements RemovalListener<String, Long> {
         if (config.isAgentAutoScaleEnabled()) {
             String agentAutoScaleType = config.getAgentAutoScaleType();
             try {
-                Reflections reflections = new Reflections("org.ngrinder.agent.service.autoscale");
                 Class<? extends AgentAutoScaleAction> type = NullAgentAutoScaleAction.class;
-                for (Class<? extends AgentAutoScaleAction> each : reflections.getSubTypesOf(AgentAutoScaleAction.class)) {
+                for (Class<? extends AgentAutoScaleAction> each : agentAutoScaleActions) {
                     Qualifier annotation = each.getAnnotation(Qualifier.class);
                     if (annotation != null && annotation.value().equalsIgnoreCase(agentAutoScaleType)) {
                         type = each;
@@ -125,15 +112,10 @@ public class AgentAutoScaleService implements RemovalListener<String, Long> {
     }
 
     public void touchNode(String name) {
-//        Long lastAccessTime = cache.getIfPresent(name);
-//        if (lastAccessTime == null) {
-//            cache.put(name, System.currentTimeMillis());
-//        } else if (System.currentTimeMillis() - 60 * lastAccessTime)
-//
-//        cache.put(name, );
+        agentAutoScaleAction.touch(name);
     }
 
-    @Async
+
     public void activateNodes(int count) {
         lock.lock();
         try {
@@ -143,24 +125,7 @@ public class AgentAutoScaleService implements RemovalListener<String, Long> {
         }
     }
 
-    @Async
-    public void suspendNodes() {
-        lock.lock();
-        try {
-            agentAutoScaleAction.suspendNodes();
-        } finally {
-            lock.unlock();
-        }
-    }
-
     public boolean isInProgress() {
         return lock.isLocked();
     }
-
-    @Override
-    public void onRemoval(RemovalNotification<String, Long> removalNotification) {
-
-    }
-
-
 }

@@ -28,4 +28,9 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction {
     public void suspendNodes() {
 
     }
+
+    @Override
+    public void touch(String name) {
+
+    }
 }
