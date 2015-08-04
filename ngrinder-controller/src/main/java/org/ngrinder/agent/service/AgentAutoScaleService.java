@@ -128,4 +128,13 @@ public class AgentAutoScaleService {
     public boolean isInProgress() {
         return lock.isLocked();
     }
+
+    public void suspendNodes(){
+        lock.lock();
+        try {
+            agentAutoScaleAction.suspendNodes();
+        } finally {
+            lock.unlock();
+        }
+    }
 }
