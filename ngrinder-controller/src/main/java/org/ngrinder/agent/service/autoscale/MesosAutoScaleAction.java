@@ -9,7 +9,6 @@ import org.springframework.stereotype.Component;
 /**
  * Created by junoyoon on 15. 7. 29.
  */
-@Component
 @Qualifier("mesos")
 public class MesosAutoScaleAction extends AgentAutoScaleAction {
 
