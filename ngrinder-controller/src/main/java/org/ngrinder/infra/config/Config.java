@@ -712,8 +712,8 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
      *
      * @return proxy port
      */
-    public int getProxyPort() {
-        return getControllerProperties().getPropertyInt(PROP_CONTROLLER_PROXY_PORT, 0);
+    public String getProxyPort() {
+        return getControllerProperties().getProperty(PROP_CONTROLLER_PROXY_PORT);
     }
 
     /**

@@ -109,7 +109,7 @@ public class AgentAutoScaleService implements RemovalListener<String, Long> {
                 Class<? extends AgentAutoScaleAction> type = NullAgentAutoScaleAction.class;
                 for (Class<? extends AgentAutoScaleAction> each : reflections.getSubTypesOf(AgentAutoScaleAction.class)) {
                     Qualifier annotation = each.getAnnotation(Qualifier.class);
-                    if (annotation.equals(reflections)) {
+                    if (annotation != null && annotation.value().equalsIgnoreCase(agentAutoScaleType)) {
                         type = each;
                         break;
                     }
