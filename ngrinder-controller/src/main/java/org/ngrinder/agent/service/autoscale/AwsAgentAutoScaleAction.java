@@ -17,7 +17,9 @@ import org.ngrinder.infra.config.Config;
 import org.springframework.beans.factory.annotation.Qualifier;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import static org.ngrinder.common.util.ExceptionUtils.processException;
@@ -44,16 +46,24 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
     /**
      * Cache b/w host name and vmId
      */
-    private Cache<String, AutoScaleNode> vmCache = CacheBuilder.newBuilder().expireAfterWrite(10, TimeUnit.MINUTES).build();
+    private final Cache<String, AutoScaleNode> vmCache = CacheBuilder.newBuilder().expireAfterWrite(10, TimeUnit.MINUTES).build();
 
+    private final Map<String, String> filterMap = new HashMap<String, String>();
+
+    private final VMFilterOptions filterOptions = VMFilterOptions.getInstance().withTags(filterMap);
 
     @Override
     public void init(Config config, AgentManagerService agentManagerService) {
         this.config = config;
         this.agentManagerService = agentManagerService;
+        initFilterMap(config);
         initComputeService(config);
         initDockerService(config);
         initNodes(config.getAgentAutoScaleControllerIP(), config.getAgentAutoScaleMaxNodes());
+    }
+
+    private void initFilterMap(Config config) {
+        filterMap.put("ngrinder_agent_for", config.getAgentAutoScaleControllerIP());
     }
 
     private void initDockerService(Config config) {
@@ -89,7 +99,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
                     }
                 }
             }
-            ProviderContext ctx = cloud.createContext("", regionId, values.toArray(new ProviderContext.Value[]{}));
+            ProviderContext ctx = cloud.createContext("", regionId, values.toArray(new ProviderContext.Value[values.size()]));
             CloudProvider provier = ctx.connect();
             virtualMachineSupport = checkNotNull(provier.getComputeServices()).getVirtualMachineSupport();
         } catch (Exception e) {
@@ -100,8 +110,8 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
     public void initNodes(String label, int count) {
         try {
             // Get the nodes which has the controller ip label.
-            VMFilterOptions vmFilterOptions = VMFilterOptions.getInstance().withLabels(label);
-            List<VirtualMachine> result = (List<VirtualMachine>) virtualMachineSupport.listVirtualMachines(vmFilterOptions);
+            List<VirtualMachine> result = (List<VirtualMachine>) virtualMachineSupport.listVirtualMachines(filterOptions);
+            System.out.println(result);
             int size = result.size();
             if (size > count) {
                 // TODO: fill the node termination code.
@@ -113,13 +123,6 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
         }
     }
 
-    public void getNodes(String label) throws CloudException, InternalException {
-
-    }
-
-    public void getVmId(String hostName) {
-
-    }
 
     @Override
     public void activateNodes(int count) {
@@ -142,5 +145,17 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
     @Override
     public void onRemoval(RemovalNotification<String, Long> removal) {
         String key = removal.getKey();
+    }
+
+    public List<VirtualMachine> listAgents() {
+        try {
+            return (List<VirtualMachine>)virtualMachineSupport.listVirtualMachines(filterOptions);
+        } catch (Exception e) {
+            throw processException(e);
+        }
+    }
+
+    public void createNode(String wow) {
+
     }
 }

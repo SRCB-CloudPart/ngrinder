@@ -1,6 +1,7 @@
 package org.ngrinder.agent.service.autoscale;
 
 import org.apache.commons.lang3.StringUtils;
+import org.dasein.cloud.compute.VirtualMachine;
 import org.junit.Before;
 import org.junit.Test;
 import org.ngrinder.infra.config.Config;
@@ -27,6 +28,7 @@ public class AwsAgentAutoScaleActionTest {
         when(config.getAgentAutoScaleRegion()).thenReturn("ap-southeast-1");
         when(config.getAgentAutoScaleIdentity()).thenReturn(System.getProperty("agent.auto_scale.identity"));
         when(config.getAgentAutoScaleCredential()).thenReturn(System.getProperty("agent.auto_scale.credential"));
+        when(config.getAgentAutoScaleControllerIP()).thenReturn("10.10.10.10");
         if (StringUtils.isNotBlank(System.getProperty("controller.proxy_host"))) {
             when(config.getProxyHost()).thenReturn(System.getProperty("controller.proxy_host"));
             when(config.getProxyPort()).thenReturn(Integer.parseInt(System.getProperty("controller.proxy_port")));
@@ -36,6 +38,9 @@ public class AwsAgentAutoScaleActionTest {
 
     @Test
     public void testAwsCreation() {
-
+        awsAgentAutoScaleAction.createNode("wow");
+        for (VirtualMachine each : awsAgentAutoScaleAction.listAgents()) {
+            System.out.println(each);
+        }
     }
 }
