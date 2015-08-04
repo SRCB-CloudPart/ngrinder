@@ -1,6 +1,6 @@
 agent.auto_scale.type,aws,
-agent.auto_scale.identity,AKIAIJLRS4YZLKWNWCYQ,
-agent.auto_scale.credential,WGBNzMKsdUE5fVRm4gNotjWtz99v3Std76uPgUkf,
+agent.auto_scale.identity,,
+agent.auto_scale.credential,,
 agent.auto_scale.max_nodes,10,
 agent.auto_scale.guard_time,60,
 agent.auto_scale.docker_repo,ngrinder/agent,
