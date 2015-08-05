@@ -170,7 +170,9 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
                 // TODO: fill the node termination code.
                 for(VirtualMachine vm: result){
                     if(!terminationDone) {
-                        terminateNode(vm);
+                        //currently, the list operation has issue, result is not right, avoid to impact the existing VM,
+                        //this moment, do not exec terminate
+                        //terminateNode(vm);
                         terminatedCnt++;
                         if (terminatedCnt >= needActionCnt) {
                             terminationDone = true;
