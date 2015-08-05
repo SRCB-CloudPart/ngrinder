@@ -18,12 +18,10 @@ import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.RemovalListener;
 import com.google.common.cache.RemovalNotification;
-import org.apache.commons.lang3.StringUtils;
 import org.dasein.cloud.Cloud;
 import org.dasein.cloud.CloudProvider;
 import org.dasein.cloud.ContextRequirements;
 import org.dasein.cloud.ProviderContext;
-import org.dasein.cloud.aws.AWSCloud;
 import org.dasein.cloud.compute.VMFilterOptions;
 import org.dasein.cloud.compute.VirtualMachine;
 import org.dasein.cloud.compute.VirtualMachineSupport;
@@ -44,7 +42,6 @@ import java.util.Set;
 
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.TimeUnit;
@@ -94,11 +91,15 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
         initFilterMap(config);
         initComputeService(config);
         initDockerService(config);
-        initNodes(config.getAgentAutoScaleControllerIP(), config.getAgentAutoScaleMaxNodes());
+        initNodes(getTagString(config), config.getAgentAutoScaleMaxNodes());
+    }
+
+    private String getTagString(Config config) {
+        return "agent" + config.getAgentAutoScaleControllerIP().replaceAll("\\.", "d");
     }
 
     private void initFilterMap(Config config) {
-        filterMap.put("ngrinder_agent_for", config.getAgentAutoScaleControllerIP());
+        filterMap.put("Name", getTagString(config));
     }
 
     private void initDockerService(Config config) {
@@ -130,7 +131,6 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
                     // This is for the controller is behind the proxy.
                     if (f.name.equals("proxyHost") && StringUtils.isNotBlank(proxyHost)) {
                         values.add(ProviderContext.Value.parseValue(f, proxyHost));
-                        ;
                     } else if (f.name.equals("proxyPort") && proxyPort != 0) {
                         values.add(ProviderContext.Value.parseValue(f, String.valueOf(proxyPort)));
                     }
@@ -147,7 +147,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
         }
     }
 
-    public void initNodes(String label, int count) {
+    public void initNodes(String tag, int count) {
         try {
 
             // Get the nodes which has the controller ip label, and with state PENDING, RUNNING or STOPPED.
@@ -155,16 +155,15 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
             vmStates.add(VmState.PENDING);
             vmStates.add(VmState.RUNNING);
             vmStates.add(VmState.STOPPED);
-            //VMFilterOptions vmFilterOptions = VMFilterOptions.getInstance().withLabels(label).withVmStates(vmStates);
-            // Get the nodes which has the controller ip label.
-            VMFilterOptions vmFilterOptions = VMFilterOptions.getInstance().withTags(filterMap);
-            vmFilterOptions.withVmStates(vmStates);
-            List<VirtualMachine> result = (List<VirtualMachine>) virtualMachineSupport.listVirtualMachines(vmFilterOptions);
+            vmStates.add(VmState.STOPPING);
+//            VMFilterOptions vmFilterOptions = VMFilterOptions.getInstance().withTags(filterMap).withVmStates(vmStates);
+//            List<VirtualMachine> result = (List<VirtualMachine>) virtualMachineSupport.listVirtualMachines(vmFilterOptions);
+            List<VirtualMachine> result = listVirtualMachineFilterByStatusAndTag(vmStates, tag);
             System.out.println(result);
 
             int size = result.size();
             int terminatedCnt = 0;
-            int needActionCnt = size - count;
+            int needActionCnt = Math.abs(size - count);
             boolean terminationDone = false;
             if (size > count) {
                 // TODO: fill the node termination code.
@@ -173,16 +172,15 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
                         //currently, the list operation has issue, result is not right, avoid to impact the existing VM,
                         //this moment, do not exec terminate
                         //terminateNode(vm);
-                        terminatedCnt++;
                         if (terminatedCnt >= needActionCnt) {
                             terminationDone = true;
-                            break;
                         }
+                        terminatedCnt++;
                     }else{
                         putNodeIntoVmCache(vm);
                     }
                 }
-            } else if (size < count) {
+            } else if (size <= count) {
                 // TODO: fill the node launch code.
                 lanuchNodes(needActionCnt);
                 for(VirtualMachine vm: result){
@@ -197,25 +195,47 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
         }
     }
 
+    //Test perpose
+    public void listNodes(String tag) throws CloudException, InternalException {
+        Set<VmState> vmStates = Sets.newHashSet();
+        vmStates.add(VmState.PENDING);
+        vmStates.add(VmState.RUNNING);
+        vmStates.add(VmState.STOPPED);
+        List<VirtualMachine> result = listVirtualMachineFilterByStatusAndTag(vmStates, tag);
+    }
+
+    private List<VirtualMachine> listVirtualMachineFilterByStatusAndTag(Set<VmState> vmStates, String tag) throws CloudException, InternalException {
+        VMFilterOptions vmFilterOptions = VMFilterOptions.getInstance().withVmStates(vmStates);
+        List<VirtualMachine> result = (List<VirtualMachine>) virtualMachineSupport.listVirtualMachines(vmFilterOptions);
+        List<VirtualMachine> filterResult = Lists.newArrayList();
+        for(VirtualMachine vm : result){
+            Map<String, String> vmTags = vm.getTags();
+            if(vmTags.containsKey("Name") && vmTags.containsValue(tag)){
+                filterResult.add(vm);
+            }
+        }
+        return  filterResult;
+    }
+
 
     @Override
     public void activateNodes(int count) {
         // TODO : fill the node activation code.
         // TODO : list the stopped nodes and restart them if the count of stopped node is greater than the given count
         //config.getAgentAutoScaleMaxNodes()
-        Set<VmState> vmStates = Sets.newHashSet();
-        vmStates.add(VmState.STOPPED);
-        VMFilterOptions vmFilterOptions = VMFilterOptions.getInstance().withTags(filterMap);
-        vmFilterOptions.withVmStates(vmStates);
-        try {
-            List<VirtualMachine> result = (List<VirtualMachine>) virtualMachineSupport.listVirtualMachines(vmFilterOptions);
-            for (VirtualMachine vm: result){
-                activateNode(vm);
-
-                putNodeIntoVmCache(vm);
+        ConcurrentMap<String, AutoScaleNode> vmNodes = vmCache.asMap();
+        List<VirtualMachine> result = Lists.newArrayList();
+        for(String name: vmNodes.keySet()){
+            try {
+                activateNode(vmNodes.get(name).getMachineId(), result);
+            } catch (CloudException e) {
+                throw processException(e);
+            } catch (InternalException e) {
+                throw processException(e);
             }
+        }
+        try {
             waitUntilVmToBeRunning(result);
-
         } catch (InternalException e) {
             throw processException(e);
         } catch (CloudException e) {
@@ -246,24 +266,27 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 
         VirtualMachineCapabilities capabilities = virtualMachineSupport.getCapabilities();
         VmState currentState = vm.getCurrentState();
-        VmState targetState = null;
-        if( capabilities.canSuspend(vm.getCurrentState()) ) {
+        VmState targetState = VmState.STOPPED;
+        if( capabilities.canStop(vm.getCurrentState()) ) {
             if( currentState.equals(targetState) ) {
                 LOG.info("VM is already {}", targetState);
                 return;
             }
             LOG.info("Suspending {} from state {} ...", vmId, vm.getCurrentState());
-            virtualMachineSupport.suspend(vmId);
+            virtualMachineSupport.stop(vmId);
         }
         else {
             LOG.info("You cannot activate a VM in the state {} ...",  vm.getCurrentState());
         }
     }
 
-    private void activateNode(VirtualMachine vm) throws CloudException, InternalException {
+    private void activateNode(String vmId, List<VirtualMachine> virtualMachines) throws CloudException, InternalException {
+        VirtualMachine vm = virtualMachineSupport.getVirtualMachine(vmId);
+        checkNotNull(vm, "The virtual machine " + vmId + " is not valid");
+
         VirtualMachineCapabilities capabilities = virtualMachineSupport.getCapabilities();
         VmState currentState = vm.getCurrentState();
-        VmState targetState = null;
+        VmState targetState = VmState.RUNNING;
         if( capabilities.canStart(vm.getCurrentState()) ) {
             if( currentState.equals(targetState) ) {
                 LOG.info("VM is already {}", targetState);
@@ -273,6 +296,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
             virtualMachineSupport.start(vm.getProviderVirtualMachineId());
 
             touch(vm.getName());
+            virtualMachines.add(vm);
         }
         else {
             LOG.info("You cannot activate a VM in the state {} ...",  vm.getCurrentState());
@@ -282,9 +306,8 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
     private void terminateNode(VirtualMachine vm) throws CloudException, InternalException {
         VirtualMachineCapabilities capabilities = virtualMachineSupport.getCapabilities();
         VmState currentState = vm.getCurrentState();
-        VmState targetState = null;
+        VmState targetState = VmState.TERMINATED;
         if( capabilities.canTerminate(vm.getCurrentState()) ) {
-            targetState = VmState.TERMINATED;
             if( currentState.equals(targetState) ) {
                 LOG.info("VM is already {}", targetState);
                 return;
@@ -316,32 +339,38 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
         return imageId;
     }
 
-    private void lanuchNodes(int count) throws CloudException, InternalException {
+    public void lanuchNodes(int count) throws CloudException, InternalException {
+        if(count <= 0){
+            return;
+        }
         String ownerId = "137112412989";
         String description = "m1.medium";
         Architecture targetArchitecture = Architecture.I64;
-        String hostName = "agent" + config.getAgentAutoScaleControllerIP().replaceAll(".", "d");
+        String hostName = getTagString(config);
 
         String imageId = searchRequiredImageId(ownerId,  Platform.UNIX,  targetArchitecture);
         VirtualMachineProduct product = getVirtualMachineProduct(description, targetArchitecture);
         VMLaunchOptions options = constructVmLaunchOptions(hostName, imageId, product);
 
         //VirtualMachine vm = virtualMachineSupport.launch(options);
-        List<String> vmIds = Lists.newArrayList(options.buildMany(cloudProvider, count));
+        int createdCnt = 0;
+        List<String> vmIds = Lists.newArrayList();
+        while(createdCnt < count) {
+            int toCreateCnt = count - createdCnt;
+            List<String> ids = Lists.newArrayList(options.buildMany(cloudProvider, toCreateCnt));
+            vmIds.addAll(ids);
+            createdCnt += vmIds.size();
+        }
+        LOG.info("Launched {} virtual machines, waiting for they become running ...", createdCnt);
 
-        LOG.info("Launched {} virtual machines, waiting for they become running ...", count);
-
-        List<VirtualMachine> result = (List<VirtualMachine>) virtualMachineSupport.listVirtualMachines(filterOptions);
-
-        List<VirtualMachine> filteredVMs = Lists.newArrayList();
-        for(VirtualMachine vm: result){
-            if(vm != null && vmIds.contains(vm.getProviderMachineImageId())){
-                filteredVMs.add(vm);
-            }
+        List<VirtualMachine> virtualMachines = Lists.newArrayList();
+        for(String vmId: vmIds) {
+            VirtualMachine vm = virtualMachineSupport.getVirtualMachine(vmId);
             putNodeIntoVmCache(vm);
+            virtualMachines.add(vm);
         }
 
-        waitUntilVmToBeRunning(filteredVMs);
+        waitUntilVmToBeRunning(virtualMachines);
     }
 
     private void putNodeIntoVmCache(VirtualMachine vm) {
@@ -351,7 +380,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 
     private void waitUntilVmToBeRunning(List<VirtualMachine> filteredVMs) throws InternalException, CloudException {
         for(VirtualMachine vm: filteredVMs) {
-            while (vm != null && vm.getCurrentState().equals(VmState.PENDING)) {
+            while (vm != null && !vm.getCurrentState().equals(VmState.RUNNING)) {
                 System.out.print(".");
                 try {
                     Thread.sleep(5000L);
@@ -403,7 +432,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
         checkNotNull(product, "Virtual machine product should be provided");
 
         VMLaunchOptions options = VMLaunchOptions.getInstance(product.getProviderProductId(), imageId, hostName, hostName, hostName);
-        options.withLabels(config.getAgentAutoScaleControllerIP());
+        //options.withLabels(config.getAgentAutoScaleControllerIP());
 
         IdentityServices identity = cloudProvider.getIdentityServices();
         if (identity == null) {
