@@ -276,7 +276,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
             virtualMachineSupport.stop(vmId);
         }
         else {
-            LOG.info("You cannot activate a VM in the state {} ...",  vm.getCurrentState());
+            LOG.info("You cannot suspend a VM in the state {} ...",  vm.getCurrentState());
         }
     }
 
