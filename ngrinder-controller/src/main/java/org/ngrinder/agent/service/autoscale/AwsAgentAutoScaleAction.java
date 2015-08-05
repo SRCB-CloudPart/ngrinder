@@ -10,14 +10,12 @@ import com.google.common.collect.Sets;
 import com.google.common.io.Files;
 import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.lang3.builder.ToStringBuilder;
 import org.dasein.cloud.*;
 import org.dasein.cloud.aws.AWSCloud;
 import org.dasein.cloud.compute.*;
 import org.dasein.cloud.identity.IdentityServices;
 import org.dasein.cloud.identity.SSHKeypair;
 import org.dasein.cloud.identity.ShellKeySupport;
-import org.dasein.cloud.network.RawAddress;
 import org.ngrinder.agent.service.AgentAutoScaleAction;
 import org.ngrinder.agent.service.AgentManagerService;
 import org.ngrinder.infra.config.Config;
@@ -122,12 +120,10 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 					}
 				}
 			}
-
 			ProviderContext ctx = cloud.createContext("", regionId, values.toArray(new ProviderContext.Value[values.size()]));
 			cloudProvider = ctx.connect();
 			virtualMachineSupport = checkNotNull(cloudProvider.getComputeServices()).getVirtualMachineSupport();
 			machineImageSupport = checkNotNull(cloudProvider.getComputeServices()).getImageSupport();
-
 		} catch (Exception e) {
 			throw processException("Exception occured while setting up AWS agent auto scale", e);
 		}
@@ -344,19 +340,12 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 
 	private VirtualMachineProduct getVirtualMachineProduct(String description, Architecture targetArchitecture) throws InternalException, CloudException {
 		VirtualMachineProductFilterOptions vmProductFilterOpt = VirtualMachineProductFilterOptions.getInstance().withArchitecture(targetArchitecture);
-		VirtualMachineProduct product = null;
-		Iterator<VirtualMachineProduct> supported = virtualMachineSupport.listProducts(vmProductFilterOpt).iterator();
-		while (supported.hasNext()) {
-			product = supported.next();
-			if (product.getDescription().contains(description)) {
-				break;
+		for (VirtualMachineProduct each : virtualMachineSupport.listProducts(vmProductFilterOpt)) {
+			if (each.getDescription().contains(description)) {
+				return each;
 			}
 		}
-		if (product == null) {
-			LOG.info("Unable to identify a product to use");
-			return null;
-		}
-		return product;
+		return null;
 	}
 
 	private VMLaunchOptions constructVmLaunchOptions(String hostName, String imageId, VirtualMachineProduct product) throws InternalException, CloudException {
@@ -364,43 +353,21 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 				checkNotNull(product).getProviderProductId(),
 				checkNotNull(imageId),
 				checkNotNull(hostName), hostName, hostName);
-		options.withLabels(config.getAgentAutoScaleControllerIP());
-
 		IdentityServices identity = cloudProvider.getIdentityServices();
-		if (identity == null) {
-			LOG.info("No identity services exist, but shell keys are required.");
-			return null;
-		}
-		ShellKeySupport keySupport = identity.getShellKeySupport();
-		if (keySupport == null) {
-			LOG.info("No shell key support exists, but shell keys are required.");
-			return null;
-		}
-		Iterator<SSHKeypair> keys = keySupport.list().iterator();
-		String keyId = null;
-		boolean found = false;
-		while (keys.hasNext()) {
-			keyId = keys.next().getProviderKeypairId();
-			if (keyId.equalsIgnoreCase("agent")) {
-				found = true;
-				break;
+		ShellKeySupport keySupport = checkNotNull(identity.getShellKeySupport(), "No shell key support exists, but shell keys are required.");
+		for (SSHKeypair each : keySupport.list()) {
+			if (each.getProviderKeypairId().equalsIgnoreCase("agent")) {
+				return options.withBootstrapKey(each.getProviderKeypairId());
 			}
 		}
-
-		String pubKey = "";
 		try {
-			pubKey = Files.toString(new File("/home/agent/.ssh/id_rsa.pub"), Charset.forName("ISO-8859-1")).trim();
+			String pubKey = Files.toString(new File("/home/agent/.ssh/id_rsa.pub"), Charset.forName("ISO-8859-1")).trim();
+			pubKey = new String(Base64.encodeBase64(pubKey.getBytes()));
+			String keyId = keySupport.importKeypair("agent", pubKey).getProviderKeypairId();
+			return options.withBootstrapKey(keyId);
 		} catch (IOException e) {
 			throw processException(e);
 		}
-		pubKey = new String(Base64.encodeBase64(pubKey.getBytes()));
-		System.out.println(pubKey);
-
-		if (!found) {
-			keyId = keySupport.importKeypair("agent", pubKey).getProviderKeypairId();
-		}
-
-		return options.withBootstrapKey(keyId);
 	}
 
 	@Override
