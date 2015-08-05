@@ -346,6 +346,12 @@
             <version>1.4.0</version>
         </dependency>
 
+        <dependency>
+            <groupId>ch.ethz.ganymed</groupId>
+            <artifactId>ganymed-ssh2</artifactId>
+            <version>261</version>
+        </dependency>
+
         <!-- Json conversion -->
         <dependency>
             <groupId>com.google.code.gson</groupId>

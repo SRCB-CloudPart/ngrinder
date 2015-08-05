@@ -87,7 +87,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	}
 
 	private void initFilterMap(Config config) {
-		filterMap.put("ngrinder_agent_for", getTagString(config));
+		filterMap.put("Name", getTagString(config));
 	}
 
 	private void initDockerService(Config config) {
@@ -134,38 +134,38 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	}
 
 	public void initNodes(String tag, int count) {
-		try {
-			List<VirtualMachine> result = listVMByState(newHashSet(VmState.PENDING, VmState.RUNNING, VmState.STOPPED, VmState.STOPPING));
-			int size = result.size();
-			int terminatedCnt = 0;
-			int needActionCnt = Math.abs(size - count);
-			boolean terminationDone = false;
-			if (size > count) {
-				// TODO: fill the node termination code.
-				for (VirtualMachine vm : result) {
-					if (!terminationDone) {
-						//currently, the list operation has issue, result is not right, avoid to impact the existing VM,
-						//this moment, do not exec terminate
-						//terminateNode(vm);
-						if (terminatedCnt >= needActionCnt) {
-							terminationDone = true;
-						}
-						terminatedCnt++;
-					} else {
-						putNodeIntoVmCache(vm);
-					}
-				}
-			} else if (size <= count) {
-				// TODO: fill the node launch code.
-				launchNodes(needActionCnt);
-				for (VirtualMachine vm : result) {
-					putNodeIntoVmCache(vm);
-				}
-			}
-			suspendNodes();
-		} catch (Exception e) {
-			throw processException(e);
-		}
+//		try {
+//			List<VirtualMachine> result = listVMByState(newHashSet(VmState.PENDING, VmState.RUNNING, VmState.STOPPED, VmState.STOPPING));
+//			int size = result.size();
+//			int terminatedCnt = 0;
+//			int needActionCnt = Math.abs(size - count);
+//			boolean terminationDone = false;
+//			if (size > count) {
+//				// TODO: fill the node termination code.
+//				for (VirtualMachine vm : result) {
+//					if (!terminationDone) {
+//						//currently, the list operation has issue, result is not right, avoid to impact the existing VM,
+//						//this moment, do not exec terminate
+//						//terminateNode(vm);
+//						if (terminatedCnt >= needActionCnt) {
+//							terminationDone = true;
+//						}
+//						terminatedCnt++;
+//					} else {
+//						putNodeIntoVmCache(vm);
+//					}
+//				}
+//			} else if (size <= count) {
+//				// TODO: fill the node launch code.
+//				launchNodes(needActionCnt);
+//				for (VirtualMachine vm : result) {
+//					putNodeIntoVmCache(vm);
+//				}
+//			}
+//			suspendNodes();
+//		} catch (Exception e) {
+//			throw processException(e);
+//		}
 	}
 
 	//Test purpose
@@ -173,12 +173,29 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		List<VirtualMachine> result = listVMByState(newHashSet(VmState.PENDING, VmState.RUNNING, VmState.STOPPED));
 	}
 
+//	List<VirtualMachine> listVMByState(Set<VmState> vmStates) throws CloudException, InternalException {
+//		VMFilterOptions vmFilterOptions = VMFilterOptions.getInstance().withTags(filterMap);
+//		if (vmStates != null && !vmStates.isEmpty()) {
+//			vmFilterOptions.withVmStates(vmStates);
+//		}
+//		return (List<VirtualMachine>) virtualMachineSupport.listVirtualMachines(vmFilterOptions);
+//	}
+
 	List<VirtualMachine> listVMByState(Set<VmState> vmStates) throws CloudException, InternalException {
-		VMFilterOptions vmFilterOptions = VMFilterOptions.getInstance().withTags(filterMap);
+		VMFilterOptions vmFilterOptions = VMFilterOptions.getInstance();
 		if (vmStates != null && !vmStates.isEmpty()) {
 			vmFilterOptions.withVmStates(vmStates);
 		}
-		return (List<VirtualMachine>) virtualMachineSupport.listVirtualMachines(vmFilterOptions);
+		List<VirtualMachine> vmMatchesStates = (List<VirtualMachine>) virtualMachineSupport.listVirtualMachines(vmFilterOptions);
+		List<VirtualMachine> filterResult = Lists.newArrayList();
+		String tag = getTagString(config);
+		for (VirtualMachine vm : vmMatchesStates) {
+			Map<String, String> vmTags = vm.getTags();
+			if (vmTags.containsKey("Name") && vmTags.containsValue(tag)) {
+				filterResult.add(vm);
+			}
+		}
+		return filterResult;
 	}
 
 
@@ -343,6 +360,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 				checkNotNull(hostName), hostName, hostName);
 		IdentityServices identity = cloudProvider.getIdentityServices();
 		ShellKeySupport keySupport = checkNotNull(identity.getShellKeySupport(), "No shell key support exists, but shell keys are required.");
+		options.withBootstrapUser("agent", "agent1234");
 		for (SSHKeypair each : keySupport.list()) {
 			if (each.getProviderKeypairId().equalsIgnoreCase("agent")) {
 				return options.withBootstrapKey(each.getProviderKeypairId());
