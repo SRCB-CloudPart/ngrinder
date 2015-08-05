@@ -16,7 +16,10 @@ import org.dasein.cloud.compute.*;
 import org.dasein.cloud.identity.IdentityServices;
 import org.dasein.cloud.identity.SSHKeypair;
 import org.dasein.cloud.identity.ShellKeySupport;
+import org.dasein.cloud.network.IpAddress;
+import org.dasein.cloud.network.RawAddress;
 import org.ngrinder.agent.service.AgentAutoScaleAction;
+import org.ngrinder.agent.service.AgentAutoScaleScriptExecutor;
 import org.ngrinder.agent.service.AgentManagerService;
 import org.ngrinder.infra.config.Config;
 import org.slf4j.Logger;
@@ -215,6 +218,27 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 			throw processException(e);
 		} catch (CloudException e) {
 			throw processException(e);
+		}
+
+		AgentAutoScaleScriptExecutor executor = new AgentAutoScaleScriptExecutor(
+				config.getAgentAutoScaleControllerIP(),	config.getAgentAutoScaleControllerPort(),
+				config.getAgentAutoScaleDockerRepo(), config.getAgentAutoScaleDockerTag());
+		for(VirtualMachine vm: result){
+			try {
+				VirtualMachine virtualMachine = virtualMachineSupport.getVirtualMachine(vm.getProviderVirtualMachineId());
+				RawAddress[] puip = virtualMachine.getPublicAddresses();
+				for(RawAddress ip: puip) {
+					String node_ip = ip.getIpAddress();
+					if(node_ip.contains(".")){
+						executor.run(node_ip, "ec2-user", "add");
+						break;
+					}
+				}
+			} catch (InternalException e) {
+				throw processException(e);
+			} catch (CloudException e) {
+				throw processException(e);
+			}
 		}
 	}
 
