@@ -1,6 +1,8 @@
 package org.ngrinder.agent.service.autoscale;
 
 import org.apache.commons.lang3.StringUtils;
+import org.dasein.cloud.CloudException;
+import org.dasein.cloud.InternalException;
 import org.dasein.cloud.compute.VirtualMachine;
 import org.junit.Before;
 import org.junit.Test;
@@ -29,6 +31,7 @@ public class AwsAgentAutoScaleActionTest {
         when(config.getAgentAutoScaleIdentity()).thenReturn(System.getProperty("agent.auto_scale.identity"));
         when(config.getAgentAutoScaleCredential()).thenReturn(System.getProperty("agent.auto_scale.credential"));
         when(config.getAgentAutoScaleControllerIP()).thenReturn("10.10.10.10");
+        when(config.getAgentAutoScaleMaxNodes()).thenReturn(1);
         if (StringUtils.isNotBlank(System.getProperty("controller.proxy_host"))) {
             when(config.getProxyHost()).thenReturn(System.getProperty("controller.proxy_host"));
             when(config.getProxyPort()).thenReturn(Integer.parseInt(System.getProperty("controller.proxy_port")));
@@ -42,5 +45,15 @@ public class AwsAgentAutoScaleActionTest {
         for (VirtualMachine each : awsAgentAutoScaleAction.listAgents()) {
             System.out.println(each);
         }
+    }
+
+    @Test
+    public void testLaunchNodes() throws CloudException, InternalException {
+        awsAgentAutoScaleAction.activateNodes(1);
+    }
+
+    @Test
+    public void testSuspendNodes() throws CloudException, InternalException {
+        awsAgentAutoScaleAction.suspendNodes();
     }
 }
