@@ -134,38 +134,39 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	}
 
 	public void initNodes(String tag, int count) {
-//		try {
-//			List<VirtualMachine> result = listVMByState(newHashSet(VmState.PENDING, VmState.RUNNING, VmState.STOPPED, VmState.STOPPING));
-//			int size = result.size();
-//			int terminatedCnt = 0;
-//			int needActionCnt = Math.abs(size - count);
-//			boolean terminationDone = false;
-//			if (size > count) {
-//				// TODO: fill the node termination code.
-//				for (VirtualMachine vm : result) {
-//					if (!terminationDone) {
-//						//currently, the list operation has issue, result is not right, avoid to impact the existing VM,
-//						//this moment, do not exec terminate
-//						//terminateNode(vm);
-//						if (terminatedCnt >= needActionCnt) {
-//							terminationDone = true;
-//						}
-//						terminatedCnt++;
-//					} else {
-//						putNodeIntoVmCache(vm);
-//					}
-//				}
-//			} else if (size <= count) {
-//				// TODO: fill the node launch code.
-//				launchNodes(needActionCnt);
-//				for (VirtualMachine vm : result) {
-//					putNodeIntoVmCache(vm);
-//				}
-//			}
-//			suspendNodes();
-//		} catch (Exception e) {
-//			throw processException(e);
-//		}
+		try {
+			List<VirtualMachine> result = listVMByState(newHashSet(VmState.PENDING, VmState.RUNNING, VmState.STOPPED, VmState.STOPPING));
+			int size = result.size();
+			int terminatedCnt = 0;
+			int needActionCnt = Math.abs(size - count);
+			boolean terminationDone = false;
+			if (size > count) {
+				// TODO: fill the node termination code.
+				for (VirtualMachine vm : result) {
+					if (!terminationDone) {
+						//currently, the list operation has issue, result is not right, avoid to impact the existing VM,
+						//this moment, do not exec terminate
+						//terminateNode(vm);
+						terminatedCnt++;
+						if (terminatedCnt >= needActionCnt) {
+							terminationDone = true;
+						}
+					} else {
+						putNodeIntoVmCache(vm);
+					}
+				}
+			} else if (size <= count) {
+				// TODO: fill the node launch code.
+				launchNodes(needActionCnt);
+				for (VirtualMachine vm : result) {
+					putNodeIntoVmCache(vm);
+				}
+			}
+			//During test period, do not suspend nodes
+			//suspendNodes();
+		} catch (Exception e) {
+			throw processException(e);
+		}
 	}
 
 	//Test purpose
@@ -267,10 +268,10 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 			LOG.info("Activating {} from state {} ...", vm.getProviderVirtualMachineId(), vm.getCurrentState());
 			virtualMachineSupport.start(vm.getProviderVirtualMachineId());
 			touch(vm.getName());
-			virtualMachines.add(vm);
 		} else {
 			LOG.info("You cannot activate a VM in the state {} ...", vm.getCurrentState());
 		}
+		virtualMachines.add(vm);
 	}
 
 	private void terminateNode(VirtualMachine vm) throws CloudException, InternalException {
@@ -360,7 +361,22 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 				checkNotNull(hostName), hostName, hostName);
 		IdentityServices identity = cloudProvider.getIdentityServices();
 		ShellKeySupport keySupport = checkNotNull(identity.getShellKeySupport(), "No shell key support exists, but shell keys are required.");
-		options.withBootstrapUser("agent", "agent1234");
+
+		/*
+		 * Set user data to allow remote control VM without tty, then, SSH can operate at background.
+		 *
+		 * Attention: please do not remove the space between "Defaults" and "requiretty", else the replacement will fail
+		 */
+		String userData = "#!/bin/bash\n" +
+				 		  "set -e -x\n" +
+						  "yum install wget -y\n" +
+				          "sed -i s/'Defaults    requiretty'/'#Defaults    requiretty'/ /etc/sudoers\n";
+//		String userData = "#!/bin/bash\n" +
+//				"set -e -x\n" +
+//				"useradd agent -m -g root\n" +
+//				"echo 'agent123' | passwd --stdin agent\n";
+		options.withUserData(userData);
+
 		for (SSHKeypair each : keySupport.list()) {
 			if (each.getProviderKeypairId().equalsIgnoreCase("agent")) {
 				return options.withBootstrapKey(each.getProviderKeypairId());

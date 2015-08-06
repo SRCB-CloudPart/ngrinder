@@ -129,7 +129,7 @@ public class AgentAutoScaleScriptExecutor {
         SshShellExecutor sshShellExecutor = new SshShellExecutor(node_ip, node_user);
         try {
             int ret = sshShellExecutor.exec(getShellScriptByAction(action));
-            LOG.info("shell script execute with return result: {}", ret);
+            LOG.info("Shell script execute with return result: {} for action {}", ret, action);
         } catch (Exception e) {
             throw processException(e);
         }
@@ -147,22 +147,46 @@ public class AgentAutoScaleScriptExecutor {
 
         private static final int SSH_TIME_OUT = 1000 * 5 * 60;
 
+        private static final int LOGIN_RETRY_CNT = 10;
+
         public SshShellExecutor(String ip, String usr) {
             this.host_ip = ip;
             this.user = usr;
         }
 
-        private boolean login() throws IOException {
+        private boolean login(){
             ssh_conn = new Connection(host_ip);
-            ssh_conn.connect();
-            String priKey = null;
-            try {
-                priKey = Files.toString(new File("/home/agent/.ssh/id_rsa"), Charset.forName("UTF-8")).trim();
-            } catch (IOException e) {
-                throw processException(e);
+            int retries = 0;
+            while(retries < LOGIN_RETRY_CNT) {
+                try {
+                    ssh_conn.connect();
+                    String priKey = null;
+                    try {
+                        priKey = Files.toString(new File("/home/agent/.ssh/id_rsa"), Charset.forName("UTF-8")).trim();
+                    } catch (IOException e) {
+                        throw processException(e);
+                    }
+                    char privateKey[] = priKey.toCharArray();
+                    return ssh_conn.authenticateWithPublicKey(user, privateKey, "");
+                } catch (IOException e) {
+                    retries++;
+                    LOG.info("Ssh login failed {} times {}", retries, e);
+                    try {
+                        /*
+                         * If the connection failed, then wait 20s before to do the next try, because if to login via SSH
+                         * after VM created as soon as possible, VM will not allow the SSH connection from remote, maybe the
+                         * SSH daemon is not ready.
+                         */
+                        Thread.sleep(20 * 1000L);
+                    } catch (InterruptedException e1) {
+                        throw processException(e1);
+                    }
+                    if(retries >= LOGIN_RETRY_CNT){
+                        throw processException(e);
+                    }
+                }
             }
-            char privateKey[] = priKey.toCharArray();
-            return ssh_conn.authenticateWithPublicKey(user, privateKey, "");
+            return false;
         }
 
         public int exec(String shellScriptContent) throws Exception {
@@ -171,6 +195,7 @@ public class AgentAutoScaleScriptExecutor {
             String outStr = "";
             String outErr = "";
             int ret = -1;
+            int retries = 0;
             try {
                 if (login()) {
                     Session session = ssh_conn.openSession();
@@ -183,13 +208,14 @@ public class AgentAutoScaleScriptExecutor {
 
                     session.waitForCondition(ChannelCondition.EXIT_STATUS, SSH_TIME_OUT);
 
-                    LOG.info("outStr: '{}'", outStr);
-                    LOG.info("outErr: '{}'", outErr);
+                    LOG.info("OutStr: '{}'", outStr);
+                    LOG.info("OutErr: '{}'", outErr);
 
                     ret = session.getExitStatus();
                 } else {
-                    throw processException("login failed " + host_ip);
+                    throw processException("Login failed " + host_ip);
                 }
+
             } finally {
                 if (ssh_conn != null) {
                     ssh_conn.close();

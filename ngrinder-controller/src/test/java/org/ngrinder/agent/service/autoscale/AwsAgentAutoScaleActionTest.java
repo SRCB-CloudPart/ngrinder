@@ -51,7 +51,7 @@ public class AwsAgentAutoScaleActionTest {
 //    }
 
 //    @Test
-//    public void testLaunchNodes() throws CloudException, InternalException {
+//    public void testActivateNodes() throws CloudException, InternalException {
 //        awsAgentAutoScaleAction.activateNodes(1);
 //    }
 
@@ -61,8 +61,9 @@ public class AwsAgentAutoScaleActionTest {
 //    }
 
     @Test
-    public void testSuspendNodes() throws CloudException, InternalException {
+    public void testLanuchAndActivateNodes() throws CloudException, InternalException {
         awsAgentAutoScaleAction.launchNodes(1);
+        awsAgentAutoScaleAction.activateNodes(1);
     }
 
 }
