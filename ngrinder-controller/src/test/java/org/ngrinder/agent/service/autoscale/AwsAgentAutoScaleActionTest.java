@@ -50,20 +50,19 @@ public class AwsAgentAutoScaleActionTest {
 //        }
 //    }
 
-//    @Test
-//    public void testActivateNodes() throws CloudException, InternalException {
-//        awsAgentAutoScaleAction.activateNodes(1);
-//    }
+    @Test
+    public void testActivateNodes() throws CloudException, InternalException {
+        awsAgentAutoScaleAction.activateNodes(1);
+    }
 
 //    @Test
 //    public void testSuspendNodes() throws CloudException, InternalException {
 //        awsAgentAutoScaleAction.suspendNodes();
 //    }
 
-    @Test
-    public void testLanuchAndActivateNodes() throws CloudException, InternalException {
-        awsAgentAutoScaleAction.launchNodes(1);
-        awsAgentAutoScaleAction.activateNodes(1);
-    }
+//    @Test
+//    public void testLanuchNodes() throws CloudException, InternalException {
+//        awsAgentAutoScaleAction.launchNodes(1);
+//    }
 
 }

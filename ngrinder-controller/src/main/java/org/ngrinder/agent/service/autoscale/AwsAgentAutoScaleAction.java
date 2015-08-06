@@ -1,10 +1,7 @@
 package org.ngrinder.agent.service.autoscale;
 
 
-import com.google.common.cache.Cache;
-import com.google.common.cache.CacheBuilder;
-import com.google.common.cache.RemovalListener;
-import com.google.common.cache.RemovalNotification;
+import com.google.common.cache.*;
 import com.google.common.collect.Lists;
 import com.google.common.io.Files;
 import org.apache.commons.codec.binary.Base64;
@@ -15,7 +12,6 @@ import org.dasein.cloud.compute.*;
 import org.dasein.cloud.identity.IdentityServices;
 import org.dasein.cloud.identity.SSHKeypair;
 import org.dasein.cloud.identity.ShellKeySupport;
-import org.dasein.cloud.network.IpAddress;
 import org.dasein.cloud.network.RawAddress;
 import org.ngrinder.agent.service.AgentAutoScaleAction;
 import org.ngrinder.agent.service.AgentAutoScaleScriptExecutor;
@@ -30,6 +26,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.charset.Charset;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.TimeUnit;
 
@@ -58,12 +55,30 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	private CloudProvider cloudProvider;
 
 	/**
-	 * Cache b/w host name and last touched date
+	 * Attention, this feature search the default AMI (UNIX, Machine, X86_64) distributed by Amazon, the
+	 * default user is ec2-user.
+	 */
+	private static final String DEFAULT_AMZ_AMI_EC2_USER = "ec2-user";
+
+	/**
+	 * The action command which will be used to operate the created VM by executing shell script remotely.
+	 */
+	private enum Action{
+		ADD, ON, OFF
+	}
+
+	/**
+	 * Cache b/w virtual machine ID and last touched date
 	 */
 	private Cache<String, Long> touchCache = CacheBuilder.newBuilder().expireAfterWrite(60, TimeUnit.MINUTES).removalListener(this).build();
 
 	/**
-	 * Cache b/w host name and vmId
+	 * Cache b/w virtual machine ID and node information full mapping, the full information contains the private IP,
+	 * the private IP will be the identifier of agent, it is the bridge between VM node and agent. we can use the private
+	 * IP to locate the agent is running in which virtual machine.
+	 *
+	 * Important: the agent is running in docker container which is located in the virtual machine. And, the docker
+	 * agent image should be launched with "--net=host" option.
 	 */
 	private final Cache<String, AutoScaleNode> vmCache = CacheBuilder.newBuilder().expireAfterWrite(10, TimeUnit.MINUTES).build();
 
@@ -204,38 +219,26 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	public void activateNodes(int count) {
 		// TODO : fill the node activation code.
 		// TODO : list the stopped nodes and restart them if the count of stopped node is greater than the given count
-		//config.getAgentAutoScaleMaxNodes()
 		ConcurrentMap<String, AutoScaleNode> vmNodes = vmCache.asMap();
 		List<VirtualMachine> result = Lists.newArrayList();
 		try {
-			for (String name : vmNodes.keySet()) {
-				activateNode(vmNodes.get(name).getMachineId(), result);
+			for (String privateIPs : vmNodes.keySet()) {
+				activateNode(vmNodes.get(privateIPs).getMachineId(), result);
 			}
 			waitUntilVmToBeRunning(result);
 		} catch (Exception e) {
 			throw processException(e);
 		}
 
-		AgentAutoScaleScriptExecutor executor = new AgentAutoScaleScriptExecutor(
-				config.getAgentAutoScaleControllerIP(),	config.getAgentAutoScaleControllerPort(),
-				config.getAgentAutoScaleDockerRepo(), config.getAgentAutoScaleDockerTag());
+		/*
+		 * Update the node information into touchCache.
+		 */
 		for(VirtualMachine vm: result){
-			try {
-				VirtualMachine virtualMachine = virtualMachineSupport.getVirtualMachine(vm.getProviderVirtualMachineId());
-				RawAddress[] puip = virtualMachine.getPublicAddresses();
-				for(RawAddress ip: puip) {
-					String node_ip = ip.getIpAddress();
-					if(node_ip.contains(".")){
-						executor.run(node_ip, "ec2-user", "add");
-						break;
-					}
-				}
-			} catch (InternalException e) {
-				throw processException(e);
-			} catch (CloudException e) {
-				throw processException(e);
-			}
+			String ips = getPrivateIPs(vm);
+			touch(ips);
 		}
+
+		remoteSshExecCommand(result, Action.ON.name());
 	}
 
 	@Override
@@ -243,21 +246,40 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		// TODO : fill the node stopping code
 		// TODO :
 		ConcurrentMap<String, AutoScaleNode> vmNodes = vmCache.asMap();
-		for (String name : vmNodes.keySet()) {
+		List<VirtualMachine> result = Lists.newArrayList();
+		for (String privateIPs : vmNodes.keySet()) {
 			try {
-				suspendNode(vmNodes.get(name).getMachineId());
+				findCanBeSuspendedNodes(vmNodes.get(privateIPs).getMachineId(), result);
 			} catch (Exception e) {
 				throw processException(e);
 			}
 		}
+
+		remoteSshExecCommand(result, Action.OFF.name());
+
+		try {
+			suspendNode(result);
+		} catch (CloudException e) {
+			throw processException(e);
+		} catch (InternalException e) {
+			throw processException(e);
+		}
 	}
 
-	private void suspendNode(String vmId) throws CloudException, InternalException {
+	private void suspendNode(List<VirtualMachine> virtualMachines) throws CloudException, InternalException {
+		for(VirtualMachine vm: virtualMachines){
+			String vmId = vm.getProviderVirtualMachineId();
+			virtualMachineSupport.stop(vmId);
+		}
+	}
+
+	private void findCanBeSuspendedNodes(String vmId, List<VirtualMachine> virtualMachines) throws CloudException, InternalException {
 		VirtualMachine vm = checkNotNull(virtualMachineSupport.getVirtualMachine(vmId));
 		VirtualMachineCapabilities capabilities = virtualMachineSupport.getCapabilities();
 		if (capabilities.canStop(vm.getCurrentState())) {
 			LOG.info("Suspending {} from state {} ...", vmId, vm.getCurrentState());
-			virtualMachineSupport.stop(vmId);
+			virtualMachines.add(vm);
+			//virtualMachineSupport.stop(vmId);
 		}
 	}
 
@@ -267,7 +289,6 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		if (capabilities.canStart(vm.getCurrentState())) {
 			LOG.info("Activating {} from state {} ...", vm.getProviderVirtualMachineId(), vm.getCurrentState());
 			virtualMachineSupport.start(vm.getProviderVirtualMachineId());
-			touch(vm.getName());
 		} else {
 			LOG.info("You cannot activate a VM in the state {} ...", vm.getCurrentState());
 		}
@@ -298,6 +319,10 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	}
 
 	public void launchNodes(int count) throws CloudException, InternalException {
+		//below check is very important, in order to quick finish one method when parameter is invalid
+		if(count <= 0){
+			return;
+		}
 		String ownerId = "137112412989";
 		String description = "m1.medium";
 		Architecture targetArchitecture = Architecture.I64;
@@ -318,15 +343,63 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		List<VirtualMachine> virtualMachines = Lists.newArrayList();
 		for (String vmId : vmIds) {
 			VirtualMachine vm = virtualMachineSupport.getVirtualMachine(vmId);
-			putNodeIntoVmCache(vm);
 			virtualMachines.add(vm);
 		}
 		waitUntilVmToBeRunning(virtualMachines);
+
+		for(VirtualMachine vm: virtualMachines){
+			putNodeIntoVmCache(vm);
+		}
+
+		remoteSshExecCommand(virtualMachines, Action.ADD.name());
 	}
 
+	private void remoteSshExecCommand(List<VirtualMachine> virtualMachines, String action) {
+		AgentAutoScaleScriptExecutor executor = new AgentAutoScaleScriptExecutor(
+				config.getAgentAutoScaleControllerIP(),	config.getAgentAutoScaleControllerPort(),
+				config.getAgentAutoScaleDockerRepo(), config.getAgentAutoScaleDockerTag());
+		for(VirtualMachine vm: virtualMachines){
+			try {
+				VirtualMachine virtualMachine = virtualMachineSupport.getVirtualMachine(vm.getProviderVirtualMachineId());
+				RawAddress[] puip = virtualMachine.getPublicAddresses();
+				for(RawAddress ip: puip) {
+					String node_ip = ip.getIpAddress();
+					if(node_ip.contains(".")){
+						executor.run(node_ip, DEFAULT_AMZ_AMI_EC2_USER, action);
+						break;
+					}
+				}
+			} catch (InternalException e) {
+				throw processException(e);
+			} catch (CloudException e) {
+				throw processException(e);
+			}
+		}
+	}
+
+	/**
+	 * Put the VM into the vmCache, it is convenient to the next operation, such ADD, ON, OFF.
+	 * Attention: ensure that the virtual machine is initialized ready, else, it may have no IP assigned.
+	 *
+	 * @param vm the virtual machine to be added into cache
+	 */
 	private void putNodeIntoVmCache(VirtualMachine vm) {
-		AutoScaleNode node = new AutoScaleNode(vm.getProviderVirtualMachineId(), System.currentTimeMillis());
-		vmCache.put(vm.getName(), node);
+		String vmId = vm.getProviderVirtualMachineId();
+		AutoScaleNode node = new AutoScaleNode(vmId, System.currentTimeMillis());
+		String ips = getPrivateIPs(vm);
+		node.setPrivateIPs(ips);
+		vmCache.put(vmId, node);
+	}
+
+	private String getPrivateIPs(VirtualMachine vm) {
+		RawAddress[] priIPs = vm.getPrivateAddresses();
+		String ips = "";
+		for(RawAddress rawAddress : priIPs){
+			//If there are more than one IP, use one blank space to separate each IP.
+			ips += rawAddress.getIpAddress() + " ";
+		}
+		ips = StringUtils.trim(ips);
+		return ips;
 	}
 
 	private void waitUntilVmToBeRunning(List<VirtualMachine> filteredVMs) throws InternalException, CloudException {
@@ -392,14 +465,51 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		}
 	}
 
+	/**
+	 * The reason why to use VM ID as the bridge between touchCache and vmCache is that VM will lost IP information,
+	 * and, VM can have the same name (tag:Name or tag:Description in AWS), the VM ID is unique.
+	 *
+	 * When performance test is on going (start, running or stop),  IP of one VM should be available, because first
+	 * step is to activate nodes, then the node information required should be cached in vmCache.
+	 *
+	 * @param privateIP
+	 */
 	@Override
-	public void touch(String name) {
-		touchCache.put(name, System.currentTimeMillis());
+	public void touch(String privateIP) {
+		ConcurrentMap<String, AutoScaleNode> vms = vmCache.asMap();
+		String foundVmId = null;
+		for(String vmId : vms.keySet()){
+			AutoScaleNode node = vms.get(vmId);
+			if(node.getPrivateIPs().equalsIgnoreCase(privateIP)){
+				foundVmId = vmId;
+				break;
+			}
+		}
+		if(foundVmId != null) {
+			touchCache.put(foundVmId, System.currentTimeMillis());
+			LOG.info("VM {} with private IP {} is updated in cache.", foundVmId, privateIP);
+		}
 	}
 
 	@Override
 	public void onRemoval(RemovalNotification<String, Long> removal) {
-		String key = removal.getKey();
+		final String key = removal.getKey();
+		RemovalCause removalCause = removal.getCause();
+		if(removalCause.equals(RemovalCause.EXPIRED)) {
+			Runnable stopRunnable = new Runnable() {
+				@Override
+				public void run() {
+					try {
+						virtualMachineSupport.stop(key);
+					} catch (InternalException e) {
+						throw processException(e);
+					} catch (CloudException e) {
+						throw processException(e);
+					}
+				}
+			};
+			new Thread(stopRunnable).start();
+		}
 	}
 
 	public List<VirtualMachine> listAgents() {
