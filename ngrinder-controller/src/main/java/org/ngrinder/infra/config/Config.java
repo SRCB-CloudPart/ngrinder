@@ -737,7 +737,7 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
 	/**
 	 * Get the configured agent auto scale region.
 	 *
-	 * @return
+	 * @return agent auto scale region
 	 */
 	public String getAgentAutoScaleRegion() {
 		return getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_REGION);
@@ -818,7 +818,7 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
 	/**
 	 * Get the ngrinder controller port which will be used if dynamic agent feature is enabled
 	 *
-	 * @return controller port
+	 * @return controller port for auto scale
 	 */
 	public String getAgentAutoScaleControllerPort() {
 		return getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_CONTROLLER_PORT);
