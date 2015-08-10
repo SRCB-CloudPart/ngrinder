@@ -30,8 +30,11 @@ public class AwsAgentAutoScaleActionTest {
         when(config.getAgentAutoScaleRegion()).thenReturn("ap-southeast-1");
         when(config.getAgentAutoScaleIdentity()).thenReturn(System.getProperty("agent.auto_scale.identity"));
         when(config.getAgentAutoScaleCredential()).thenReturn(System.getProperty("agent.auto_scale.credential"));
-        when(config.getAgentAutoScaleControllerIP()).thenReturn("10.10.10.10");
+        when(config.getAgentAutoScaleControllerIP()).thenReturn("176.34.4.181");
+        when(config.getAgentAutoScaleControllerPort()).thenReturn("8080");
         when(config.getAgentAutoScaleMaxNodes()).thenReturn(1);
+        when(config.getAgentAutoScaleDockerRepo()).thenReturn("ngrinder/agent");
+        when(config.getAgentAutoScaleDockerTag()).thenReturn("3.3");
         if (StringUtils.isNotBlank(System.getProperty("controller.proxy_host"))) {
             when(config.getProxyHost()).thenReturn(System.getProperty("controller.proxy_host"));
             when(config.getProxyPort()).thenReturn(Integer.parseInt(System.getProperty("controller.proxy_port")));
@@ -39,21 +42,27 @@ public class AwsAgentAutoScaleActionTest {
         awsAgentAutoScaleAction.init(config, null);
     }
 
-    @Test
-    public void testAwsCreation() {
-        awsAgentAutoScaleAction.createNode("wow");
-        for (VirtualMachine each : awsAgentAutoScaleAction.listAgents()) {
-            System.out.println(each);
-        }
-    }
+//    @Test
+//    public void testAwsCreation() {
+//        awsAgentAutoScaleAction.createNode("wow");
+//        for (VirtualMachine each : awsAgentAutoScaleAction.listAgents()) {
+//            System.out.println(each);
+//        }
+//    }
 
     @Test
-    public void testLaunchNodes() throws CloudException, InternalException {
+    public void testActivateNodes() throws CloudException, InternalException {
         awsAgentAutoScaleAction.activateNodes(1);
     }
 
-    @Test
-    public void testSuspendNodes() throws CloudException, InternalException {
-        awsAgentAutoScaleAction.suspendNodes();
-    }
+//    @Test
+//    public void testSuspendNodes() throws CloudException, InternalException {
+//        awsAgentAutoScaleAction.suspendNodes();
+//    }
+
+//    @Test
+//    public void testLanuchNodes() throws CloudException, InternalException {
+//        awsAgentAutoScaleAction.launchNodes(1);
+//    }
+
 }

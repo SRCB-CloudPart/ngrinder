@@ -7,12 +7,17 @@ public class AutoScaleNode {
     private long lastExecuted;
     private long created;
     private String machineId;
+    private String privateIPs;
 
 
     public AutoScaleNode(String machineId, long created) {
         this.machineId = machineId;
         this.created = created;
     }
+
+    public void setPrivateIPs(String ips){this.privateIPs = ips;}
+
+    public String getPrivateIPs(){return privateIPs;}
 
     public String getMachineId() {
         return machineId;
