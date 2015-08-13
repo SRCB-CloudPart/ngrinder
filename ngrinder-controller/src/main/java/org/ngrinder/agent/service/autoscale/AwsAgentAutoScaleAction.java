@@ -2,9 +2,9 @@ package org.ngrinder.agent.service.autoscale;
 
 
 import com.google.common.cache.*;
-import com.google.common.collect.Lists;
 import com.google.common.io.Files;
 import org.apache.commons.codec.binary.Base64;
+import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.dasein.cloud.*;
 import org.dasein.cloud.aws.AWSCloud;
@@ -21,16 +21,19 @@ import org.ngrinder.infra.config.Config;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.core.io.ClassPathResource;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.Charset;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.TimeUnit;
 
+import static com.google.common.collect.Lists.newArrayList;
 import static com.google.common.collect.Sets.newHashSet;
+import static java.util.Collections.sort;
 import static org.apache.commons.lang3.builder.ToStringBuilder.reflectionToString;
 import static org.ngrinder.common.util.ExceptionUtils.processException;
 import static org.ngrinder.common.util.Preconditions.checkNotEmpty;
@@ -43,49 +46,43 @@ import static org.ngrinder.common.util.Preconditions.checkNotNull;
 public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements RemovalListener<String, Long> {
 
 	private static final Logger LOG = LoggerFactory.getLogger(AwsAgentAutoScaleAction.class);
-
-	private Config config;
-
-	private AgentManagerService agentManagerService;
-
-	private VirtualMachineSupport virtualMachineSupport;
-
-	private MachineImageSupport machineImageSupport;
-
-	private CloudProvider cloudProvider;
-
+	private static final String NGRINDER_AGENT_TAG_KEY = "ngrinder_agent";
 	/**
 	 * Attention, this feature search the default AMI (UNIX, Machine, X86_64) distributed by Amazon, the
 	 * default user is ec2-user.
 	 */
 	private static final String DEFAULT_AMZ_AMI_EC2_USER = "ec2-user";
-
 	/**
-	 * The action command which will be used to operate the created VM by executing shell script remotely.
+	 * The list representing the ordered terminatable vm state.
 	 */
-	private enum Action{
-		ADD, ON, OFF
-	}
+	private static final List<VmState> TERMINATABLE_STATE_ORDER = newArrayList(VmState.ERROR,
+			VmState.TERMINATED, VmState.STOPPED, VmState.STOPPING, VmState.SUSPENDED, VmState.PAUSED,
+			VmState.PAUSING, VmState.PENDING, VmState.RUNNING, VmState.REBOOTING);
+	/**
+	 * Cache b/w virtual machine ID and node information full mapping, the full information contains the private IP,
+	 * the private IP will be the identifier of agent, it is the bridge between VM node and agent. we can use the private
+	 * IP to locate the agent is running in which virtual machine.
+	 * <p/>
+	 * Important: the agent is running in docker container which is located in the virtual machine. And, the docker
+	 * agent image should be launched with "--net=host" option.
+	 */
+	private final Cache<String, AutoScaleNode> vmCache = CacheBuilder.newBuilder().expireAfterWrite(10, TimeUnit.MINUTES).build();
+	private final Map<String, String> filterMap = new HashMap<String, String>();
 
+	private Config config;
+	private AgentManagerService agentManagerService;
+	private VirtualMachineSupport virtualMachineSupport;
+	private MachineImageSupport machineImageSupport;
+	private CloudProvider cloudProvider;
 	/**
 	 * Cache b/w virtual machine ID and last touched date
 	 */
 	private Cache<String, Long> touchCache = CacheBuilder.newBuilder().expireAfterWrite(60, TimeUnit.MINUTES).removalListener(this).build();
 
 	/**
-	 * Cache b/w virtual machine ID and node information full mapping, the full information contains the private IP,
-	 * the private IP will be the identifier of agent, it is the bridge between VM node and agent. we can use the private
-	 * IP to locate the agent is running in which virtual machine.
-	 *
-	 * Important: the agent is running in docker container which is located in the virtual machine. And, the docker
-	 * agent image should be launched with "--net=host" option.
+	 * Docker initialization script which will be executed when the node is created.
 	 */
-	private final Cache<String, AutoScaleNode> vmCache = CacheBuilder.newBuilder().expireAfterWrite(10, TimeUnit.MINUTES).build();
-
-	private final Map<String, String> filterMap = new HashMap<String, String>();
-
-	private final VMFilterOptions filterOptions = VMFilterOptions.getInstance().withTags(filterMap);
-
+	private String dockerInitScript;
 
 	@Override
 	public void init(Config config, AgentManagerService agentManagerService) {
@@ -98,14 +95,28 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	}
 
 	private String getTagString(Config config) {
-		return "agent" + config.getAgentAutoScaleControllerIP().replaceAll("\\.", "d");
+		return config.getAgentAutoScaleControllerIP().replaceAll("\\.", "d");
 	}
 
 	private void initFilterMap(Config config) {
-		filterMap.put("Name", getTagString(config));
+		// TODO : We need reinvent filter map.
 	}
 
-	private void initDockerService(Config config) {
+	void initDockerService(Config config) {
+		initDockerInitScript();
+	}
+
+	void initDockerInitScript() {
+		ClassPathResource resource = new ClassPathResource("agent_autoscale_script/docker-init.sh");
+		InputStream inputStream = null;
+		try {
+			inputStream = resource.getInputStream();
+			dockerInitScript = IOUtils.toString(inputStream);
+		} catch (Exception e) {
+			throw processException(e);
+		} finally {
+			IOUtils.closeQuietly(inputStream);
+		}
 	}
 
 	private void initComputeService(Config config) {
@@ -127,8 +138,10 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 			List<ProviderContext.Value> values = new ArrayList<ProviderContext.Value>();
 			for (ContextRequirements.Field f : fields) {
 				if (f.type.equals(ContextRequirements.FieldType.KEYPAIR)) {
-					String shared = checkNotEmpty(config.getAgentAutoScaleIdentity(), "agent.auto_scale.identity option should be provided to activate the AWS agent auto scale.");
-					String secret = checkNotEmpty(config.getAgentAutoScaleCredential(), "agent.auto_scale.credential option should be provided to activate the AWS agent auto scale.");
+					String shared = checkNotEmpty(config.getAgentAutoScaleIdentity(),
+							"agent.auto_scale.identity option should be provided to activate the AWS agent auto scale.");
+					String secret = checkNotEmpty(config.getAgentAutoScaleCredential(),
+							"agent.auto_scale.credential option should be provided to activate the AWS agent auto scale.");
 					values.add(ProviderContext.Value.parseValue(f, shared, secret));
 				} else {
 					// This is for the controller is behind the proxy.
@@ -150,80 +163,49 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 
 	public void initNodes(String tag, int count) {
 		try {
-			List<VirtualMachine> result = listVMByState(newHashSet(VmState.PENDING, VmState.RUNNING, VmState.STOPPED, VmState.STOPPING));
-			int size = result.size();
-			int terminatedCnt = 0;
-			int needActionCnt = Math.abs(size - count);
-			boolean terminationDone = false;
+			List<VirtualMachine> existingVMs = listVMByState(newHashSet(VmState.PENDING, VmState.RUNNING, VmState.STOPPED, VmState.STOPPING));
+			int size = existingVMs.size();
 			if (size > count) {
-				// TODO: fill the node termination code.
-				for (VirtualMachine vm : result) {
-					if (!terminationDone) {
-						//currently, the list operation has issue, result is not right, avoid to impact the existing VM,
-						//this moment, do not exec terminate
-						//terminateNode(vm);
-						terminatedCnt++;
-						if (terminatedCnt >= needActionCnt) {
-							terminationDone = true;
-						}
-					} else {
-						putNodeIntoVmCache(vm);
-					}
-				}
+				terminateNodes(selectTerminatableNodes(existingVMs, size - count));
 			} else if (size <= count) {
-				// TODO: fill the node launch code.
-				launchNodes(needActionCnt);
-				for (VirtualMachine vm : result) {
-					putNodeIntoVmCache(vm);
-				}
+				launchNodes(tag, count - size);
 			}
-			//During test period, do not suspend nodes
-			//suspendNodes();
+			suspendNodes();
 		} catch (Exception e) {
 			throw processException(e);
 		}
 	}
 
-	//Test purpose
-	public void listNodes(String tag) throws CloudException, InternalException {
-		List<VirtualMachine> result = listVMByState(newHashSet(VmState.PENDING, VmState.RUNNING, VmState.STOPPED));
-	}
-
-//	List<VirtualMachine> listVMByState(Set<VmState> vmStates) throws CloudException, InternalException {
-//		VMFilterOptions vmFilterOptions = VMFilterOptions.getInstance().withTags(filterMap);
-//		if (vmStates != null && !vmStates.isEmpty()) {
-//			vmFilterOptions.withVmStates(vmStates);
-//		}
-//		return (List<VirtualMachine>) virtualMachineSupport.listVirtualMachines(vmFilterOptions);
-//	}
-
-	List<VirtualMachine> listVMByState(Set<VmState> vmStates) throws CloudException, InternalException {
-		VMFilterOptions vmFilterOptions = VMFilterOptions.getInstance();
-		if (vmStates != null && !vmStates.isEmpty()) {
-			vmFilterOptions.withVmStates(vmStates);
-		}
-		List<VirtualMachine> vmMatchesStates = (List<VirtualMachine>) virtualMachineSupport.listVirtualMachines(vmFilterOptions);
-		List<VirtualMachine> filterResult = Lists.newArrayList();
-		String tag = getTagString(config);
-		for (VirtualMachine vm : vmMatchesStates) {
-			Map<String, String> vmTags = vm.getTags();
-			if (vmTags.containsKey("Name") && vmTags.containsValue(tag)) {
-				filterResult.add(vm);
+	List<VirtualMachine> listVMByState(Set<VmState> vmStates) {
+		List<VirtualMachine> filterResult = newArrayList();
+		try {
+			VMFilterOptions vmFilterOptions = VMFilterOptions.getInstance();
+			if (vmStates != null && !vmStates.isEmpty()) {
+				vmFilterOptions.withVmStates(vmStates);
 			}
+			List<VirtualMachine> vmMatchesStates = (List<VirtualMachine>) virtualMachineSupport.listVirtualMachines(vmFilterOptions);
+
+			String tag = getTagString(config);
+			for (VirtualMachine vm : vmMatchesStates) {
+				Map<String, String> vmTags = vm.getTags();
+				if (vmTags.containsKey("Name") && vmTags.containsValue(tag)) {
+					filterResult.add(vm);
+				}
+			}
+		} catch (Exception e) {
+			throw processException(e);
 		}
 		return filterResult;
 	}
 
-
 	@Override
 	public void activateNodes(int count) {
-		// TODO : fill the node activation code.
-		// TODO : list the stopped nodes and restart them if the count of stopped node is greater than the given count
+		listVMByState(newHashSet(VmState.STOPPED));
 		ConcurrentMap<String, AutoScaleNode> vmNodes = vmCache.asMap();
-		List<VirtualMachine> result = Lists.newArrayList();
+		List<VirtualMachine> result = newArrayList();
 		try {
-			for (String privateIPs : vmNodes.keySet()) {
-				activateNode(vmNodes.get(privateIPs).getMachineId(), result);
+			for (AutoScaleNode each : vmCache.asMap().values()) {
+				activateNode(each.getMachineId());
 			}
 			waitUntilVmToBeRunning(result);
 		} catch (Exception e) {
@@ -233,7 +215,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		/*
 		 * Update the node information into touchCache.
 		 */
-		for(VirtualMachine vm: result){
+		for (VirtualMachine vm : result) {
 			String ips = getPrivateIPs(vm);
 			touch(ips);
 		}
@@ -243,10 +225,8 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 
 	@Override
 	public void suspendNodes() {
-		// TODO : fill the node stopping code
-		// TODO :
 		ConcurrentMap<String, AutoScaleNode> vmNodes = vmCache.asMap();
-		List<VirtualMachine> result = Lists.newArrayList();
+		List<VirtualMachine> result = newArrayList();
 		for (String privateIPs : vmNodes.keySet()) {
 			try {
 				findCanBeSuspendedNodes(vmNodes.get(privateIPs).getMachineId(), result);
@@ -254,9 +234,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 				throw processException(e);
 			}
 		}
-
 		remoteSshExecCommand(result, Action.OFF.name());
-
 		try {
 			suspendNode(result);
 		} catch (CloudException e) {
@@ -267,7 +245,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	}
 
 	private void suspendNode(List<VirtualMachine> virtualMachines) throws CloudException, InternalException {
-		for(VirtualMachine vm: virtualMachines){
+		for (VirtualMachine vm : virtualMachines) {
 			String vmId = vm.getProviderVirtualMachineId();
 			virtualMachineSupport.stop(vmId);
 		}
@@ -283,7 +261,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		}
 	}
 
-	private void activateNode(String vmId, List<VirtualMachine> virtualMachines) throws CloudException, InternalException {
+	VirtualMachine activateNode(String vmId) throws CloudException, InternalException {
 		VirtualMachine vm = checkNotNull(virtualMachineSupport.getVirtualMachine(vmId));
 		VirtualMachineCapabilities capabilities = virtualMachineSupport.getCapabilities();
 		if (capabilities.canStart(vm.getCurrentState())) {
@@ -292,10 +270,10 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		} else {
 			LOG.info("You cannot activate a VM in the state {} ...", vm.getCurrentState());
 		}
-		virtualMachines.add(vm);
+		return vm;
 	}
 
-	private void terminateNode(VirtualMachine vm) throws CloudException, InternalException {
+	void terminateNode(VirtualMachine vm) throws CloudException, InternalException {
 		VirtualMachineCapabilities capabilities = virtualMachineSupport.getCapabilities();
 		if (capabilities.canTerminate(vm.getCurrentState())) {
 			LOG.info("Terminating {} from state {} ...", vm.getProviderVirtualMachineId(), vm.getCurrentState());
@@ -303,7 +281,33 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		}
 	}
 
-	private String searchRequiredImageId(String ownerId, Platform platform, Architecture arch) {
+	void terminateNodes(List<VirtualMachine> virtualMachines) {
+
+	}
+
+	/**
+	 * Select the most appropriate nodes which can be terminated among the given vms
+	 * <p/>
+	 * This method sort the virtual machine with given #TERMINATABLE_STATE_ORDER state order.
+	 * TODO: Not tested yet.
+	 *
+	 * @param vms   virtual machines
+	 * @param count the number of machines which will be terminated.
+	 * @return selected virtual machines.
+	 */
+	List<VirtualMachine> selectTerminatableNodes(List<VirtualMachine> vms, int count) {
+		List<VirtualMachine> sorted = new ArrayList<VirtualMachine>(vms);
+		sort(sorted, new Comparator<VirtualMachine>() {
+			@Override
+			public int compare(VirtualMachine o1, VirtualMachine o2) {
+				return TERMINATABLE_STATE_ORDER.indexOf(o1.getCurrentState()) - TERMINATABLE_STATE_ORDER.indexOf(o2.getCurrentState());
+			}
+		});
+		return sorted.subList(0, count - 1);
+	}
+
+
+	String searchRequiredImageId(String ownerId, Platform platform, Architecture arch) {
 		//suggest to use Amazon distributes AMI, the owner ID is 137112412989.
 		try {
 			for (MachineImage img : machineImageSupport.searchImages(ownerId, null, platform, arch, ImageClass.MACHINE)) {
@@ -318,9 +322,9 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		return null;
 	}
 
-	public void launchNodes(int count) throws CloudException, InternalException {
+	public void launchNodes(String tag, int count) throws CloudException, InternalException {
 		//below check is very important, in order to quick finish one method when parameter is invalid
-		if(count <= 0){
+		if (count <= 0) {
 			return;
 		}
 		String ownerId = "137112412989";
@@ -329,42 +333,39 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		String hostName = getTagString(config);
 		String imageId = searchRequiredImageId(ownerId, Platform.UNIX, targetArchitecture);
 		VirtualMachineProduct product = getVirtualMachineProduct(description, targetArchitecture);
-		VMLaunchOptions options = createVmLaunchOptions(hostName, imageId, product);
-
-		//VirtualMachine vm = virtualMachineSupport.launch(options);
+		VMLaunchOptions options = createVmLaunchOptions(hostName, imageId, product, tag);
 		int createdCnt = 0;
-		List<String> vmIds = Lists.newArrayList();
+		List<String> vmIds = newArrayList();
 		while (createdCnt < count) {
 			int toCreateCnt = count - createdCnt;
 			vmIds.addAll((List<String>) options.buildMany(cloudProvider, toCreateCnt));
 			createdCnt += vmIds.size();
 		}
 		LOG.info("Launched {} virtual machines, waiting for they become running ...", createdCnt);
-		List<VirtualMachine> virtualMachines = Lists.newArrayList();
+		List<VirtualMachine> virtualMachines = newArrayList();
 		for (String vmId : vmIds) {
 			VirtualMachine vm = virtualMachineSupport.getVirtualMachine(vmId);
 			virtualMachines.add(vm);
 		}
 		waitUntilVmToBeRunning(virtualMachines);
 
-		for(VirtualMachine vm: virtualMachines){
+		for (VirtualMachine vm : virtualMachines) {
 			putNodeIntoVmCache(vm);
 		}
-
 		remoteSshExecCommand(virtualMachines, Action.ADD.name());
 	}
 
 	private void remoteSshExecCommand(List<VirtualMachine> virtualMachines, String action) {
 		AgentAutoScaleScriptExecutor executor = new AgentAutoScaleScriptExecutor(
-				config.getAgentAutoScaleControllerIP(),	config.getAgentAutoScaleControllerPort(),
+				config.getAgentAutoScaleControllerIP(), config.getAgentAutoScaleControllerPort(),
 				config.getAgentAutoScaleDockerRepo(), config.getAgentAutoScaleDockerTag());
-		for(VirtualMachine vm: virtualMachines){
+		for (VirtualMachine vm : virtualMachines) {
 			try {
 				VirtualMachine virtualMachine = virtualMachineSupport.getVirtualMachine(vm.getProviderVirtualMachineId());
 				RawAddress[] puip = virtualMachine.getPublicAddresses();
-				for(RawAddress ip: puip) {
+				for (RawAddress ip : puip) {
 					String node_ip = ip.getIpAddress();
-					if(node_ip.contains(".")){
+					if (node_ip.contains(".")) {
 						executor.run(node_ip, DEFAULT_AMZ_AMI_EC2_USER, action);
 						break;
 					}
@@ -394,7 +395,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	private String getPrivateIPs(VirtualMachine vm) {
 		RawAddress[] priIPs = vm.getPrivateAddresses();
 		String ips = "";
-		for(RawAddress rawAddress : priIPs){
+		for (RawAddress rawAddress : priIPs) {
 			//If there are more than one IP, use one blank space to separate each IP.
 			ips += rawAddress.getIpAddress() + " ";
 		}
@@ -402,8 +403,8 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		return ips;
 	}
 
-	private void waitUntilVmToBeRunning(List<VirtualMachine> filteredVMs) throws InternalException, CloudException {
-		for (VirtualMachine vm : filteredVMs) {
+	private void waitUntilVmToBeRunning(List<VirtualMachine> vms) throws InternalException, CloudException {
+		for (VirtualMachine vm : vms) {
 			while (vm != null && !vm.getCurrentState().equals(VmState.RUNNING)) {
 				ThreadUtils.sleep(5000L);
 				vm = virtualMachineSupport.getVirtualMachine(vm.getProviderVirtualMachineId());
@@ -427,31 +428,24 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		return null;
 	}
 
-	private VMLaunchOptions createVmLaunchOptions(String hostName, String imageId, VirtualMachineProduct product) throws InternalException, CloudException {
+	private VMLaunchOptions createVmLaunchOptions(String hostName, String imageId, VirtualMachineProduct product, String tag) throws InternalException, CloudException {
 		VMLaunchOptions options = VMLaunchOptions.getInstance(
 				checkNotNull(product).getProviderProductId(),
 				checkNotNull(imageId),
-				checkNotNull(hostName), hostName, hostName);
+				checkNotNull(hostName), hostName, hostName)
+				.withMetaData(NGRINDER_AGENT_TAG_KEY, tag);
 		IdentityServices identity = cloudProvider.getIdentityServices();
-		ShellKeySupport keySupport = checkNotNull(identity.getShellKeySupport(), "No shell key support exists, but shell keys are required.");
-
+		ShellKeySupport keySupport = checkNotNull(identity).getShellKeySupport();
 		/*
 		 * Set user data to allow remote control VM without tty, then, SSH can operate at background.
 		 *
 		 * Attention: please do not remove the space between "Defaults" and "requiretty", else the replacement will fail
 		 */
-		String userData = "#!/bin/bash\n" +
-				 		  "set -e -x\n" +
-						  "yum install wget -y\n" +
-				          "sed -i s/'Defaults    requiretty'/'#Defaults    requiretty'/ /etc/sudoers\n";
-//		String userData = "#!/bin/bash\n" +
-//				"set -e -x\n" +
-//				"useradd agent -m -g root\n" +
-//				"echo 'agent123' | passwd --stdin agent\n";
-		options.withUserData(userData);
+		// TODO: Not Tested. Please make the agent_auto_scale_script/docker-init.sh
+		options.withUserData(dockerInitScript);
 
-		for (SSHKeypair each : keySupport.list()) {
-			if (each.getProviderKeypairId().equalsIgnoreCase("agent")) {
+		for (SSHKeypair each : checkNotNull(keySupport).list()) {
+			if (checkNotNull(each.getProviderKeypairId()).equalsIgnoreCase("agent")) {
 				return options.withBootstrapKey(each.getProviderKeypairId());
 			}
 		}
@@ -459,7 +453,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 			String pubKey = Files.toString(new File("/home/agent/.ssh/id_rsa.pub"), Charset.forName("ISO-8859-1")).trim();
 			pubKey = new String(Base64.encodeBase64(pubKey.getBytes()));
 			String keyId = keySupport.importKeypair("agent", pubKey).getProviderKeypairId();
-			return options.withBootstrapKey(keyId);
+			return options.withBootstrapKey(checkNotNull(keyId));
 		} catch (IOException e) {
 			throw processException(e);
 		}
@@ -468,24 +462,24 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	/**
 	 * The reason why to use VM ID as the bridge between touchCache and vmCache is that VM will lost IP information,
 	 * and, VM can have the same name (tag:Name or tag:Description in AWS), the VM ID is unique.
-	 *
+	 * <p/>
 	 * When performance test is on going (start, running or stop),  IP of one VM should be available, because first
 	 * step is to activate nodes, then the node information required should be cached in vmCache.
 	 *
-	 * @param privateIP
+	 * @param privateIP private IP of node
 	 */
 	@Override
 	public void touch(String privateIP) {
 		ConcurrentMap<String, AutoScaleNode> vms = vmCache.asMap();
 		String foundVmId = null;
-		for(String vmId : vms.keySet()){
+		for (String vmId : vms.keySet()) {
 			AutoScaleNode node = vms.get(vmId);
-			if(node.getPrivateIPs().equalsIgnoreCase(privateIP)){
+			if (node.getPrivateIPs().equalsIgnoreCase(privateIP)) {
 				foundVmId = vmId;
 				break;
 			}
 		}
-		if(foundVmId != null) {
+		if (foundVmId != null) {
 			touchCache.put(foundVmId, System.currentTimeMillis());
 			LOG.info("VM {} with private IP {} is updated in cache.", foundVmId, privateIP);
 		}
@@ -495,7 +489,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	public void onRemoval(RemovalNotification<String, Long> removal) {
 		final String key = removal.getKey();
 		RemovalCause removalCause = removal.getCause();
-		if(removalCause.equals(RemovalCause.EXPIRED)) {
+		if (removalCause.equals(RemovalCause.EXPIRED)) {
 			Runnable stopRunnable = new Runnable() {
 				@Override
 				public void run() {
@@ -512,15 +506,10 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		}
 	}
 
-	public List<VirtualMachine> listAgents() {
-		try {
-			return (List<VirtualMachine>) virtualMachineSupport.listVirtualMachines(filterOptions);
-		} catch (Exception e) {
-			throw processException(e);
-		}
-	}
-
-	public void createNode(String wow) {
-
+	/**
+	 * The action command which will be used to operate the created VM by executing shell script remotely.
+	 */
+	private enum Action {
+		ADD, ON, OFF
 	}
 }
