@@ -3,6 +3,7 @@ package org.ngrinder.agent.service.autoscale;
 
 import com.beust.jcommander.internal.Maps;
 import com.google.common.cache.*;
+import com.google.common.collect.Lists;
 import com.google.common.io.Files;
 import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.io.IOUtils;
@@ -13,7 +14,7 @@ import org.dasein.cloud.compute.*;
 import org.dasein.cloud.identity.IdentityServices;
 import org.dasein.cloud.identity.SSHKeypair;
 import org.dasein.cloud.identity.ShellKeySupport;
-import org.dasein.cloud.network.RawAddress;
+import org.dasein.cloud.network.*;
 import org.ngrinder.agent.service.AgentAutoScaleAction;
 import org.ngrinder.agent.service.AgentAutoScaleScriptExecutor;
 import org.ngrinder.agent.service.AgentManagerService;
@@ -170,8 +171,14 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 				terminateNodes(selectTerminatableNodes(existingVMs, size - count));
 			} else if (size <= count) {
 				launchNodes(tag, count - size);
+				/*
+				 * bellow operation to add the existing node into vmCache is MUST, DO NOT miss it
+				 */
+				for(VirtualMachine vm: existingVMs){
+					putNodeIntoVmCache(vm);
+				}
 			}
-			suspendNodes();
+			//suspendNodes();
 		} catch (Exception e) {
 			throw processException(e);
 		}
@@ -183,7 +190,9 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 			VMFilterOptions vmFilterOptions = VMFilterOptions.getInstance().withTags(filterMap);
 			List<VirtualMachine> vms = (List<VirtualMachine>) virtualMachineSupport.listVirtualMachines(vmFilterOptions);
 			for (VirtualMachine vm : vms) {
-				if (vmStates.contains(vm.getCurrentState())) {
+				Map<String, String> vmTags = vm.getTags();
+				if (vmStates.contains(vm.getCurrentState())
+						&& (vmTags.containsKey(NGRINDER_AGENT_TAG_KEY) && vmTags.containsValue(filterMap.get(NGRINDER_AGENT_TAG_KEY)))) {
 					filterResult.add(vm);
 				}
 			}
@@ -195,8 +204,10 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 
 	@Override
 	public void activateNodes(int count) {
+		//Below two lines commented, have issue, can not get the right result.
 		List<VirtualMachine> vms = listVMByState(newHashSet(VmState.STOPPED));
-		List<VirtualMachine> candidates = vms.subList(0, Math.min(count - 1, vms.size() - 1));
+		List<VirtualMachine> candidates = vms.subList(0, Math.min(count, vms.size()));
+
 		try {
 			for (VirtualMachine each : candidates) {
 				activateNode(each.getProviderVirtualMachineId());
@@ -316,6 +327,23 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		return null;
 	}
 
+//	/*
+//	 * this function is used to configure firewall for the created VM node, allow TCP port 10000
+//	 * can be visited from outside via TCP communication.
+//	 */
+//	private void setFirewall() throws CloudException, InternalException {
+//		NetworkServices network = cloudProvider.getNetworkServices();
+//		NetworkFirewallSupport networkFirewallSupport = network.getNetworkFirewallSupport();
+//		FirewallRuleCreateOptions firewallRuleCreateOptions =
+//				FirewallRuleCreateOptions.getInstance(Direction.INGRESS,Permission.ALLOW, null, Protocol.TCP, null, 10000, 10001, 0);
+//
+//		ArrayList<Firewall> fws = Lists.newArrayList(networkFirewallSupport.listFirewalls());
+//		for(Firewall fw: fws){
+//			System.out.println(fw.getProviderFirewallId());
+//		}
+//		networkFirewallSupport.authorize(fws.get(0).getProviderFirewallId(), firewallRuleCreateOptions);
+//	}
+
 	public void launchNodes(String tag, int count) throws CloudException, InternalException {
 		//below check is very important, in order to quick finish one method when parameter is invalid
 		if (count <= 0) {
@@ -328,6 +356,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		String imageId = searchRequiredImageId(ownerId, Platform.UNIX, targetArchitecture);
 		VirtualMachineProduct product = getVirtualMachineProduct(description, targetArchitecture);
 		VMLaunchOptions options = createVmLaunchOptions(hostName, imageId, product, tag);
+
 		int createdCnt = 0;
 		List<String> vmIds = newArrayList();
 		while (createdCnt < count) {
@@ -443,6 +472,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 				return options.withBootstrapKey(each.getProviderKeypairId());
 			}
 		}
+
 		try {
 			String pubKey = Files.toString(new File("/home/agent/.ssh/id_rsa.pub"), Charset.forName("ISO-8859-1")).trim();
 			pubKey = new String(Base64.encodeBase64(pubKey.getBytes()));
