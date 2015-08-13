@@ -1,6 +1,7 @@
 package org.ngrinder.agent.service.autoscale;
 
 
+import com.beust.jcommander.internal.Maps;
 import com.google.common.cache.*;
 import com.google.common.io.Files;
 import org.apache.commons.codec.binary.Base64;
@@ -99,7 +100,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	}
 
 	private void initFilterMap(Config config) {
-		// TODO : We need reinvent filter map.
+		filterMap.put("ngrinder_agent", getTagString(config));
 	}
 
 	void initDockerService(Config config) {
@@ -179,16 +180,10 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	List<VirtualMachine> listVMByState(Set<VmState> vmStates) {
 		List<VirtualMachine> filterResult = newArrayList();
 		try {
-			VMFilterOptions vmFilterOptions = VMFilterOptions.getInstance();
-			if (vmStates != null && !vmStates.isEmpty()) {
-				vmFilterOptions.withVmStates(vmStates);
-			}
-			List<VirtualMachine> vmMatchesStates = (List<VirtualMachine>) virtualMachineSupport.listVirtualMachines(vmFilterOptions);
-
-			String tag = getTagString(config);
-			for (VirtualMachine vm : vmMatchesStates) {
-				Map<String, String> vmTags = vm.getTags();
-				if (vmTags.containsKey("Name") && vmTags.containsValue(tag)) {
+			VMFilterOptions vmFilterOptions = VMFilterOptions.getInstance().withTags(filterMap);
+			List<VirtualMachine> vms = (List<VirtualMachine>) virtualMachineSupport.listVirtualMachines(vmFilterOptions);
+			for (VirtualMachine vm : vms) {
+				if (vmStates.contains(vm.getCurrentState())) {
 					filterResult.add(vm);
 				}
 			}
@@ -200,14 +195,13 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 
 	@Override
 	public void activateNodes(int count) {
-		listVMByState(newHashSet(VmState.STOPPED));
-		ConcurrentMap<String, AutoScaleNode> vmNodes = vmCache.asMap();
-		List<VirtualMachine> result = newArrayList();
+		List<VirtualMachine> vms = listVMByState(newHashSet(VmState.STOPPED));
+		List<VirtualMachine> candidates = vms.subList(0, Math.min(count - 1, vms.size() - 1));
 		try {
-			for (AutoScaleNode each : vmCache.asMap().values()) {
-				activateNode(each.getMachineId());
+			for (VirtualMachine each : candidates) {
+				activateNode(each.getProviderVirtualMachineId());
 			}
-			waitUntilVmToBeRunning(result);
+			waitUntilVmToBeRunning(candidates);
 		} catch (Exception e) {
 			throw processException(e);
 		}
@@ -215,12 +209,12 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		/*
 		 * Update the node information into touchCache.
 		 */
-		for (VirtualMachine vm : result) {
+		for (VirtualMachine vm : candidates) {
 			String ips = getPrivateIPs(vm);
 			touch(ips);
 		}
 
-		remoteSshExecCommand(result, Action.ON.name());
+		remoteSshExecCommand(candidates, Action.ON.name());
 	}
 
 	@Override
