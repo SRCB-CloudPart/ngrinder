@@ -315,8 +315,10 @@ public class PerfTestController extends BaseController {
 	 */
 	private void setModeAttrForAgentAutoScaleMesos(ModelMap model, boolean enabled){
 		model.addAttribute(PARAM_AGENT_AUTO_SCALE_MESOS_ENABLED, enabled);
-		model.addAttribute(PARAM_AGENT_AUTO_SCALE_MESOS_ALLOWED_COUNT, ngrinderFramework.getMesosAllowedAgentCount());
-		model.addAttribute(PARAM_AGent_AUTO_SCALE_MESOS_RUNNING_COUNT, ngrinderFramework.getMesosRunningAgentCount());
+		if (enabled) {
+			model.addAttribute(PARAM_AGENT_AUTO_SCALE_MESOS_ALLOWED_COUNT, ngrinderFramework.getMesosAllowedAgentCount());
+			model.addAttribute(PARAM_AGent_AUTO_SCALE_MESOS_RUNNING_COUNT, ngrinderFramework.getMesosRunningAgentCount());
+		}
 	}
 
 	/**
