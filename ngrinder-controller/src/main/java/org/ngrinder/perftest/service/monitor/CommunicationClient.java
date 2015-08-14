@@ -88,7 +88,7 @@ public class CommunicationClient {
      */
     public void openStreamOfLog() {
         try {
-            locationLogStream = new FileOutputStream(new File(config.getHome().getPerfTestLogDirectory(getPerfTest()), "monitor.log"));
+            locationLogStream = new FileOutputStream(new File(config.getHome().getPerfTestLogDirectory(getPerfTest()), "monitor.log.zip"));
         } catch (FileNotFoundException e) {
             e.printStackTrace();
         }
@@ -161,19 +161,15 @@ public class CommunicationClient {
      */
     public void receiveFile() {
         LOG.info("receive logs from monitor.");
+
+        byte[] bytes = new byte[1024 * 8];
+        int num;
         try {
-            while (true){
-                // get line.
-                byte[] bytes = new byte[1024];
-                int num = socket.getInputStream().read(bytes);
-                String line = new String(bytes, "UTF-8");
-                if(num == -1) {
-                    break;
-                }
-                // write to perftest log.
-                locationLogStream.write((line + "\n").getBytes());
+            while((num = socket.getInputStream().read(bytes)) != -1) {
+                locationLogStream.write(bytes, 0, num);
             }
-        } catch (IOException e) {
+            locationLogStream.close();
+        }catch (Exception e) {
             LOG.error("receive logs failure.");
         }
     }
