@@ -9,11 +9,25 @@ public class AutoScaleNode {
     private String machineId;
     private String privateIPs;
 
+    /*
+     * Attention, this container Id should be null if it is not initialized with a real container ID
+     */
+    private String containerId;
+
 
     public AutoScaleNode(String machineId, long created) {
         this.machineId = machineId;
         this.created = created;
     }
+
+    public String getContainerId() {
+        return containerId;
+    }
+
+    public void setContainerId(String containerId) {
+        this.containerId = containerId;
+    }
+
 
     public void setPrivateIPs(String ips){this.privateIPs = ips;}
 

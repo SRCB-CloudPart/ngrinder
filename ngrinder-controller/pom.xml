@@ -340,16 +340,28 @@
             <version>2015.06.6</version>
         </dependency>
 
-        <dependency>
-            <groupId>com.github.docker-java</groupId>
-            <artifactId>docker-java</artifactId>
-            <version>1.4.0</version>
-        </dependency>
+        <!--<dependency>-->
+            <!--<groupId>com.github.docker-java</groupId>-->
+            <!--<artifactId>docker-java</artifactId>-->
+            <!--<version>1.4.0</version>-->
+        <!--</dependency>-->
 
         <dependency>
             <groupId>ch.ethz.ganymed</groupId>
             <artifactId>ganymed-ssh2</artifactId>
             <version>261</version>
+        </dependency>
+
+        <!-- Below httpclient is a MUST for docker-client -->
+        <dependency>
+            <groupId>org.apache.httpcomponents</groupId>
+            <artifactId>httpclient</artifactId>
+            <version>4.3.5</version>
+        </dependency>
+        <dependency>
+            <groupId>com.spotify</groupId>
+            <artifactId>docker-client</artifactId>
+            <version>3.1.2</version>
         </dependency>
 
         <!-- Json conversion -->

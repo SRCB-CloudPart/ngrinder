@@ -5,6 +5,7 @@ import com.beust.jcommander.internal.Maps;
 import com.google.common.cache.*;
 import com.google.common.collect.Lists;
 import com.google.common.io.Files;
+import com.spotify.docker.client.DockerException;
 import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -16,6 +17,7 @@ import org.dasein.cloud.identity.SSHKeypair;
 import org.dasein.cloud.identity.ShellKeySupport;
 import org.dasein.cloud.network.*;
 import org.ngrinder.agent.service.AgentAutoScaleAction;
+import org.ngrinder.agent.service.AgentAutoScaleDockerClient;
 import org.ngrinder.agent.service.AgentAutoScaleScriptExecutor;
 import org.ngrinder.agent.service.AgentManagerService;
 import org.ngrinder.common.util.ThreadUtils;
@@ -178,7 +180,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 					putNodeIntoVmCache(vm);
 				}
 			}
-			//suspendNodes();
+			suspendNodes();
 		} catch (Exception e) {
 			throw processException(e);
 		}
@@ -204,13 +206,23 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 
 	@Override
 	public void activateNodes(int count) {
-		//Below two lines commented, have issue, can not get the right result.
-		List<VirtualMachine> vms = listVMByState(newHashSet(VmState.STOPPED));
-		List<VirtualMachine> candidates = vms.subList(0, Math.min(count, vms.size()));
+//		//Below two lines commented, have issue, can not get the right result.
+//		List<VirtualMachine> vms = listVMByState(newHashSet(VmState.STOPPED));
+//		List<VirtualMachine> candidates = vms.subList(0, Math.min(count, vms.size()));
 
+		ConcurrentMap<String, AutoScaleNode> maps = vmCache.asMap();
+		List<VirtualMachine> candidates = newArrayList();
+		int cnt = 0;
 		try {
-			for (VirtualMachine each : candidates) {
-				activateNode(each.getProviderVirtualMachineId());
+			for (String vmId : maps.keySet()) {
+				VirtualMachine vm = activateNode(vmId);
+				if(vm != null) {
+					candidates.add(vm);
+					cnt++;
+					if(cnt >= count){
+						break;
+					}
+				}
 			}
 			waitUntilVmToBeRunning(candidates);
 		} catch (Exception e) {
@@ -225,7 +237,35 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 			touch(ips);
 		}
 
-		remoteSshExecCommand(candidates, Action.ON.name());
+		/*
+     	 * Start docker container to prepare the agent. Do not use SSH to operate remote VM.
+     	 */
+		startDockers(maps, candidates);
+
+
+		//remoteSshExecCommand(candidates, Action.ON.name());
+	}
+
+	private void startDockers(ConcurrentMap<String, AutoScaleNode> maps, List<VirtualMachine> candidates) {
+
+		for(VirtualMachine vm: candidates){
+			String vmId = vm.getProviderVirtualMachineId();
+			AutoScaleNode node = maps.get(vmId);
+			String containerId = node.getContainerId();
+			try {
+				String id = startContainer(vmId, containerId);
+				/*
+				 * If it is the first time to activate VM, then, it will get initialized container ID, else, the
+				 * input container ID should be same with the return id. Then, set it back to the vmCache.
+				 */
+				node.setContainerId(id);
+
+			} catch (CloudException e) {
+				throw processException(e);
+			} catch (InternalException e) {
+				throw processException(e);
+			}
+		}
 	}
 
 	@Override
@@ -239,13 +279,36 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 				throw processException(e);
 			}
 		}
-		remoteSshExecCommand(result, Action.OFF.name());
+
+		//remoteSshExecCommand(result, Action.OFF.name());
+
+		/*
+		 * To some extent, this stopDockers operation is not necessary, because when VM stopped, the docker
+		 * container running in it should be stopped.
+		 */
+		stopDockers(vmNodes, result);
+
 		try {
 			suspendNode(result);
 		} catch (CloudException e) {
 			throw processException(e);
 		} catch (InternalException e) {
 			throw processException(e);
+		}
+	}
+
+	private void stopDockers(ConcurrentMap<String, AutoScaleNode> vmNodes, List<VirtualMachine> result) {
+		for(VirtualMachine vm: result) {
+			String vmId = vm.getProviderVirtualMachineId();
+			AutoScaleNode node = vmNodes.get(vmId);
+			String containerId = node.getContainerId();
+			try {
+				stopContainer(vmId, containerId);
+			} catch (CloudException e) {
+				throw processException(e);
+			} catch (InternalException e) {
+				throw processException(e);
+			}
 		}
 	}
 
@@ -272,10 +335,14 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		if (capabilities.canStart(vm.getCurrentState())) {
 			LOG.info("Activating {} from state {} ...", vm.getProviderVirtualMachineId(), vm.getCurrentState());
 			virtualMachineSupport.start(vm.getProviderVirtualMachineId());
+			return vm;
 		} else {
 			LOG.info("You cannot activate a VM in the state {} ...", vm.getCurrentState());
+			if(vm.getCurrentState().equals(VmState.RUNNING)){
+				return vm;
+			}
+			return null;
 		}
-		return vm;
 	}
 
 	void terminateNode(VirtualMachine vm) throws CloudException, InternalException {
@@ -375,7 +442,8 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		for (VirtualMachine vm : virtualMachines) {
 			putNodeIntoVmCache(vm);
 		}
-		remoteSshExecCommand(virtualMachines, Action.ADD.name());
+
+		//remoteSshExecCommand(virtualMachines, Action.ADD.name());
 	}
 
 	private void remoteSshExecCommand(List<VirtualMachine> virtualMachines, String action) {
@@ -535,5 +603,55 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	 */
 	private enum Action {
 		ADD, ON, OFF
+	}
+
+	private String startContainer(String vmId, String containerId) throws CloudException, InternalException {
+		String finalContainerId = null;
+		VirtualMachine foundVm = virtualMachineSupport.getVirtualMachine(vmId);
+		if(foundVm.getCurrentState().equals(VmState.RUNNING)) {
+			RawAddress rawAddress[] = foundVm.getPublicAddresses();
+			String ip = null;
+			for(RawAddress address :  rawAddress){
+				ip = address.getIpAddress();
+				break;
+			}
+			checkNotNull(ip, "The VM to start must have one public IP address");
+			AgentAutoScaleDockerClient dockerClient = new AgentAutoScaleDockerClient(config, ip);
+
+			try {
+				finalContainerId = dockerClient.startDockerContainer(containerId);
+			} catch (DockerException e) {
+				throw processException(e);
+			} catch (InterruptedException e) {
+				throw processException(e);
+			}finally {
+				dockerClient.close();
+			}
+		}
+		return finalContainerId;
+	}
+
+	private void stopContainer(String vmId, String containerId) throws CloudException, InternalException {
+		VirtualMachine foundVm = virtualMachineSupport.getVirtualMachine(vmId);
+		if(foundVm.getCurrentState().equals(VmState.RUNNING)) {
+			RawAddress rawAddress[] = foundVm.getPublicAddresses();
+			String ip = null;
+			for (RawAddress address : rawAddress) {
+				ip = address.getIpAddress();
+				break;
+			}
+			checkNotNull(ip, "The VM to be stopped must have one public IP address");
+			AgentAutoScaleDockerClient dockerClient = new AgentAutoScaleDockerClient(config, ip);
+
+			try {
+				dockerClient.stopDockerContainer(containerId);
+			} catch (DockerException e) {
+				throw processException(e);
+			} catch (InterruptedException e) {
+				throw processException(e);
+			}finally {
+				dockerClient.close();
+			}
+		}
 	}
 }
