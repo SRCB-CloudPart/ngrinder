@@ -1,7 +1,6 @@
 package org.ngrinder.agent.service.autoscale;
 
 
-import com.beust.jcommander.internal.Maps;
 import com.google.common.cache.*;
 import com.google.common.io.Files;
 import org.apache.commons.codec.binary.Base64;
@@ -24,6 +23,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.io.ClassPathResource;
 
+import javax.annotation.Nullable;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
@@ -41,7 +41,7 @@ import static org.ngrinder.common.util.Preconditions.checkNotEmpty;
 import static org.ngrinder.common.util.Preconditions.checkNotNull;
 
 /**
- * Created by junoyoon on 15. 7. 29.
+ * Agent auto scale action for aws.
  */
 @Qualifier("aws")
 public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements RemovalListener<String, Long> {
@@ -412,7 +412,9 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		}
 	}
 
-	private VirtualMachineProduct getVirtualMachineProduct(String description, Architecture targetArchitecture) throws InternalException, CloudException {
+	private
+	@Nullable
+	VirtualMachineProduct getVirtualMachineProduct(String description, Architecture targetArchitecture) throws InternalException, CloudException {
 		VirtualMachineProductFilterOptions vmProductFilterOpt = VirtualMachineProductFilterOptions.getInstance().withArchitecture(targetArchitecture);
 		for (VirtualMachineProduct each : virtualMachineSupport.listProducts(vmProductFilterOpt)) {
 			if (each.getDescription().contains(description)) {
@@ -439,15 +441,19 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		options.withUserData(dockerInitScript);
 
 		for (SSHKeypair each : checkNotNull(keySupport).list()) {
-			if (checkNotNull(each.getProviderKeypairId()).equalsIgnoreCase("agent")) {
+			if (checkNotNull(each.getProviderKeypairId()).equalsIgnoreCase("ngrinder")) {
 				return options.withBootstrapKey(each.getProviderKeypairId());
 			}
 		}
 		try {
-			String pubKey = Files.toString(new File("/home/agent/.ssh/id_rsa.pub"), Charset.forName("ISO-8859-1")).trim();
-			pubKey = new String(Base64.encodeBase64(pubKey.getBytes()));
-			String keyId = keySupport.importKeypair("agent", pubKey).getProviderKeypairId();
-			return options.withBootstrapKey(checkNotNull(keyId));
+			File keyFile = new File(config.getHome().getDirectory(), "ssh/id_rsa.pub");
+			if (keyFile.exists()) {
+				String pubKey = Files.toString(keyFile, Charset.forName("ISO-8859-1")).trim();
+				pubKey = new String(Base64.encodeBase64(pubKey.getBytes()));
+				String keyId = keySupport.importKeypair("ngrinder", pubKey).getProviderKeypairId();
+				options.withBootstrapKey(checkNotNull(keyId));
+			}
+			return options;
 		} catch (IOException e) {
 			throw processException(e);
 		}
