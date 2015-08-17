@@ -19,11 +19,6 @@ public class AwsAgentAutoScaleActionTest {
 
     private AwsAgentAutoScaleAction awsAgentAutoScaleAction = new AwsAgentAutoScaleAction();
 
-    // -Dagent.auto_scale.identity=AKIAIJLRS4YZLKWNWCYQ
-    // -Dagent.auto_scale.credential=WGBNzMKsdUE5fVRm4gNotjWtz99v3Std76uPgUkf
-    // -Dcontroller.proxy_host=pi-proxy.cloudpi.net
-    // -Dcontroller.proxy_port=3128
-    // 3128
     @Before
     public void init() {
         Config config = mock(Config.class);
