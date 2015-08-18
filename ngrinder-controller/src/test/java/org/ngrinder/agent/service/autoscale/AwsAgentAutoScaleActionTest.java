@@ -34,6 +34,11 @@ public class AwsAgentAutoScaleActionTest {
             when(config.getProxyHost()).thenReturn(System.getProperty("controller.proxy_host"));
             when(config.getProxyPort()).thenReturn(Integer.parseInt(System.getProperty("controller.proxy_port")));
         }
+
+        System.setProperty("http.proxyHost", System.getProperty("controller.proxy_host"));
+        System.setProperty("http.proxyPort", System.getProperty("controller.proxy_port"));
+        System.setProperty("https.proxyHost", System.getProperty("controller.proxy_host"));
+        System.setProperty("https.proxyPort", System.getProperty("controller.proxy_port"));
         awsAgentAutoScaleAction.init(config, null);
     }
 
@@ -48,8 +53,13 @@ public class AwsAgentAutoScaleActionTest {
     @Test
     public void testActivateNodes() throws CloudException, InternalException {
         awsAgentAutoScaleAction.activateNodes(1);
+
     }
 
+    @Test
+    public void testWow() {
+        System.out.println("ewe");
+    }
 //    @Test
 //    public void testSuspendNodes() throws CloudException, InternalException {
 //        awsAgentAutoScaleAction.suspendNodes();
