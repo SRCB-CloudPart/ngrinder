@@ -92,18 +92,12 @@ public class AgentAutoScaleDockerClientTest {
 		assertNotNull(dockerClient);
 	}
 
-//	@Test
-//	public void constructorTest2(){
-//		System.setProperty("controller.proxy_host", "192.168.1.2");
-//		System.setProperty("controller.proxy_port", "7071");
-//
-//		when(config.getProxyHost()).thenReturn(System.getProperty("controller.proxy_host"));
-//		when(config.getProxyPort()).thenReturn(Integer.parseInt(System.getProperty("controller.proxy_port")));
-//
-//		AgentAutoScaleDockerClient dockerClient = new AgentAutoScaleDockerClient(config, Lists.newArrayList(new RawAddress("127.0.0.1")));
-//		assertNotNull(dockerClient);
-//		dockerClient.close();
-//	}
+	@Test
+	public void prepareTest(){
+
+		assumeTrue("OK".equalsIgnoreCase(dockerClient.ping()));
+		dockerClient.prepare();
+	}
 
 	@Test
 	public void createContainerTest1(){
