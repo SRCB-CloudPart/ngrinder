@@ -210,7 +210,7 @@ public class NGrinderControllerStarter {
     @Parameter(names = {"-asci", "--auto-scale-controller-ip"}, description = "agent auto scale - the controller ip for docker to download agent")
     private String agentAutoScaleControllerIP = null;
 
-    @Parameter(names = {"-asci", "--auto-scale-controller-port"}, description = "agent auto scale - the controller port for docker to download agent")
+    @Parameter(names = {"-ascp", "--auto-scale-controller-port"}, description = "agent auto scale - the controller port for docker to download agent")
     private Integer agentAutoScaleControllerPort = null;
 
     @Parameter(names = {"-asdr", "--auto-scale-docker-repo"}, description = "agent auto scale - the docker image repository")
