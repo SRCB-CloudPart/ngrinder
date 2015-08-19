@@ -201,7 +201,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 			VMFilterOptions vmFilterOptions = VMFilterOptions.getInstance().withTags(filterMap);
 			List<VirtualMachine> vms = (List<VirtualMachine>) virtualMachineSupport.listVirtualMachines(vmFilterOptions);
 			for (VirtualMachine vm : vms) {
-				if (vmStates.contains(vm.getCurrentState())) {
+				if (vmStates.isEmpty() || vmStates.contains(vm.getCurrentState())) {
 					filterResult.add(vm);
 				}
 			}
@@ -324,7 +324,6 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	 * Select the most appropriate nodes which can be terminated among the given vms
 	 * <p/>
 	 * This method sort the virtual machine with given #TERMINATABLE_STATE_ORDER state order.
-	 * TODO: Not tested yet.
 	 *
 	 * @param vms   virtual machines
 	 * @param count the number of machines which will be terminated.
@@ -470,7 +469,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	}
 
 	protected List<RawAddress> getAddresses(VirtualMachine vm) {
-		List<RawAddress> rawAddresses = Arrays.asList(vm.getPrivateAddresses());
+		List<RawAddress> rawAddresses = new ArrayList<RawAddress>(Arrays.asList(vm.getPrivateAddresses()));
 		rawAddresses.addAll(Arrays.asList(vm.getPublicAddresses()));
 		return rawAddresses;
 	}
