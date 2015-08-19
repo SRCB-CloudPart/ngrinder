@@ -36,9 +36,6 @@
 							value="${test.agentCount}"
 							message="perfTest.config.agent"
 							append_prefix="perfTest.config.max" append='<span id="maxAgentCount"></span>' />
-						<#if dynamicAgentEnabled == true>
-							<i class="pointer-cursor expand" id="expand_node_info_btn"></i>
-						</#if>
 					</@control_group>
 				</div>
 
@@ -61,20 +58,6 @@
 					</#if>
 				</div>
 			</div>
-            <div class="control-group" id="node_info_show_panel" style="display: none">
-				<@ro_input_prepend name="runningNode"
-					value="${runningNodeCount}"
-					message="perfTest.config.dynamic.running"
-					extra_css="control-group"/>
-				<@ro_input_prepend name="stoppedNode"
-					value="${stoppedNodeCount}"
-					message="perfTest.config.dynamic.stopped"
-					extra_css="control-group"/>
-				<@ro_input_prepend name="allowedNode"
-					value="${allowedNodeCount}"
-					message="perfTest.config.dynamic.allowed"
-					extra_css="control-group"/>
-            </div>
 
 			<@control_group  name="vuserPerAgent" label_message_key="perfTest.config.vuserPerAgent">
 				<@input_append name="vuserPerAgent"
