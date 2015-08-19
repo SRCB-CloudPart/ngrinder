@@ -1,8 +1,9 @@
 package org.ngrinder.agent.service.autoscale;
 
 import org.ngrinder.agent.service.AgentAutoScaleAction;
-import org.ngrinder.agent.service.AgentManagerService;
 import org.ngrinder.infra.config.Config;
+import org.ngrinder.infra.schedule.ScheduledTaskService;
+import org.ngrinder.perftest.service.AgentManager;
 import org.springframework.beans.factory.annotation.Qualifier;
 
 /**
@@ -11,25 +12,29 @@ import org.springframework.beans.factory.annotation.Qualifier;
 @Qualifier("null")
 public class NullAgentAutoScaleAction extends AgentAutoScaleAction {
 
-    private static final AgentAutoScaleAction NULL_AGENT_AUTO_SCALE_ACTION = new NullAgentAutoScaleAction();
+	private static final AgentAutoScaleAction NULL_AGENT_AUTO_SCALE_ACTION = new NullAgentAutoScaleAction();
 
 
-    @Override
-    public void activateNodes(int count) {
-    }
+	@Override
+	public void init(Config config, AgentManager agentManager, ScheduledTaskService scheduledTaskService) {
 
-    @Override
-    public void suspendNodes() {
+	}
 
-    }
+	@Override
+	public void activateNodes(int count) {
+	}
 
-    @Override
-    public void touch(String name) {
+	@Override
+	public void suspendAllNodes() {
+	}
 
-    }
+	@Override
+	public void touch(String name) {
+	}
 
-    @Override
-    public void init(Config config, AgentManagerService agentManagerService) {
+	@Override
+	public boolean isPrepared() {
+		return false;
+	}
 
-    }
 }

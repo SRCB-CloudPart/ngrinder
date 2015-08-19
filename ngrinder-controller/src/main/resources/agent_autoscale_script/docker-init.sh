@@ -7,4 +7,4 @@ wget -qO- https://get.docker.com/ | sh >> /tmp/ngrinder_agent_provision.log 2>&1
 sed -i s/'^OPTIONS='/'OPTIONS="-H tcp:\/\/0.0.0.0:10000 -H unix:\/\/\/var\/run\/docker.sock"'/ /etc/sysconfig/docker           # allow tcp access
 chkconfig docker on																		   # make docker auto startable
 service docker start                                                                       # start docker
-docker pull ngrinder/agent:3.3                                                             # download docker image
+docker pull ngrinder/agent:3.3-p1                                                             # download docker image

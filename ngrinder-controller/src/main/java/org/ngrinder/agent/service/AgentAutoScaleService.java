@@ -15,6 +15,8 @@ package org.ngrinder.agent.service;
 
 import org.ngrinder.agent.service.autoscale.NullAgentAutoScaleAction;
 import org.ngrinder.infra.config.Config;
+import org.ngrinder.infra.schedule.ScheduledTaskService;
+import org.ngrinder.perftest.service.AgentManager;
 import org.reflections.Reflections;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -57,84 +59,87 @@ import static org.ngrinder.common.util.ExceptionUtils.processException;
 @Profile("production")
 @Component("agentAutoScaleService")
 public class AgentAutoScaleService {
-    private static final Logger LOG = LoggerFactory.getLogger(AgentAutoScaleService.class);
+	private static final Logger LOG = LoggerFactory.getLogger(AgentAutoScaleService.class);
 
-    @Autowired
-    Config config;
+	@Autowired
+	private Config config;
 
-    @Autowired
-    private AgentManagerService agentManagerService;
+	@Autowired
+	private AgentManager agentManager;
 
-    private static final AgentAutoScaleAction NULL_AGENT_AUTO_SCALE_ACTION = new NullAgentAutoScaleAction();
-    private AgentAutoScaleAction agentAutoScaleAction = NULL_AGENT_AUTO_SCALE_ACTION;
-    private Set<Class<? extends AgentAutoScaleAction>> agentAutoScaleActions = new Reflections("org.ngrinder.agent.service.autoscale").getSubTypesOf(AgentAutoScaleAction.class);
-    private ReentrantLock lock = new ReentrantLock();
+	@Autowired
+	private ScheduledTaskService scheduledTaskService;
 
-
-    @PostConstruct
-    public void init() {
-        config.addSystemConfListener(new PropertyChangeListener() {
-            @Override
-            public void propertyChange(PropertyChangeEvent evt) {
-                initAgentAutoScaleService();
-            }
-        });
-        initAgentAutoScaleService();
-    }
-
-    void initAgentAutoScaleService() {
-        agentAutoScaleAction = createAgentAutoScaleAction();
-        agentAutoScaleAction.init(config, agentManagerService);
-    }
+	private static final AgentAutoScaleAction NULL_AGENT_AUTO_SCALE_ACTION = new NullAgentAutoScaleAction();
+	private AgentAutoScaleAction agentAutoScaleAction = NULL_AGENT_AUTO_SCALE_ACTION;
+	private Set<Class<? extends AgentAutoScaleAction>> agentAutoScaleActions = new Reflections("org.ngrinder.agent.service.autoscale").getSubTypesOf(AgentAutoScaleAction.class);
+	private ReentrantLock lock = new ReentrantLock();
 
 
-    AgentAutoScaleAction createAgentAutoScaleAction() {
-        AgentAutoScaleAction action = NULL_AGENT_AUTO_SCALE_ACTION;
-        if (config.isAgentAutoScaleEnabled()) {
-            String agentAutoScaleType = config.getAgentAutoScaleType();
-            try {
-                Class<? extends AgentAutoScaleAction> type = NullAgentAutoScaleAction.class;
-                for (Class<? extends AgentAutoScaleAction> each : agentAutoScaleActions) {
-                    Qualifier annotation = each.getAnnotation(Qualifier.class);
-                    if (annotation != null && annotation.value().equalsIgnoreCase(agentAutoScaleType)) {
-                        type = each;
-                        break;
-                    }
-                }
-                action = type.newInstance();
-            } catch (InstantiationException e) {
-                throw processException(e);
-            } catch (IllegalAccessException e) {
-                throw processException(e);
-            }
-        }
-        return action;
-    }
+	@PostConstruct
+	public void init() {
+		config.addSystemConfListener(new PropertyChangeListener() {
+			@Override
+			public void propertyChange(PropertyChangeEvent evt) {
+				initAgentAutoScaleService();
+			}
+		});
+		initAgentAutoScaleService();
+	}
 
-    public void touchNode(String name) {
-        agentAutoScaleAction.touch(name);
-    }
+	void initAgentAutoScaleService() {
+		agentAutoScaleAction = createAgentAutoScaleAction();
+		agentAutoScaleAction.init(config, agentManager, scheduledTaskService);
+	}
 
 
-    public void activateNodes(int count) {
-        lock.lock();
-        try {
-            agentAutoScaleAction.activateNodes(count);
-        } finally {
-            lock.unlock();
-        }
-    }
+	AgentAutoScaleAction createAgentAutoScaleAction() {
+		AgentAutoScaleAction action = NULL_AGENT_AUTO_SCALE_ACTION;
+		if (config.isAgentAutoScaleEnabled()) {
+			String agentAutoScaleType = config.getAgentAutoScaleType();
+			try {
+				Class<? extends AgentAutoScaleAction> type = NullAgentAutoScaleAction.class;
+				for (Class<? extends AgentAutoScaleAction> each : agentAutoScaleActions) {
+					Qualifier annotation = each.getAnnotation(Qualifier.class);
+					if (annotation != null && annotation.value().equalsIgnoreCase(agentAutoScaleType)) {
+						type = each;
+						break;
+					}
+				}
+				action = type.newInstance();
+			} catch (InstantiationException e) {
+				throw processException(e);
+			} catch (IllegalAccessException e) {
+				throw processException(e);
+			}
+		}
+		return action;
+	}
 
-    public boolean isInProgress() {
-        return lock.isLocked();
-    }
+	public void touchNode(String name) {
+		agentAutoScaleAction.touch(name);
+	}
 
-    public void suspendNodes(){
-        lock.lock();
-        try {
-            agentAutoScaleAction.suspendNodes();
-        } finally {
-            lock.unlock();
-        }
-    }
+	/**
+	 * For unit test.
+	 *
+	 * @param config config
+	 */
+	void setConfig(Config config) {
+		this.config = config;
+	}
+
+	public void activateNodes(int count) throws AgentAutoScaleAction.NotSufficientAvailableNodeException {
+		lock.lock();
+		try {
+			agentAutoScaleAction.activateNodes(count);
+		} finally {
+			lock.unlock();
+		}
+	}
+
+	public boolean isInProgress() {
+		return lock.isLocked();
+	}
+
 }

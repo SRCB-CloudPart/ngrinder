@@ -2,15 +2,24 @@ package org.ngrinder.agent.service.autoscale;
 
 import com.spotify.docker.client.ContainerNotFoundException;
 import com.spotify.docker.client.DockerClient;
+import com.spotify.docker.client.DockerException;
 import com.spotify.docker.client.ProxyAwareDockerClient;
 import com.spotify.docker.client.messages.ContainerConfig;
 import com.spotify.docker.client.messages.ContainerInfo;
+import com.spotify.docker.client.messages.HostConfig;
 import org.apache.commons.io.IOUtils;
+import org.apache.commons.lang.builder.ToStringBuilder;
+import org.apache.commons.lang3.StringUtils;
+import org.dasein.cloud.network.RawAddress;
 import org.ngrinder.common.exception.NGrinderRuntimeException;
 import org.ngrinder.common.util.ThreadUtils;
 import org.ngrinder.infra.config.Config;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.awt.*;
+import java.io.Closeable;
+import java.util.List;
 
 import static org.ngrinder.common.util.ExceptionUtils.processException;
 
@@ -21,19 +30,14 @@ import static org.ngrinder.common.util.ExceptionUtils.processException;
  * @author shihuc
  * @version 8/14/15 v1
  */
-public class AgentAutoScaleDockerClient {
+public class AgentAutoScaleDockerClient implements Closeable {
 	private static final Logger LOG = LoggerFactory.getLogger(AgentAutoScaleDockerClient.class);
 
-	private Config config;
 	private String serverIP;
 
 	private DockerClient dockerClient;
 
-	/*
-	 * Consider the condition when VM is activated, and then to start docker, this moment, the network
-	 * or docker daemon in VM may not ready, so, set the connect timeout longer is reasonable.
-	 */
-	private static final long CONNECT_TIMEOUT_MILLIS = 10 * 60 * 1000;
+	private static final long CONNECT_TIMEOUT_MILLIS = 2 * 1000;
 	private static final long READ_TIMEOUT_MILLIS = 120000;
 
 	private static final int DAEMON_TCP_PORT = 10000;
@@ -47,29 +51,47 @@ public class AgentAutoScaleDockerClient {
 	/**
 	 * Constructor function, in this function to do docker client api initialization.
 	 *
-	 * @param config   used to specify which docker image will be used
-	 * @param serverIP the docker daemon address
+	 * @param config    used to specify which docker image will be used
+	 * @param addresses the docker daemon addresses
 	 */
-	public AgentAutoScaleDockerClient(Config config, String serverIP) {
-		this.config = config;
-		this.serverIP = serverIP;
-		this.image = this.config.getAgentAutoScaleDockerRepo() + ":" + this.config.getAgentAutoScaleDockerTag();
-		String daemonUri = "http://" + serverIP + ":" + DAEMON_TCP_PORT;
-
+	public AgentAutoScaleDockerClient(Config config, List<RawAddress> addresses) {
+		this.image = config.getAgentAutoScaleDockerRepo() + ":" + config.getAgentAutoScaleDockerTag();
 		controllerUrl = config.getAgentAutoScaleControllerIP() + ":" + config.getAgentAutoScaleControllerPort();
-		dockerClient = ProxyAwareDockerClient.builder()
-				.proxyHost(config.getProxyHost())
-				.proxyPort(config.getProxyPort())
-				.uri(daemonUri)
-				.connectTimeoutMillis(CONNECT_TIMEOUT_MILLIS)
-				.readTimeoutMillis(READ_TIMEOUT_MILLIS)
-				.build();
+		for (RawAddress each : addresses) {
+			try {
+				String daemonUri = "http://" + each + ":" + DAEMON_TCP_PORT;
+				ProxyAwareDockerClient.Builder builder = ProxyAwareDockerClient.builder();
+				if (StringUtils.isNotEmpty(config.getProxyHost())) {
+					builder = builder
+							.proxyHost(config.getProxyHost())
+							.proxyPort(config.getProxyPort());
+				}
+				dockerClient = builder
+						.uri(daemonUri)
+						.connectTimeoutMillis(CONNECT_TIMEOUT_MILLIS)
+						.readTimeoutMillis(READ_TIMEOUT_MILLIS)
+						.build();
+				dockerClient.ping();
+				return;
+			} catch (Exception e) {
+				// Fall through
+			}
+		}
+		throw new NGrinderRuntimeException("No address '" + ToStringBuilder.reflectionToString(addresses) + "' can be connectable ");
+	}
 
+	public void prepare() {
+		try {
+			dockerClient.pull(image);
+		} catch (Exception e) {
+			throw processException(e);
+		}
 	}
 
 	/**
 	 * This function is used to close the docker client api HTTP connection. Required to call after usage.
 	 */
+	@Override
 	public void close() {
 		IOUtils.closeQuietly(dockerClient);
 	}
@@ -90,7 +112,7 @@ public class AgentAutoScaleDockerClient {
 	 *
 	 * @param containerId the container id or name of which to be stopped
 	 */
-	public void stopContainer(String containerId)  {
+	public void stopContainer(String containerId) {
 		try {
 			dockerClient.stopContainer(containerId, 1);
 			LOG.info("Stop docker container: {}", containerId);
@@ -126,15 +148,15 @@ public class AgentAutoScaleDockerClient {
 					LOG.info("Container {} is already running, stop it", containerId);
 					dockerClient.stopContainer(containerId, 0);
 				}
+			} catch (ContainerNotFoundException e) {
 				ContainerConfig containerConfig = ContainerConfig.builder()
 						.image(image)
+						.hostConfig(HostConfig.builder().networkMode("host").build())
 						.env("CONTROLLER_ADDR=" + controllerUrl)
 						.hostname(serverIP)
 						.build();
-				dockerClient.createContainer(containerConfig);
-				LOG.info("Container {} is already created", containerId);
-			} catch (ContainerNotFoundException e) {
-				LOG.info("Container {} already exist, skip creation", containerId);
+				dockerClient.createContainer(containerConfig, containerId);
+				LOG.info("Container {} is creating", containerId);
 			}
 
 		} catch (Exception e) {
@@ -145,13 +167,17 @@ public class AgentAutoScaleDockerClient {
 	public ContainerInfo waitUtilContainerIsOn(String containerId) {
 		try {
 			for (int i = 0; i < 5; i++) {
-				final ContainerInfo containerInfo = dockerClient.inspectContainer(containerId);
-				if (containerInfo.state().running()) {
-					return containerInfo;
-				}
-				ThreadUtils.sleep(1000);
-				if (i++ >= 5) {
-					throw new NGrinderRuntimeException("container " + containerId + " is failed to run");
+				try {
+					final ContainerInfo containerInfo = dockerClient.inspectContainer(containerId);
+					if (containerInfo.state().running()) {
+						return containerInfo;
+					}
+					ThreadUtils.sleep(1000);
+					if (i++ >= 5) {
+						throw processException("container " + containerId + " is failed to run");
+					}
+				} catch (ContainerNotFoundException e) {
+					throw processException("Container " + containerId + " is not found.", e);
 				}
 			}
 		} catch (Exception e) {
@@ -159,5 +185,6 @@ public class AgentAutoScaleDockerClient {
 		}
 		return null;
 	}
+
 
 }

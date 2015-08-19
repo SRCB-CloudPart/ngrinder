@@ -131,7 +131,7 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
 			loadAnnouncement();
 			loadDatabaseProperties();
 		} catch (IOException e) {
-			throw new ConfigurationException("Error while init nGrinder", e);
+			throw new ConfigurationException("Error while prepare nGrinder", e);
 		}
 	}
 

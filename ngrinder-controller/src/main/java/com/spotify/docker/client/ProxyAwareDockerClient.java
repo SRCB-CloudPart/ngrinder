@@ -831,6 +831,11 @@ public class ProxyAwareDockerClient implements DockerClient, Closeable {
 	}
 
 	@Override
+	public String build(Path path, String s, String s1, ProgressHandler progressHandler, BuildParameter... buildParameters) throws DockerException, InterruptedException, IOException {
+		return null;
+	}
+
+	@Override
 	public ImageInfo inspectImage(final String image) throws DockerException, InterruptedException {
 		try {
 			final WebTarget resource = resource().path("images").path(image).path("json");

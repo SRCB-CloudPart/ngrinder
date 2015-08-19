@@ -77,7 +77,7 @@ public class ResourceLocationConfigurableJnlpDownloadServlet extends JnlpDownloa
 	}
 
 	/**
-	 * This method name should not be init. If it's init, there will be recursion calls.
+	 * This method name should not be prepare. If it's prepare, there will be recursion calls.
 	 *
 	 * @throws ServletException exception
 	 */

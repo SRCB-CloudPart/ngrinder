@@ -13,11 +13,9 @@
  */
 package org.ngrinder.agent.service;
 
-import com.google.common.cache.Cache;
-import com.google.common.cache.CacheBuilder;
 import org.ngrinder.infra.config.Config;
-
-import java.util.concurrent.TimeUnit;
+import org.ngrinder.infra.schedule.ScheduledTaskService;
+import org.ngrinder.perftest.service.AgentManager;
 
 /**
  * Abstract class for Auto Scale Action. The subclass should handle the specific auto scale action depending on the cloud provider.
@@ -25,32 +23,58 @@ import java.util.concurrent.TimeUnit;
 public abstract class AgentAutoScaleAction {
 
 
-    /**
-     * Initialize the AgentAutoScaleAction.
-     *
-     * @param config              config
-     * @param agentManagerService agentManagerService for the current activated nodes.
-     */
-    public abstract void init(Config config, AgentManagerService agentManagerService);
+	/**
+	 * Initialize the AgentAutoScaleAction.
+	 *
+	 * @param config       config
+	 * @param agentManager agentManager for the current activated nodes.
+	 */
+	public abstract void init(Config config, AgentManager agentManager, ScheduledTaskService scheduledTaskService);
 
-    /**
-     * Activate the given count of node.
-     *
-     * @param count node to be activated.
-     */
-    public abstract void activateNodes(int count);
+	/**
+	 * Activate the given count of node.
+	 *
+	 * @param count node to be activated.
+	 */
+	public abstract void activateNodes(int count) throws NotSufficientAvailableNodeException;
 
-    /**
-     * Suspend unnecessary nodes.
-     */
-    public abstract void suspendNodes();
+	/**
+	 * Suspend unnecessary nodes.
+	 */
+	public abstract void suspendAllNodes();
 
-    /**
-     * Touch the given node
-     *
-     * @param name node name
-     */
-    public abstract void touch(String name);
+	/**
+	 * Touch the given node
+	 *
+	 * @param name node name
+	 */
+	public abstract void touch(String name);
 
+	public abstract boolean isPrepared();
+
+
+	/**
+	 * Exception which is occured when the node is not
+	 */
+	public class NotSufficientAvailableNodeException extends Exception {
+		public NotSufficientAvailableNodeException() {
+		}
+
+		public NotSufficientAvailableNodeException(String message) {
+			super(message);
+		}
+
+		public NotSufficientAvailableNodeException(String message, Throwable cause) {
+			super(message, cause);
+		}
+
+		public NotSufficientAvailableNodeException(Throwable cause) {
+			super(cause);
+		}
+
+		public NotSufficientAvailableNodeException(String message, Throwable cause, boolean enableSuppression, boolean writableStackTrace) {
+			super(message, cause, enableSuppression, writableStackTrace);
+		}
+	}
 
 }

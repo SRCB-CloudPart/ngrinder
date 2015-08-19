@@ -1087,7 +1087,7 @@ function updateVuserPolicy(vuser) {
 }
 
 function updateVuserGraph() {
-	//if ramp-up chart is not enabled, update init process count as total 
+	//if ramp-up chart is not enabled, update prepare process count as total
 	if ($("#use_ramp_up")[0].checked) {
 		updateRampUpChart();
 	}
