@@ -2,11 +2,10 @@ package org.ngrinder.agent.service.autoscale;
 
 import com.spotify.docker.client.ContainerNotFoundException;
 import com.spotify.docker.client.DockerClient;
+import com.spotify.docker.client.DockerClient.ListContainersParam;
 import com.spotify.docker.client.DockerException;
 import com.spotify.docker.client.ProxyAwareDockerClient;
-import com.spotify.docker.client.messages.ContainerConfig;
-import com.spotify.docker.client.messages.ContainerInfo;
-import com.spotify.docker.client.messages.HostConfig;
+import com.spotify.docker.client.messages.*;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.builder.ToStringBuilder;
 import org.apache.commons.lang3.StringUtils;
@@ -17,7 +16,6 @@ import org.ngrinder.infra.config.Config;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.awt.*;
 import java.io.Closeable;
 import java.util.List;
 
@@ -135,6 +133,28 @@ public class AgentAutoScaleDockerClient implements Closeable {
 	}
 
 	/**
+	 * This function checks the status of docker daemon connection status, if the ping returns OK, which means
+	 * the connection is ready, and then inspectContainer will not throw exception.
+	 *
+	 * @return boolean the status of whether the http connection is ready.
+	 */
+	private boolean checkHttpConnectionReady(){
+		int ret = 0;
+		while(ret <= 20){
+			try {
+				if(dockerClient.ping().equalsIgnoreCase("OK")){
+					return true;
+				}
+			} catch (Exception e){
+				LOG.info("Http connection is not ready...({})", ret);
+				ThreadUtils.sleep(6000);
+			}
+			ret++;
+		}
+		return false;
+	}
+
+	/**
 	 * Create the docker container with the given name.
 	 *
 	 * @param containerId the container id or name of which to be created
@@ -143,6 +163,11 @@ public class AgentAutoScaleDockerClient implements Closeable {
 		LOG.info("Create docker container: {}", containerId);
 		try {
 			try {
+				/*
+				 * Below function can wait some time until the http connection is ok before timeout
+				 */
+				checkHttpConnectionReady();
+
 				final ContainerInfo containerInfo = dockerClient.inspectContainer(containerId);
 				if (containerInfo.state().running()) {
 					LOG.info("Container {} is already running, stop it", containerId);
@@ -186,5 +211,62 @@ public class AgentAutoScaleDockerClient implements Closeable {
 		return null;
 	}
 
+	/**
+	 * Convert the container name to the related container ID
+	 *
+	 * @param containerName
+	 * @return String the container ID of the specified container name
+	 */
+	protected String convertNameToId(String containerName){
+		ListContainersParam listContainersParam = DockerClient.ListContainersParam.allContainers(true);
+		String containerId = null;
+		String tempName = "/" + containerName;
+		try {
+			List<Container> containers = dockerClient.listContainers(listContainersParam);
+			for (Container con : containers) {
+				List<String> names = con.names();
+				if (names != null && names.contains(tempName)) {
+					return con.id();
+				}
+			}
+		}catch(Exception e){
+			throw processException(e);
+		}
 
+		return null;
+	}
+
+
+	/**
+	 * Unit Test purpose
+	 */
+	protected String ping(){
+		try {
+			return dockerClient.ping();
+		} catch (Exception e){
+			return null;
+		}
+	}
+
+	/**
+	 * Unit Test purpose
+	 */
+	protected void removeContainer(String containerName){
+		try {
+			dockerClient.removeContainer(containerName, true);
+		} catch (Exception e){
+			throw processException(e);
+		}
+	}
+
+	/**
+	 * Unit Test purpose
+	 */
+	protected ContainerInfo inspectContainer(String containerName){
+		try {
+			return dockerClient.inspectContainer(containerName);
+		} catch (Exception e){
+			return null;
+		}
+	}
 }

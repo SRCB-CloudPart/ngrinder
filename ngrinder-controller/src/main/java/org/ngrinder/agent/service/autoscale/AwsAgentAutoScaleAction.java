@@ -17,6 +17,7 @@ import org.dasein.cloud.identity.SSHKeypair;
 import org.dasein.cloud.identity.ShellKeySupport;
 import org.dasein.cloud.network.RawAddress;
 import org.ngrinder.agent.service.AgentAutoScaleAction;
+import org.ngrinder.common.util.ThreadUtils;
 import org.ngrinder.infra.config.Config;
 import org.ngrinder.infra.schedule.ScheduledTaskService;
 import org.ngrinder.perftest.service.AgentManager;
@@ -34,6 +35,7 @@ import java.util.concurrent.TimeUnit;
 import static com.google.common.collect.Lists.newArrayList;
 import static com.google.common.collect.Sets.newHashSet;
 import static java.util.Collections.sort;
+import static org.apache.commons.lang3.builder.ToStringBuilder.reflectionToString;
 import static org.ngrinder.common.util.ExceptionUtils.processException;
 import static org.ngrinder.common.util.Preconditions.checkNotEmpty;
 import static org.ngrinder.common.util.Preconditions.checkNotNull;
@@ -248,14 +250,23 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	 * @param vms virtual machines to be activated.
 	 */
 	protected void activateNodes(List<VirtualMachine> vms) {
+
+		List<String> vmIds = newArrayList();
+
 		try {
 			for (VirtualMachine each : vms) {
 				try {
 					activateNode(each);
+					vmIds.add(each.getProviderVirtualMachineId());
 				} catch (Exception e) {
 					LOG.error("Failed to activate node {}", each.getProviderVirtualMachineId(), e);
 				}
 			}
+			/*
+			 * this waiting can not be removed, else that start container can not be executed...
+			 */
+			waitUntilVmState(vmIds, VmState.RUNNING, 1000);
+
 			for (VirtualMachine each : vms) {
 				try {
 					startContainer(each);
@@ -375,9 +386,20 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 
 
 	protected void waitUntilVmState(List<String> vmIds, VmState vmState, int sec) {
-		final String[] vmidArr = vmIds.toArray(new String[vmIds.size()]);
 		try {
-			// FIXME. We need more elaborated way to wait
+			for (String vmId : vmIds) {
+				VirtualMachine vm = virtualMachineSupport.getVirtualMachine(vmId);
+				while (vm != null && !vm.getCurrentState().equals(vmState)) {
+					ThreadUtils.sleep(sec);
+					vm = virtualMachineSupport.getVirtualMachine(vmId);
+				}
+				if (vm == null) {
+					LOG.info("VM self-terminated before entering a usable state");
+				} else {
+					LOG.info("Node {}  State change complete ({}), PubIP: {}, PriIP {} ",
+							new Object[]{vm.getProviderVirtualMachineId(), vm.getCurrentState(), reflectionToString(vm.getPublicAddresses()), reflectionToString(vm.getPrivateAddresses())});
+				}
+			}
 		} catch (Exception e) {
 			throw processException(e);
 		}
@@ -475,10 +497,20 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	}
 
 	public void startContainer(VirtualMachine vm) {
-		if (vm.getCurrentState() == VmState.RUNNING) {
+		/*
+		 * To avoid that the VM becomes to be RUNNING after activate is missing
+		 */
+		VirtualMachine rtVm = null;
+		try {
+			rtVm = virtualMachineSupport.getVirtualMachine(vm.getProviderVirtualMachineId());
+		} catch (Exception e) {
+			throw processException(e);
+		}
+
+		if (rtVm.getCurrentState() == VmState.RUNNING) {
 			AgentAutoScaleDockerClient dockerClient = null;
 			try {
-				dockerClient = new AgentAutoScaleDockerClient(config, getAddresses(vm));
+				dockerClient = new AgentAutoScaleDockerClient(config, getAddresses(rtVm));
 				dockerClient.createAndStartContainer("ngrinder-agent");
 			} finally {
 				IOUtils.closeQuietly(dockerClient);
