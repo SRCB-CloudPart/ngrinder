@@ -129,7 +129,10 @@ public class AgentAutoScaleService {
 		this.config = config;
 	}
 
-	public void activateNodes(int count) throws AgentAutoScaleAction.NotSufficientAvailableNodeException {
+	public void activateNodes(int count) throws AutoScaleProviderNotReadyException, NotSufficientAvailableNodeException {
+		if (!agentAutoScaleAction.isPrepared()) {
+			throw new AutoScaleProviderNotReadyException("The agent ");
+		}
 		lock.lock();
 		try {
 			agentAutoScaleAction.activateNodes(count);
@@ -141,5 +144,25 @@ public class AgentAutoScaleService {
 	public boolean isInProgress() {
 		return lock.isLocked();
 	}
+
+
+	/**
+	 * Exception which is occured when the count of nodes is not enough
+	 */
+	public static class NotSufficientAvailableNodeException extends Exception {
+		public NotSufficientAvailableNodeException(String message) {
+			super(message);
+		}
+	}
+
+	/**
+	 * Exception which is occured when the underlying auto scale provider is not ready.
+	 */
+	public static class AutoScaleProviderNotReadyException extends Exception {
+		public AutoScaleProviderNotReadyException(String message) {
+			super(message);
+		}
+	}
+
 
 }

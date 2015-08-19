@@ -17,6 +17,7 @@ import org.dasein.cloud.identity.SSHKeypair;
 import org.dasein.cloud.identity.ShellKeySupport;
 import org.dasein.cloud.network.RawAddress;
 import org.ngrinder.agent.service.AgentAutoScaleAction;
+import org.ngrinder.agent.service.AgentAutoScaleService;
 import org.ngrinder.infra.config.Config;
 import org.ngrinder.infra.schedule.ScheduledTaskService;
 import org.ngrinder.perftest.service.AgentManager;
@@ -229,10 +230,12 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	}
 
 	@Override
-	public void activateNodes(int count) throws NotSufficientAvailableNodeException {
+	public void activateNodes(int count) throws AgentAutoScaleService.NotSufficientAvailableNodeException {
 		List<VirtualMachine> vms = listVMByState(newHashSet(VmState.STOPPED));
 		if (vms.size() < count) {
-			throw new NotSufficientAvailableNodeException(String.format("%d node activation is requested. But only %d nodes are available. The activation is canceled.", count, vms.size()));
+			throw new AgentAutoScaleService.NotSufficientAvailableNodeException(
+					String.format("%d node activation is requested. But only %d nodes are available. The activation is canceled.", count, vms.size())
+			);
 		}
 		List<VirtualMachine> candidates = vms.subList(0, count);
 		// To speed up
@@ -383,28 +386,25 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 
 
 	protected void waitUntilVmState(List<String> vmIds, VmState vmState, int millisec) {
-		try {
-			for (String vmId : vmIds) {
-				VirtualMachine vm = virtualMachineSupport.getVirtualMachine(vmId);
-				int tries = 0;
-				while (vm != null && !vm.getCurrentState().equals(vmState)) {
-					sleep(millisec);
-					vm = virtualMachineSupport.getVirtualMachine(vmId);
-					if (tries++ >= 20) {
-						LOG.info("after 20 tries, it's failed to make the vm to " + vmState.name());
-						break;
-					}
-				}
-				if (vm == null) {
-					LOG.info("VM self-terminated before entering a usable state");
-				} else {
-					LOG.info("Node {}  State change complete ({}), PubIP: {}, PriIP {} ",
-							new Object[]{vm.getProviderVirtualMachineId(), vm.getCurrentState(), reflectionToString(vm.getPublicAddresses()), reflectionToString(vm.getPrivateAddresses())});
+		for (String vmId : vmIds) {
+			VirtualMachine vm = getVirtualMachine(vmId);
+			int tries = 0;
+			while (vm != null && !vm.getCurrentState().equals(vmState)) {
+				sleep(millisec);
+				vm = getVirtualMachine(vmId);
+				if (tries++ >= 20) {
+					LOG.info("after 20 tries, it's failed to make the vm to " + vmState.name());
+					break;
 				}
 			}
-		} catch (Exception e) {
-			throw processException(e);
+			if (vm == null) {
+				LOG.info("VM self-terminated before entering a usable state");
+			} else {
+				LOG.info("Node {}  State change complete ({}), PubIP: {}, PriIP {} ",
+						new Object[]{vm.getProviderVirtualMachineId(), vm.getCurrentState(), reflectionToString(vm.getPublicAddresses()), reflectionToString(vm.getPrivateAddresses())});
+			}
 		}
+
 	}
 
 	protected VirtualMachineProduct getVirtualMachineProduct(String description) {
@@ -498,17 +498,19 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		return rawAddresses;
 	}
 
+	private VirtualMachine getVirtualMachine(String vmID) {
+		try {
+			return virtualMachineSupport.getVirtualMachine(vmID);
+		} catch (Exception e) {
+			throw processException(e);
+		}
+	}
+
 	public void startContainer(VirtualMachine vm) {
 		/*
 		 * To avoid that the VM becomes to be RUNNING after activate is missing
 		 */
-		VirtualMachine rtVm = null;
-		try {
-			rtVm = virtualMachineSupport.getVirtualMachine(vm.getProviderVirtualMachineId());
-		} catch (Exception e) {
-			throw processException(e);
-		}
-
+		VirtualMachine rtVm = getVirtualMachine(vm.getProviderVirtualMachineId());
 		if (rtVm.getCurrentState() == VmState.RUNNING) {
 			AgentAutoScaleDockerClient dockerClient = null;
 			try {
