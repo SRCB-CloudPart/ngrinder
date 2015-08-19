@@ -174,7 +174,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 
 	protected void initNodes(String tag, int count) {
 		try {
-			List<VirtualMachine> existingVMs = listVMByState(newHashSet(VmState.PENDING, VmState.RUNNING, VmState.STOPPED, VmState.STOPPING));
+			List<VirtualMachine> existingVMs = listVMByState(newHashSet(VmState.PENDING, VmState.RUNNING, VmState.REBOOTING, VmState.STOPPED, VmState.STOPPING));
 			int size = existingVMs.size();
 			if (size <= count) {
 				prepareNodes(tag, count - size);
@@ -233,7 +233,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		if (vms.size() < count) {
 			throw new NotSufficientAvailableNodeException(String.format("%d node activation is requested. But only %d nodes are available. The activation is canceled.", count, vms.size()));
 		}
-		List<VirtualMachine> candidates = vms.subList(0, vms.size());
+		List<VirtualMachine> candidates = vms.subList(0, count);
 		// To speed up
 		if (candidates.isEmpty()) {
 			return;

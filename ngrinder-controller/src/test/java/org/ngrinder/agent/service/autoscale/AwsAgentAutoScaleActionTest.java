@@ -36,7 +36,7 @@ public class AwsAgentAutoScaleActionTest {
 		when(config.getAgentAutoScaleCredential()).thenReturn(System.getProperty("agent.auto_scale.credential"));
 		when(config.getAgentAutoScaleControllerIP()).thenReturn("176.34.4.181");
 		when(config.getAgentAutoScaleControllerPort()).thenReturn("8080");
-		when(config.getAgentAutoScaleMaxNodes()).thenReturn(1);
+		when(config.getAgentAutoScaleMaxNodes()).thenReturn(2);
 		when(config.getAgentAutoScaleDockerRepo()).thenReturn("ngrinder/agent");
 		when(config.getAgentAutoScaleDockerTag()).thenReturn("3.3");
 		if (StringUtils.isNotBlank(System.getProperty("controller.proxy_host"))) {
@@ -84,7 +84,6 @@ public class AwsAgentAutoScaleActionTest {
 		assertThat(virtualMachines).contains(machine3, atIndex(1));
 		assertThat(virtualMachines).contains(machine4, atIndex(2));
 		assertThat(virtualMachines).contains(machine1, atIndex(3));
-
 	}
 
 	private VirtualMachine createVm(String name, VmState state) {
