@@ -9,6 +9,7 @@ import org.dasein.cloud.compute.VmState;
 import org.junit.Before;
 import org.junit.Test;
 import org.ngrinder.agent.service.AgentAutoScaleAction;
+import org.ngrinder.agent.service.AgentAutoScaleService;
 import org.ngrinder.infra.config.Config;
 import org.ngrinder.perftest.service.AgentManager;
 
@@ -56,7 +57,7 @@ public class AwsAgentAutoScaleActionTest {
 
 
 	@Test
-	public void testActivateNodes() throws AgentAutoScaleAction.NotSufficientAvailableNodeException {
+	public void testActivateNodes() throws AgentAutoScaleService.NotSufficientAvailableNodeException {
 		awsAgentAutoScaleAction.activateNodes(1);
 	}
 

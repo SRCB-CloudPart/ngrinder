@@ -36,7 +36,7 @@ public abstract class AgentAutoScaleAction {
 	 *
 	 * @param count node to be activated.
 	 */
-	public abstract void activateNodes(int count) throws NotSufficientAvailableNodeException;
+	public abstract void activateNodes(int count) throws AgentAutoScaleService.NotSufficientAvailableNodeException;
 
 	/**
 	 * Suspend unnecessary nodes.
@@ -52,29 +52,5 @@ public abstract class AgentAutoScaleAction {
 
 	public abstract boolean isPrepared();
 
-
-	/**
-	 * Exception which is occured when the node is not
-	 */
-	public class NotSufficientAvailableNodeException extends Exception {
-		public NotSufficientAvailableNodeException() {
-		}
-
-		public NotSufficientAvailableNodeException(String message) {
-			super(message);
-		}
-
-		public NotSufficientAvailableNodeException(String message, Throwable cause) {
-			super(message, cause);
-		}
-
-		public NotSufficientAvailableNodeException(Throwable cause) {
-			super(cause);
-		}
-
-		public NotSufficientAvailableNodeException(String message, Throwable cause, boolean enableSuppression, boolean writableStackTrace) {
-			super(message, cause, enableSuppression, writableStackTrace);
-		}
-	}
 
 }
