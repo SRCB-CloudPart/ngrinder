@@ -263,7 +263,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 			/*
 			 * this waiting can not be removed, else that start container can not be executed...
 			 */
-			waitUntilVmState(vmIds, VmState.RUNNING, 1000);
+			waitUntilVmState(vmIds, VmState.RUNNING, 3000);
 
 			for (VirtualMachine each : vms) {
 				try {
@@ -273,13 +273,12 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 				}
 			}
 
-
-			// FIXME. We need more elaborated way to wait
-			for (int i = 0; i < 30; i++) {
+			// FIXME. We need more elaborated way to wait， here, wait 15min at most
+			for (int i = 0; i < 650; i++) {
 				if (agentManager.getAllFreeApprovedAgents().size() >= vms.size()) {
 					return;
 				}
-				sleep(5000);
+				sleep(1000);
 			}
 		} catch (Exception e) {
 			throw processException(e);
