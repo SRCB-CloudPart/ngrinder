@@ -38,25 +38,26 @@ public class AwsAgentAutoScaleActionTest {
 		when(config.getAgentAutoScaleControllerPort()).thenReturn("8080");
 		when(config.getAgentAutoScaleMaxNodes()).thenReturn(2);
 		when(config.getAgentAutoScaleDockerRepo()).thenReturn("ngrinder/agent");
-		when(config.getAgentAutoScaleDockerTag()).thenReturn("3.3");
+		when(config.getAgentAutoScaleDockerTag()).thenReturn("3.3-p1");
 		if (StringUtils.isNotBlank(System.getProperty("controller.proxy_host"))) {
 			when(config.getProxyHost()).thenReturn(System.getProperty("controller.proxy_host"));
 			when(config.getProxyPort()).thenReturn(Integer.parseInt(System.getProperty("controller.proxy_port")));
+			System.setProperty("http.proxyHost", System.getProperty("controller.proxy_host"));
+			System.setProperty("http.proxyPort", System.getProperty("controller.proxy_port"));
+			System.setProperty("https.proxyHost", System.getProperty("controller.proxy_host"));
+			System.setProperty("https.proxyPort", System.getProperty("controller.proxy_port"));
 		}
 		AgentManager agentManager = mock(AgentManager.class);
 		when(agentManager.getAllFreeAgents()).thenReturn(Sets.<AgentIdentity>newHashSet(new AgentControllerIdentityImplementation("ww", "10")));
 		MockScheduledTaskService scheduledTaskService = new MockScheduledTaskService();
-		System.setProperty("http.proxyHost", System.getProperty("controller.proxy_host"));
-		System.setProperty("http.proxyPort", System.getProperty("controller.proxy_port"));
-		System.setProperty("https.proxyHost", System.getProperty("controller.proxy_host"));
-		System.setProperty("https.proxyPort", System.getProperty("controller.proxy_port"));
+
 		awsAgentAutoScaleAction.init(config, agentManager, scheduledTaskService);
 	}
 
 
 	@Test
 	public void testActivateNodes() throws AgentAutoScaleAction.NotSufficientAvailableNodeException {
-		awsAgentAutoScaleAction.activateNodes(2);
+		awsAgentAutoScaleAction.activateNodes(1);
 	}
 
 
