@@ -13,6 +13,7 @@
  */
 package org.ngrinder.agent.service;
 
+import net.sf.cglib.core.DebuggingClassWriter;
 import org.ngrinder.infra.config.Config;
 import org.ngrinder.infra.schedule.ScheduledTaskService;
 import org.ngrinder.perftest.service.AgentManager;
@@ -37,7 +38,7 @@ public abstract class AgentAutoScaleAction {
 	 * @param count node to be activated.
 	 */
 	public abstract void activateNodes(int count) throws AgentAutoScaleService.NotSufficientAvailableNodeException;
-
+	
 	/**
 	 * Suspend unnecessary nodes.
 	 */
