@@ -17,7 +17,6 @@ import org.dasein.cloud.identity.SSHKeypair;
 import org.dasein.cloud.identity.ShellKeySupport;
 import org.dasein.cloud.network.RawAddress;
 import org.ngrinder.agent.service.AgentAutoScaleAction;
-import org.ngrinder.common.util.ThreadUtils;
 import org.ngrinder.infra.config.Config;
 import org.ngrinder.infra.schedule.ScheduledTaskService;
 import org.ngrinder.perftest.service.AgentManager;
@@ -250,7 +249,6 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	 * @param vms virtual machines to be activated.
 	 */
 	protected void activateNodes(List<VirtualMachine> vms) {
-
 		List<String> vmIds = newArrayList();
 
 		try {
@@ -385,13 +383,18 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	}
 
 
-	protected void waitUntilVmState(List<String> vmIds, VmState vmState, int sec) {
+	protected void waitUntilVmState(List<String> vmIds, VmState vmState, int millisec) {
 		try {
 			for (String vmId : vmIds) {
 				VirtualMachine vm = virtualMachineSupport.getVirtualMachine(vmId);
+				int tries = 0;
 				while (vm != null && !vm.getCurrentState().equals(vmState)) {
-					ThreadUtils.sleep(sec);
+					sleep(millisec);
 					vm = virtualMachineSupport.getVirtualMachine(vmId);
+					if (tries++ >= 20) {
+						LOG.info("after 20 tries, it's failed to make the vm to " + vmState.name());
+						break;
+					}
 				}
 				if (vm == null) {
 					LOG.info("VM self-terminated before entering a usable state");

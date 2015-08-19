@@ -3,15 +3,16 @@ package org.ngrinder.agent.service.autoscale;
 import com.spotify.docker.client.ContainerNotFoundException;
 import com.spotify.docker.client.DockerClient;
 import com.spotify.docker.client.DockerClient.ListContainersParam;
-import com.spotify.docker.client.DockerException;
 import com.spotify.docker.client.ProxyAwareDockerClient;
-import com.spotify.docker.client.messages.*;
+import com.spotify.docker.client.messages.Container;
+import com.spotify.docker.client.messages.ContainerConfig;
+import com.spotify.docker.client.messages.ContainerInfo;
+import com.spotify.docker.client.messages.HostConfig;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.builder.ToStringBuilder;
 import org.apache.commons.lang3.StringUtils;
 import org.dasein.cloud.network.RawAddress;
 import org.ngrinder.common.exception.NGrinderRuntimeException;
-import org.ngrinder.common.util.ThreadUtils;
 import org.ngrinder.infra.config.Config;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,6 +21,7 @@ import java.io.Closeable;
 import java.util.List;
 
 import static org.ngrinder.common.util.ExceptionUtils.processException;
+import static org.ngrinder.common.util.ThreadUtils.sleep;
 
 /**
  * This class is used to control the docker daemon which locates in the created AWS VM. The agent is
@@ -138,18 +140,20 @@ public class AgentAutoScaleDockerClient implements Closeable {
 	 *
 	 * @return boolean the status of whether the http connection is ready.
 	 */
-	private boolean checkHttpConnectionReady(){
-		int ret = 0;
-		while(ret <= 20){
+	private boolean checkHttpConnectionReady() {
+		for (int i = 0; i < 20; i++) {
 			try {
-				if(dockerClient.ping().equalsIgnoreCase("OK")){
+				if (dockerClient.ping().equalsIgnoreCase("OK")) {
 					return true;
 				}
-			} catch (Exception e){
-				LOG.info("Http connection is not ready...({})", ret);
-				ThreadUtils.sleep(6000);
+			} catch (Exception e) {
+				if (i % 4 == 0) {
+					LOG.info("Http connection is not ready...({})", i);
+				} else {
+					LOG.debug("Http connection is not ready...({})", i);
+				}
+				sleep(5000);
 			}
-			ret++;
 		}
 		return false;
 	}
@@ -197,7 +201,7 @@ public class AgentAutoScaleDockerClient implements Closeable {
 					if (containerInfo.state().running()) {
 						return containerInfo;
 					}
-					ThreadUtils.sleep(1000);
+					sleep(1000);
 					if (i++ >= 5) {
 						throw processException("container " + containerId + " is failed to run");
 					}
@@ -214,10 +218,10 @@ public class AgentAutoScaleDockerClient implements Closeable {
 	/**
 	 * Convert the container name to the related container ID
 	 *
-	 * @param containerName
+	 * @param containerName container name
 	 * @return String the container ID of the specified container name
 	 */
-	protected String convertNameToId(String containerName){
+	protected String convertNameToId(String containerName) {
 		ListContainersParam listContainersParam = DockerClient.ListContainersParam.allContainers(true);
 		String containerId = null;
 		String tempName = "/" + containerName;
@@ -229,7 +233,7 @@ public class AgentAutoScaleDockerClient implements Closeable {
 					return con.id();
 				}
 			}
-		}catch(Exception e){
+		} catch (Exception e) {
 			throw processException(e);
 		}
 
@@ -240,10 +244,10 @@ public class AgentAutoScaleDockerClient implements Closeable {
 	/**
 	 * Unit Test purpose
 	 */
-	protected String ping(){
+	protected String ping() {
 		try {
 			return dockerClient.ping();
-		} catch (Exception e){
+		} catch (Exception e) {
 			return null;
 		}
 	}
@@ -251,10 +255,10 @@ public class AgentAutoScaleDockerClient implements Closeable {
 	/**
 	 * Unit Test purpose
 	 */
-	protected void removeContainer(String containerName){
+	protected void removeContainer(String containerName) {
 		try {
 			dockerClient.removeContainer(containerName, true);
-		} catch (Exception e){
+		} catch (Exception e) {
 			throw processException(e);
 		}
 	}
@@ -262,10 +266,10 @@ public class AgentAutoScaleDockerClient implements Closeable {
 	/**
 	 * Unit Test purpose
 	 */
-	protected ContainerInfo inspectContainer(String containerName){
+	protected ContainerInfo inspectContainer(String containerName) {
 		try {
 			return dockerClient.inspectContainer(containerName);
-		} catch (Exception e){
+		} catch (Exception e) {
 			return null;
 		}
 	}
