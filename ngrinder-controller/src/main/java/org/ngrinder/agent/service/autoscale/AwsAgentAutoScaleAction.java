@@ -9,6 +9,11 @@ import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.builder.ToStringBuilder;
 import org.apache.commons.lang3.StringUtils;
+import org.dasein.cloud.Cloud;
+import org.dasein.cloud.CloudProvider;
+import org.dasein.cloud.ContextRequirements;
+import org.dasein.cloud.ProviderContext;
+import org.dasein.cloud.aws.AWSCloud;
 import org.dasein.cloud.compute.*;
 import org.dasein.cloud.identity.IdentityServices;
 import org.dasein.cloud.identity.SSHKeypair;
@@ -300,7 +305,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 				sleep(1000);
 			}
 			final List<VirtualMachine> rVms = vms;
-			if(!allHere){
+			if (!allHere) {
 				scheduledTaskService.runAsync(new Runnable() {
 					@Override
 					public void run() {
@@ -313,7 +318,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		}
 	}
 
-	private void recoverNodes(List<VirtualMachine> vms){
+	private void recoverNodes(List<VirtualMachine> vms) {
 
 		Set<AgentIdentity> freeAgents = agentManager.getAllFreeApprovedAgents();
 		List<String> agentIPs = newArrayList();
@@ -324,16 +329,16 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		}
 
 		int countToRecover = 0;
-		for(VirtualMachine vm: vms){
+		for (VirtualMachine vm : vms) {
 			RawAddress privateIPs[] = vm.getPrivateAddresses();
 			boolean attached = false;
-			for(RawAddress address: privateIPs){
-				if(agentIPs.contains(address.getIpAddress())){
+			for (RawAddress address : privateIPs) {
+				if (agentIPs.contains(address.getIpAddress())) {
 					attached = true;
 					break;
 				}
 			}
-			if(!attached){
+			if (!attached) {
 				/*
 				 * If the VM is not attached to agentManager, then treat this node meets error, to terminate it.
 				 */
@@ -344,7 +349,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 
 		LOG.info("Begin to recover {} node(s)...", countToRecover);
 		List<String> recVmIds = prepareNodes(getTagString(config), countToRecover, true);
-		for(String vmId: recVmIds){
+		for (String vmId : recVmIds) {
 			try {
 				VirtualMachine recVm = virtualMachineSupport.getVirtualMachine(vmId);
 				startContainer(recVm);
@@ -444,10 +449,10 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 			LOG.info("Launched {} virtual machines, waiting for they become running ...", count);
 			waitUntilVmState(vmids, VmState.RUNNING, 5000);
 			suspendNodes(vmids);
-			if(!recover) {
+			if (!recover) {
 				waitUntilVmState(vmids, VmState.RUNNING, 100);
 				suspendNodes(vmids);
-			}else{
+			} else {
 				waitUntilVmState(vmids, VmState.RUNNING, 3000);
 			}
 			return vmids;
@@ -480,7 +485,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 						break;
 					}
 				}
-			} catch(Exception e) {
+			} catch (Exception e) {
 				LOG.error("Waiting for VM " + vmId + " has beend failed", e);
 			}
 			if (vm == null) {
