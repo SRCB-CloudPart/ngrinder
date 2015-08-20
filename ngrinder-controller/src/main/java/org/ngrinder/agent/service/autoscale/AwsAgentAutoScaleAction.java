@@ -3,6 +3,8 @@ package org.ngrinder.agent.service.autoscale;
 
 import com.google.common.cache.*;
 import com.google.common.io.Files;
+import net.grinder.common.processidentity.AgentIdentity;
+import net.grinder.engine.controller.AgentControllerIdentityImplementation;
 import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.builder.ToStringBuilder;
@@ -192,7 +194,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 			List<VirtualMachine> existingVMs = listVMByState(newHashSet(VmState.PENDING, VmState.RUNNING, VmState.REBOOTING, VmState.STOPPED, VmState.STOPPING));
 			int size = existingVMs.size();
 			if (size <= count) {
-				prepareNodes(tag, count - size);
+				prepareNodes(tag, count - size, false);
 			} else if (size > count) {
 				terminateNodes(existingVMs, size - count);
 			}
@@ -290,18 +292,69 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 				}
 			}
 
-			// FIXME. We need more elaborated way to wait， here, wait 15min at most
+			//We need more elaborated way to wait， here, wait 15min at most
+			boolean allHere = false;
 			for (int i = 0; i < 650; i++) {
 				if (agentManager.getAllFreeApprovedAgents().size() >= vms.size()) {
+					allHere = true;
 					return;
 				}
 				sleep(1000);
+			}
+			final List<VirtualMachine> rVms = vms;
+			if(!allHere){
+				scheduledTaskService.runAsync(new Runnable() {
+					@Override
+					public void run() {
+						recoverNodes(rVms);
+					}
+				});
 			}
 		} catch (Exception e) {
 			throw processException(e);
 		}
 	}
 
+	private void recoverNodes(List<VirtualMachine> vms){
+
+		Set<AgentIdentity> freeAgents = agentManager.getAllFreeApprovedAgents();
+		List<String> agentIPs = newArrayList();
+		for (AgentIdentity ai : freeAgents) {
+			AgentControllerIdentityImplementation agentIdentityImpl = agentManager.convert(ai);
+			agentIPs.add(agentIdentityImpl.getIp());
+			LOG.debug("Approved IP: " + agentIdentityImpl.getIp());
+		}
+
+		int countToRecover = 0;
+		for(VirtualMachine vm: vms){
+			RawAddress privateIPs[] = vm.getPrivateAddresses();
+			boolean attached = false;
+			for(RawAddress address: privateIPs){
+				if(agentIPs.contains(address.getIpAddress())){
+					attached = true;
+					break;
+				}
+			}
+			if(!attached){
+				/*
+				 * If the VM is not attached to agentManager, then treat this node meets error, to terminate it.
+				 */
+				terminateNode(vm);
+				countToRecover++;
+			}
+		}
+
+		LOG.info("Begin to recover {} node(s)...", countToRecover);
+		List<String> recVmIds = prepareNodes(getTagString(config), countToRecover, true);
+		for(String vmId: recVmIds){
+			try {
+				VirtualMachine recVm = virtualMachineSupport.getVirtualMachine(vmId);
+				startContainer(recVm);
+			} catch (Exception e) {
+				throw processException(e);
+			}
+		}
+	}
 
 	protected void activateNode(VirtualMachine vm) {
 		try {
@@ -381,18 +434,23 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	}
 
 
-	public void prepareNodes(String tag, int count) {
+	public List<String> prepareNodes(String tag, int count, boolean recover) {
 		try {
 			// To speed up.
 			if (count <= 0) {
-				return;
+				return null;
 			}
 			MachineImage machineImage = getMachineImage(getOwnerId());
 			VirtualMachineProduct product = getVirtualMachineProduct(getVirtualMachineProductDescription());
 			List<String> vmids = (List<String>) createVmLaunchOptions("ngrinder-agent", machineImage, product, tag).buildMany(cloudProvider, count);
 			LOG.info("Launched {} virtual machines, waiting for they become running ...", count);
-			waitUntilVmState(vmids, VmState.RUNNING, 100);
-			suspendNodes(vmids);
+			if(!recover) {
+				waitUntilVmState(vmids, VmState.RUNNING, 100);
+				suspendNodes(vmids);
+			}else{
+				waitUntilVmState(vmids, VmState.RUNNING, 3000);
+			}
+			return vmids;
 		} catch (Exception e) {
 			throw processException(e);
 		}

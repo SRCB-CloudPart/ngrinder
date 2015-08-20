@@ -237,7 +237,7 @@ public class AgentManager implements ControllerConstants, AgentDownloadRequestLi
      * @param identity identity
      * @return converted identity.
      */
-    AgentControllerIdentityImplementation convert(AgentIdentity identity) {
+    public AgentControllerIdentityImplementation convert(AgentIdentity identity) {
         return (AgentControllerIdentityImplementation) identity;
     }
 
