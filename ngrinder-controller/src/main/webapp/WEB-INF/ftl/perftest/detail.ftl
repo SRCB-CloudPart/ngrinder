@@ -733,9 +733,9 @@ function bindEvent() {
 
 	$("#save_schedule_btn").click(function() {
 		var minVal = 0;
-        <#if dynamicAgentEnabled == false>
+
 			minVal = 1;
-		</#if>
+
 
 		$("#agent_count").rules("add", {
 			min:minVal
@@ -763,9 +763,9 @@ function bindEvent() {
 
 	$("#save_test_btn").click(function() {
         var minVal = 0;
-        <#if dynamicAgentEnabled == false>
+
             minVal = 1;
-		</#if>
+
 
 		$("#agent_count").rules("add", {
 			min:minVal
