@@ -100,6 +100,11 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	}
 
 	@Override
+	public void destroy() {
+		cloudProvider.close();
+	}
+
+	@Override
 	public void init(Config config, AgentManager agentManager, ScheduledTaskService scheduledTaskService) {
 		this.config = config;
 		this.agentManager = agentManager;
@@ -174,6 +179,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 			}
 			ProviderContext ctx = cloud.createContext("", regionId, values.toArray(new ProviderContext.Value[values.size()]));
 			cloudProvider = ctx.connect();
+			cloudProvider.close();
 			virtualMachineSupport = checkNotNull(cloudProvider.getComputeServices()).getVirtualMachineSupport();
 			machineImageSupport = checkNotNull(cloudProvider.getComputeServices()).getImageSupport();
 		} catch (Exception e) {
@@ -262,6 +268,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		List<String> vmIds = newArrayList();
 
 		try {
+
 			for (VirtualMachine each : vms) {
 				try {
 					activateNode(each);

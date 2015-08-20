@@ -44,4 +44,9 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction {
 	public String getDiagnosticInfo() {
 		return "mesos";
 	}
+
+	@Override
+	public void destroy() {
+
+	}
 }

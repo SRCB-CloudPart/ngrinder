@@ -55,4 +55,6 @@ public abstract class AgentAutoScaleAction {
 
 	public abstract String getDiagnosticInfo();
 
+	public abstract void destroy();
+
 }

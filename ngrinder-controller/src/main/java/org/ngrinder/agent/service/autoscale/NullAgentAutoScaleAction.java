@@ -42,4 +42,9 @@ public class NullAgentAutoScaleAction extends AgentAutoScaleAction {
 		return "null";
 	}
 
+	@Override
+	public void destroy() {
+
+	}
+
 }
