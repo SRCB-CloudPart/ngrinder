@@ -184,7 +184,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 			}
 			ProviderContext ctx = cloud.createContext("", regionId, values.toArray(new ProviderContext.Value[values.size()]));
 			cloudProvider = ctx.connect();
-			cloudProvider.close();
+			//cloudProvider.close();
 			virtualMachineSupport = checkNotNull(cloudProvider.getComputeServices()).getVirtualMachineSupport();
 			machineImageSupport = checkNotNull(cloudProvider.getComputeServices()).getImageSupport();
 		} catch (Exception e) {
@@ -447,8 +447,9 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 			VirtualMachineProduct product = getVirtualMachineProduct(getVirtualMachineProductDescription());
 			List<String> vmids = (List<String>) createVmLaunchOptions("ngrinder-agent", machineImage, product, tag).buildMany(cloudProvider, count);
 			LOG.info("Launched {} virtual machines, waiting for they become running ...", count);
-			waitUntilVmState(vmids, VmState.RUNNING, 5000);
-			suspendNodes(vmids);
+			/*
+			 * If find that the timer is not enough for the NON-recover condition, you can enlarge the timer unit (e.g. 3000 to 5000)
+			 */
 			if (!recover) {
 				waitUntilVmState(vmids, VmState.RUNNING, 100);
 				suspendNodes(vmids);
@@ -464,7 +465,10 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	private void suspendNodes(List<String> vmids) {
 		for (String vmId : vmids) {
 			try {
-				virtualMachineSupport.suspend(vmId);
+				/*
+				 * Attention, for AWS, EC2 can not support suspend operation...
+				 */
+				virtualMachineSupport.stop(vmId);
 			} catch (Exception e) {
 				LOG.error("Error while suspending " + vmId, e);
 			}

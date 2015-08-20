@@ -71,13 +71,16 @@ public class AgentAutoScaleDockerClient implements Closeable {
 						.connectTimeoutMillis(CONNECT_TIMEOUT_MILLIS)
 						.readTimeoutMillis(READ_TIMEOUT_MILLIS)
 						.build();
-				dockerClient.ping();
-				return;
+				/*
+				 * FIXME: why to use ping here??
+				 */
+				//dockerClient.ping();
+				//return;
 			} catch (Exception e) {
 				// Fall through
+				throw new NGrinderRuntimeException("No address '" + ToStringBuilder.reflectionToString(each) + "' can be connectable ");
 			}
 		}
-		throw new NGrinderRuntimeException("No address '" + ToStringBuilder.reflectionToString(addresses) + "' can be connectable ");
 	}
 
 	public void prepare() {
