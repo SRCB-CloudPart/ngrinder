@@ -5,11 +5,9 @@ import com.google.common.cache.*;
 import com.google.common.io.Files;
 import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.io.IOUtils;
+import org.apache.commons.lang.builder.ToStringBuilder;
 import org.apache.commons.lang3.StringUtils;
-import org.dasein.cloud.Cloud;
-import org.dasein.cloud.CloudProvider;
-import org.dasein.cloud.ContextRequirements;
-import org.dasein.cloud.ProviderContext;
+import org.dasein.cloud.*;
 import org.dasein.cloud.aws.AWSCloud;
 import org.dasein.cloud.compute.*;
 import org.dasein.cloud.identity.IdentityServices;
@@ -90,6 +88,15 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	@Override
 	public boolean isPrepared() {
 		return prepared;
+	}
+
+	@Override
+	public String getDiagnosticInfo() {
+		StringBuilder builder = new StringBuilder();
+		for (VirtualMachine vm : listAllVM()) {
+			builder.append(ToStringBuilder.reflectionToString(vm)).append("\n");
+		}
+		return builder.toString();
 	}
 
 	@Override
@@ -378,9 +385,19 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 			List<String> vmids = (List<String>) createVmLaunchOptions("ngrinder-agent", machineImage, product, tag).buildMany(cloudProvider, count);
 			LOG.info("Launched {} virtual machines, waiting for they become running ...", count);
 			waitUntilVmState(vmids, VmState.RUNNING, 100);
-			suspendAllNodes();
+			suspendNodes(vmids);
 		} catch (Exception e) {
 			throw processException(e);
+		}
+	}
+
+	private void suspendNodes(List<String> vmids) {
+		for (String vmId : vmids) {
+			try {
+				virtualMachineSupport.suspend(vmId);
+			} catch (Exception e) {
+				LOG.error("Error while suspending " + vmId, e);
+			}
 		}
 	}
 

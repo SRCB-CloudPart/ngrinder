@@ -37,4 +37,9 @@ public class NullAgentAutoScaleAction extends AgentAutoScaleAction {
 		return false;
 	}
 
+	@Override
+	public String getDiagnosticInfo() {
+		return "null";
+	}
+
 }

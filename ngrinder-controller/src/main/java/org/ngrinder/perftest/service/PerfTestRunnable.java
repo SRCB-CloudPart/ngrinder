@@ -46,10 +46,7 @@ import org.springframework.stereotype.Component;
 import javax.annotation.PostConstruct;
 import javax.annotation.PreDestroy;
 import java.io.File;
-import java.util.ArrayList;
-import java.util.Calendar;
-import java.util.Date;
-import java.util.List;
+import java.util.*;
 
 import static org.apache.commons.lang.ObjectUtils.defaultIfNull;
 import static org.ngrinder.common.constant.ClusterConstants.PROP_CLUSTER_SAFE_DIST;
@@ -167,11 +164,13 @@ public class PerfTestRunnable implements ControllerConstants {
 	}
 
 	private void scaleUpAgent(PerfTest runCandidate) {
+		int requiredAgentCount = 0;
 		try {
-			int requiredAgentCount = runCandidate.getAgentCount() -
+			requiredAgentCount = runCandidate.getAgentCount() -
 					agentManager.getAllFreeApprovedAgentsForUser(runCandidate.getCreatedUser()).size();
 			agentAutoScaleService.activateNodes(requiredAgentCount);
 		} catch (Exception e) {
+			LOG.error("Error while activating {} agents.", requiredAgentCount, e);
 			perfTestService.markProgress(runCandidate, "The agent activation is canceled.\n" + e.getMessage());
 		}
 	}

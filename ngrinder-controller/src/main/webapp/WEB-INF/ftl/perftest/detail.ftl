@@ -732,13 +732,8 @@ function bindEvent() {
 	});
 
 	$("#save_schedule_btn").click(function() {
-		var minVal = 0;
-
-			minVal = 1;
-
-
 		$("#agent_count").rules("add", {
-			min:minVal
+			min:1
 		}); 
 		if (!validateForm()) {
 			return false;
@@ -762,13 +757,8 @@ function bindEvent() {
 
 
 	$("#save_test_btn").click(function() {
-        var minVal = 0;
-
-            minVal = 1;
-
-
 		$("#agent_count").rules("add", {
-			min:minVal
+			min:0
 		});
 
 		if (!validateForm()) {
@@ -978,9 +968,8 @@ function changeAgentMaxCount(region, isValid) {
 	$("#maxAgentCount").text(count);
 
 	var $agentCountObj = $("#agent_count");
-
 	$agentCountObj.rules("add", {
-		max: <#if agentAutoScaleEnabled>100000<#else>count</#if>
+		max: count
 	});
 
 	if (isValid) {

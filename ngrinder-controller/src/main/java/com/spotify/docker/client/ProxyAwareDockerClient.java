@@ -77,6 +77,9 @@ import static javax.ws.rs.HttpMethod.*;
 import static javax.ws.rs.core.MediaType.APPLICATION_JSON_TYPE;
 import static javax.ws.rs.core.MediaType.APPLICATION_OCTET_STREAM_TYPE;
 
+/**
+ * Docker Client which is aware of proxy host and port.
+ */
 public class ProxyAwareDockerClient implements DockerClient, Closeable {
 
 	public static final String DEFAULT_UNIX_ENDPOINT = "unix:///var/run/docker.sock";
@@ -187,7 +190,7 @@ public class ProxyAwareDockerClient implements DockerClient, Closeable {
 				.setConnectionRequestTimeout((int) builder.connectTimeoutMillis)
 				.setConnectTimeout((int) builder.connectTimeoutMillis)
 				.setSocketTimeout((int) builder.readTimeoutMillis);
-		if (builder.proxyHost != null) {
+		if (builder.proxyHost != null && builder.proxyPort != 0) {
 			reqConfigBuilder
 					.setProxy(new HttpHost(builder.proxyHost, builder.proxyPort));
 		}
@@ -239,7 +242,7 @@ public class ProxyAwareDockerClient implements DockerClient, Closeable {
 					builder.dockerCertificates.hostnameVerifier());
 		}
 
-		final RegistryBuilder registryBuilder = RegistryBuilder
+		final RegistryBuilder<ConnectionSocketFactory> registryBuilder = RegistryBuilder
 				.<ConnectionSocketFactory>create()
 				.register("https", https)
 				.register("http", PlainConnectionSocketFactory.getSocketFactory());
