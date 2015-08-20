@@ -5,6 +5,7 @@ import com.google.common.cache.*;
 import com.google.common.io.Files;
 import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.io.IOUtils;
+import org.apache.commons.lang.builder.ToStringBuilder;
 import org.apache.commons.lang3.StringUtils;
 import org.dasein.cloud.Cloud;
 import org.dasein.cloud.CloudProvider;
@@ -90,6 +91,15 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	@Override
 	public boolean isPrepared() {
 		return prepared;
+	}
+
+	@Override
+	public String getDiagnosticInfo() {
+		StringBuilder builder = new StringBuilder();
+		for (VirtualMachine vm : listAllVM()) {
+			builder.append(ToStringBuilder.reflectionToString(vm)).append("\n");
+		}
+		return builder.toString();
 	}
 
 	@Override

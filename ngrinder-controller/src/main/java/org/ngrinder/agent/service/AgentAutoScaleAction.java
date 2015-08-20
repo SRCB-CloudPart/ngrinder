@@ -53,5 +53,6 @@ public abstract class AgentAutoScaleAction {
 
 	public abstract boolean isPrepared();
 
+	public abstract String getDiagnosticInfo();
 
 }

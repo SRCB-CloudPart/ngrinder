@@ -39,4 +39,9 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction {
 	public boolean isPrepared() {
 		return false;
 	}
+
+	@Override
+	public String getDiagnosticInfo() {
+		return "mesos";
+	}
 }

@@ -131,7 +131,7 @@ public class AgentAutoScaleService {
 
 	public void activateNodes(int count) throws AutoScaleProviderNotReadyException, NotSufficientAvailableNodeException {
 		if (!agentAutoScaleAction.isPrepared()) {
-			throw new AutoScaleProviderNotReadyException("The agent ");
+			throw new AutoScaleProviderNotReadyException("The agent auto provision is initializing...");
 		}
 		lock.lock();
 		try {
@@ -164,5 +164,13 @@ public class AgentAutoScaleService {
 		}
 	}
 
+	/**
+	 * Only for diagnostics.
+	 *
+	 * @return agentAutoscaleAction.
+	 */
+	public AgentAutoScaleAction getAgentAutoScaleAction() {
+		return this.agentAutoScaleAction;
+	}
 
 }
