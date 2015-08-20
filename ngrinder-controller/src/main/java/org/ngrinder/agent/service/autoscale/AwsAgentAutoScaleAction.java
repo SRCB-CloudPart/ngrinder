@@ -7,7 +7,10 @@ import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.builder.ToStringBuilder;
 import org.apache.commons.lang3.StringUtils;
-import org.dasein.cloud.*;
+import org.dasein.cloud.Cloud;
+import org.dasein.cloud.CloudProvider;
+import org.dasein.cloud.ContextRequirements;
+import org.dasein.cloud.ProviderContext;
 import org.dasein.cloud.aws.AWSCloud;
 import org.dasein.cloud.compute.*;
 import org.dasein.cloud.identity.IdentityServices;
@@ -392,7 +395,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 			VirtualMachineProduct product = getVirtualMachineProduct(getVirtualMachineProductDescription());
 			List<String> vmids = (List<String>) createVmLaunchOptions("ngrinder-agent", machineImage, product, tag).buildMany(cloudProvider, count);
 			LOG.info("Launched {} virtual machines, waiting for they become running ...", count);
-			waitUntilVmState(vmids, VmState.RUNNING, 100);
+			waitUntilVmState(vmids, VmState.RUNNING, 5000);
 			suspendNodes(vmids);
 		} catch (Exception e) {
 			throw processException(e);
@@ -414,13 +417,17 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		for (String vmId : vmIds) {
 			VirtualMachine vm = getVirtualMachine(vmId);
 			int tries = 0;
-			while (vm != null && !vm.getCurrentState().equals(vmState)) {
-				sleep(millisec);
-				vm = getVirtualMachine(vmId);
-				if (tries++ >= 20) {
-					LOG.info("after 20 tries, it's failed to make the vm to " + vmState.name());
-					break;
+			try {
+				while (vm != null && !vm.getCurrentState().equals(vmState)) {
+					sleep(millisec);
+					vm = getVirtualMachine(vmId);
+					if (tries++ >= 20) {
+						LOG.info("after 20 tries, it's failed to make the vm to " + vmState.name());
+						break;
+					}
 				}
+			} catch(Exception e) {
+				LOG.error("Waiting for VM " + vmId + " has beend failed", e);
 			}
 			if (vm == null) {
 				LOG.info("VM self-terminated before entering a usable state");
