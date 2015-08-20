@@ -26,6 +26,7 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
 import javax.annotation.PostConstruct;
+import javax.annotation.PreDestroy;
 import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
 import java.util.Set;
@@ -87,7 +88,13 @@ public class AgentAutoScaleService {
 		initAgentAutoScaleService();
 	}
 
+	@PreDestroy
+	public void destroy() {
+		agentAutoScaleAction.destroy();
+	}
+
 	void initAgentAutoScaleService() {
+		agentAutoScaleAction.destroy();
 		agentAutoScaleAction = createAgentAutoScaleAction();
 		agentAutoScaleAction.init(config, agentManager, scheduledTaskService);
 	}
