@@ -25,17 +25,14 @@ public class NullAgentAutoScaleAction extends AgentAutoScaleAction {
 	}
 
 	@Override
-	public void suspendAllNodes() {
+	public int getMaxNodeCount() {
+		return 0;
 	}
 
 	@Override
 	public void touch(String name) {
 	}
 
-	@Override
-	public boolean isPrepared() {
-		return false;
-	}
 
 	@Override
 	public String getDiagnosticInfo() {

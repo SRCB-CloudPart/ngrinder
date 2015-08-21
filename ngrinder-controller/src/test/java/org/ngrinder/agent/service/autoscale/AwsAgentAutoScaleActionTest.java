@@ -37,7 +37,6 @@ public class AwsAgentAutoScaleActionTest {
 		when(config.getAgentAutoScaleCredential()).thenReturn(System.getProperty("agent.auto_scale.credential"));
 		when(config.getAgentAutoScaleControllerIP()).thenReturn("176.34.4.181");
 		when(config.getAgentAutoScaleControllerPort()).thenReturn("8080");
-		when(config.getAgentAutoScaleMaxNodes()).thenReturn(2);
 		when(config.getAgentAutoScaleDockerRepo()).thenReturn("ngrinder/agent");
 		when(config.getAgentAutoScaleDockerTag()).thenReturn("3.3-p1");
 		if (StringUtils.isNotBlank(System.getProperty("controller.proxy_host"))) {
@@ -51,42 +50,15 @@ public class AwsAgentAutoScaleActionTest {
 		AgentManager agentManager = mock(AgentManager.class);
 		when(agentManager.getAllFreeAgents()).thenReturn(Sets.<AgentIdentity>newHashSet(new AgentControllerIdentityImplementation("ww", "10")));
 		MockScheduledTaskService scheduledTaskService = new MockScheduledTaskService();
-
 		awsAgentAutoScaleAction.init(config, agentManager, scheduledTaskService);
 	}
 
 
 	@Test
 	public void testActivateNodes() throws AgentAutoScaleService.NotSufficientAvailableNodeException {
-		awsAgentAutoScaleAction.activateNodes(1);
+		awsAgentAutoScaleAction.activateNodes(2);
 	}
 
-
-	@Test
-	public void testTerminatableNodeSelection() {
-		VirtualMachine machine1 = createVm("node_1_running", VmState.RUNNING);
-		VirtualMachine machine2 = createVm("node_2_error", VmState.ERROR);
-		VirtualMachine machine3 = createVm("node_3_stopped", VmState.STOPPED);
-		VirtualMachine machine4 = createVm("node_4_stopping", VmState.STOPPING);
-		List<VirtualMachine> virtualMachines = awsAgentAutoScaleAction.selectTerminatableNodes(newArrayList(machine1, machine2, machine3, machine4), 2);
-		assertThat(virtualMachines).contains(machine2, atIndex(0));
-		assertThat(virtualMachines).contains(machine3, atIndex(1));
-
-		virtualMachines = awsAgentAutoScaleAction.selectTerminatableNodes(newArrayList(machine1, machine2, machine3, machine4), 3);
-		assertThat(virtualMachines).contains(machine2, atIndex(0));
-		assertThat(virtualMachines).contains(machine3, atIndex(1));
-		assertThat(virtualMachines).contains(machine4, atIndex(2));
-
-		virtualMachines = awsAgentAutoScaleAction.selectTerminatableNodes(newArrayList(machine1, machine2, machine3, machine4), 0);
-		assertThat(virtualMachines).isEmpty();
-
-
-		virtualMachines = awsAgentAutoScaleAction.selectTerminatableNodes(newArrayList(machine1, machine2, machine3, machine4), 4);
-		assertThat(virtualMachines).contains(machine2, atIndex(0));
-		assertThat(virtualMachines).contains(machine3, atIndex(1));
-		assertThat(virtualMachines).contains(machine4, atIndex(2));
-		assertThat(virtualMachines).contains(machine1, atIndex(3));
-	}
 
 	private VirtualMachine createVm(String name, VmState state) {
 		VirtualMachine machine = new VirtualMachine();

@@ -121,24 +121,18 @@ public class ConfigTest implements ControllerConstants, ClusterConstants, AgentA
 	}
 
 	@Test
-	public void testGetDynamicAgentProperties(){
+	public void testGetDynamicAgentProperties() {
 		PropertiesWrapper wrapper = mock(PropertiesWrapper.class);
 		config.setDynamicAgentProperties(wrapper);
 
 		when(wrapper.getProperty(PROP_AGENT_AUTO_SCALE_TYPE)).thenReturn("EC2");
 		assertThat(config.getAgentAutoScaleType(), is("EC2"));
 
-		when(wrapper.getPropertyInt(PROP_AGENT_AUTO_SCALE_MAX_NODES)).thenReturn(10);
-		assertThat(config.getAgentAutoScaleMaxNodes(), is(10));
-
 		when(wrapper.getProperty(PROP_AGENT_AUTO_SCALE_IDENTITY)).thenReturn("abcd");
 		assertThat(config.getAgentAutoScaleIdentity(), is("abcd"));
 
 		when(wrapper.getProperty(PROP_AGENT_AUTO_SCALE_CREDENTIAL)).thenReturn("abcd111");
 		assertThat(config.getAgentAutoScaleCredential(), is("abcd111"));
-
-		when(wrapper.getPropertyInt(PROP_AGENT_AUTO_SCALE_GUARD_TIME)).thenReturn(60);
-		assertThat(config.getAgentAutoScaleGuardTime(), is(60));
 
 		when(wrapper.getProperty(PROP_AGENT_AUTO_SCALE_DOCKER_REPO)).thenReturn("ngrinder/agent");
 		assertThat(config.getAgentAutoScaleDockerRepo(), is("ngrinder/agent"));

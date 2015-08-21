@@ -745,15 +745,6 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
 
 
 	/**
-	 * Get the configured max instance node for agent auto scale.
-	 *
-	 * @return the count of max node
-	 */
-	public int getAgentAutoScaleMaxNodes() {
-		return getAgentAutoScaleProperties().getPropertyInt(PROP_AGENT_AUTO_SCALE_MAX_NODES);
-	}
-
-	/**
 	 * Get the configured credential identity for cloud provider, it may be username or access key
 	 *
 	 * @return credential username/access key
@@ -771,20 +762,6 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
 		return getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_CREDENTIAL);
 	}
 
-	/**
-	 * Get the configured guard time which is used to prevent VM created but not to use in long time
-	 * check if it is shorter than 60 minutes, if yes, set it as 60
-	 *
-	 * @return guard time
-	 */
-	public int getAgentAutoScaleGuardTime() {
-		int time = getAgentAutoScaleProperties().getPropertyInt(PROP_AGENT_AUTO_SCALE_GUARD_TIME);
-		if (time < 60) {
-			LOG.warn("Guard time threshold should be greater than 60 minutes, change it to 60 minutes by system now...");
-			return 60;
-		}
-		return time;
-	}
 
 	/**
 	 * Get the docker image repository which will used to pull the wanted docker image to run agent

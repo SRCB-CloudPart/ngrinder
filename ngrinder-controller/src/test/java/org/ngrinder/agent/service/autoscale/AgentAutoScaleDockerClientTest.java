@@ -2,18 +2,16 @@ package org.ngrinder.agent.service.autoscale;
 
 import com.beust.jcommander.internal.Lists;
 import com.spotify.docker.client.messages.ContainerInfo;
+import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.StringUtils;
 import org.dasein.cloud.network.RawAddress;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
-import org.mockito.Mockito;
 import org.ngrinder.common.model.Home;
 import org.ngrinder.infra.config.Config;
-import org.ngrinder.infra.config.ConfigTest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 
 import java.io.File;
 
@@ -25,7 +23,7 @@ import static org.mockito.Mockito.when;
 
 /**
  * Created by junoyoon on 15. 8. 18.
- *
+ * <p/>
  * Modified by shihuc 2015-08-19
  */
 public class AgentAutoScaleDockerClientTest {
@@ -39,68 +37,29 @@ public class AgentAutoScaleDockerClientTest {
 
 	@Before
 	public void init() {
-
-		when(config.getAgentAutoScaleRegion()).thenReturn("ap-southeast-1");
-		when(config.getAgentAutoScaleIdentity()).thenReturn(System.getProperty("agent.auto_scale.identity"));
-		when(config.getAgentAutoScaleCredential()).thenReturn(System.getProperty("agent.auto_scale.credential"));
 		when(config.getAgentAutoScaleControllerIP()).thenReturn("176.34.4.181");
 		when(config.getAgentAutoScaleControllerPort()).thenReturn("8080");
-		when(config.getAgentAutoScaleMaxNodes()).thenReturn(1);
-		when(config.getAgentAutoScaleDockerRepo()).thenReturn("ngrinder/agent");
-		when(config.getAgentAutoScaleDockerTag()).thenReturn("3.3");
-
-		String homeDir = System.getProperty("user.home") + "/.ngrinder/";
-		File homeFd = new File(homeDir);
-		Home home = mock(Home.class);
-		when(config.getHome()).thenReturn(home);
-		when(config.getHome().getDirectory()).thenReturn(homeFd);
-
-		if (StringUtils.isNotBlank(System.getProperty("controller.proxy_host"))) {
-			when(config.getProxyHost()).thenReturn(System.getProperty("controller.proxy_host"));
-			when(config.getProxyPort()).thenReturn(Integer.parseInt(System.getProperty("controller.proxy_port")));
-
-			System.setProperty("http.proxyHost", System.getProperty("controller.proxy_host"));
-			System.setProperty("http.proxyPort", System.getProperty("controller.proxy_port"));
-			System.setProperty("https.proxyHost", System.getProperty("controller.proxy_host"));
-			System.setProperty("https.proxyPort", System.getProperty("controller.proxy_port"));
-		}
-
-		dockerClient = new AgentAutoScaleDockerClient(config, Lists.newArrayList(new RawAddress("127.0.0.1")));
-	}
-
-	@After
-	public void clear(){
-		System.clearProperty("controller.proxy_host");
-		System.clearProperty("controller.proxy_port");
-
-		dockerClient.close();
-	}
-
-	@Test
-	public void testDockerImageDownload() {
-		Config config = mock(Config.class);
 		when(config.getAgentAutoScaleControllerIP()).thenReturn("11.11.11.11");
 		when(config.getAgentAutoScaleControllerPort()).thenReturn("80");
 		when(config.getAgentAutoScaleDockerRepo()).thenReturn("ngrinder/agent");
 		when(config.getAgentAutoScaleDockerTag()).thenReturn("3.3-p1");
-		AgentAutoScaleDockerClient client = new AgentAutoScaleDockerClient(config, Lists.newArrayList(new RawAddress("127.0.0.1")));
-		client.createAndStartContainer("wow2");
-	}
-
-	@Test
-	public void constructorTest(){
-		assertNotNull(dockerClient);
-	}
-
-	@Test
-	public void prepareTest(){
-
+		dockerClient = new AgentAutoScaleDockerClient(config, "hello", Lists.newArrayList("127.0.0.1"));
 		assumeTrue("OK".equalsIgnoreCase(dockerClient.ping()));
-		dockerClient.prepare();
+	}
+
+	@After
+	public void clear() {
+		IOUtils.closeQuietly(dockerClient);
 	}
 
 	@Test
-	public void createContainerTest1(){
+	public void testDockerImageDownload() {
+		dockerClient.createAndStartContainer("wow2");
+	}
+
+
+	@Test
+	public void testCreateContainer1() {
 		String containerName = "HelloUT";
 
 		assumeTrue("OK".equalsIgnoreCase(dockerClient.ping()));
@@ -114,7 +73,7 @@ public class AgentAutoScaleDockerClientTest {
 	}
 
 	@Test
-	public void createContainerTest2(){
+	public void testCreateContainer2() {
 
 		String containerName = "HelloUT";
 
@@ -134,7 +93,7 @@ public class AgentAutoScaleDockerClientTest {
 	}
 
 	@Test
-	public void createAndStartContainerTest(){
+	public void testCreateAndStartContainer() {
 		String containerName = "HelloUT";
 
 		assumeTrue("OK".equalsIgnoreCase(dockerClient.ping()));
@@ -152,7 +111,7 @@ public class AgentAutoScaleDockerClientTest {
 	}
 
 	@Test
-	public void stopContainerTest(){
+	public void stopContainerTest() {
 		String containerName = "HelloUT";
 
 		assumeTrue("OK".equalsIgnoreCase(dockerClient.ping()));
@@ -168,7 +127,7 @@ public class AgentAutoScaleDockerClientTest {
 	}
 
 	@Test
-	public void startContainerTest(){
+	public void testStartContainer() {
 		String containerName = "HelloUT";
 
 		assumeTrue("OK".equalsIgnoreCase(dockerClient.ping()));
@@ -187,7 +146,7 @@ public class AgentAutoScaleDockerClientTest {
 	}
 
 	@Test
-	public void waitUtilContainerIsOnTest(){
+	public void testWaitUtilContainerIsOn() {
 		String containerName = "HelloUT";
 
 		assumeTrue("OK".equalsIgnoreCase(dockerClient.ping()));

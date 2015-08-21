@@ -1,17 +1,10 @@
 package org.ngrinder.agent.service.autoscale;
 
-import com.spotify.docker.client.ContainerNotFoundException;
-import com.spotify.docker.client.DockerClient;
+import com.spotify.docker.client.*;
 import com.spotify.docker.client.DockerClient.ListContainersParam;
-import com.spotify.docker.client.ProxyAwareDockerClient;
-import com.spotify.docker.client.messages.Container;
-import com.spotify.docker.client.messages.ContainerConfig;
-import com.spotify.docker.client.messages.ContainerInfo;
-import com.spotify.docker.client.messages.HostConfig;
+import com.spotify.docker.client.messages.*;
 import org.apache.commons.io.IOUtils;
-import org.apache.commons.lang.builder.ToStringBuilder;
 import org.apache.commons.lang3.StringUtils;
-import org.dasein.cloud.network.RawAddress;
 import org.ngrinder.common.exception.NGrinderRuntimeException;
 import org.ngrinder.infra.config.Config;
 import org.slf4j.Logger;
@@ -21,6 +14,7 @@ import java.io.Closeable;
 import java.util.List;
 
 import static org.ngrinder.common.util.ExceptionUtils.processException;
+import static org.ngrinder.common.util.Preconditions.checkTrue;
 import static org.ngrinder.common.util.ThreadUtils.sleep;
 
 /**
@@ -37,8 +31,8 @@ public class AgentAutoScaleDockerClient implements Closeable {
 
 	private DockerClient dockerClient;
 
-	private static final long CONNECT_TIMEOUT_MILLIS = 2 * 1000;
-	private static final long READ_TIMEOUT_MILLIS = 120000;
+	private static final long CONNECT_TIMEOUT_MILLIS = 1000;
+	private static final long READ_TIMEOUT_MILLIS = 5 * 1000;
 
 	private static final int DAEMON_TCP_PORT = 10000;
 
@@ -47,6 +41,7 @@ public class AgentAutoScaleDockerClient implements Closeable {
 	 */
 	private String image;
 	private String controllerUrl;
+	private String region;
 
 	/**
 	 * Constructor function, in this function to do docker client api initialization.
@@ -54,14 +49,16 @@ public class AgentAutoScaleDockerClient implements Closeable {
 	 * @param config    used to specify which docker image will be used
 	 * @param addresses the docker daemon addresses
 	 */
-	public AgentAutoScaleDockerClient(Config config, List<RawAddress> addresses) {
+	public AgentAutoScaleDockerClient(Config config, String machineName, List<String> addresses) {
+		this.region = config.getRegion();
 		this.image = config.getAgentAutoScaleDockerRepo() + ":" + config.getAgentAutoScaleDockerTag();
 		controllerUrl = config.getAgentAutoScaleControllerIP() + ":" + config.getAgentAutoScaleControllerPort();
-		for (RawAddress each : addresses) {
+		checkTrue(!addresses.isEmpty(), "Address should contains more than 1 element");
+		for (String each : addresses) {
+			String daemonUri = "http://" + each + ":" + DAEMON_TCP_PORT;
 			try {
-				String daemonUri = "http://" + each + ":" + DAEMON_TCP_PORT;
 				ProxyAwareDockerClient.Builder builder = ProxyAwareDockerClient.builder();
-				if (StringUtils.isNotEmpty(config.getProxyHost())) {
+				if (StringUtils.isNotEmpty(config.getProxyHost()) && config.getProxyPort() != 0) {
 					builder = builder
 							.proxyHost(config.getProxyHost())
 							.proxyPort(config.getProxyPort());
@@ -71,19 +68,14 @@ public class AgentAutoScaleDockerClient implements Closeable {
 						.connectTimeoutMillis(CONNECT_TIMEOUT_MILLIS)
 						.readTimeoutMillis(READ_TIMEOUT_MILLIS)
 						.build();
+				LOG.info("Try to connect {} docker using {}", machineName, daemonUri);
+				return;
 			} catch (Exception e) {
 				// Fall through
-				throw new NGrinderRuntimeException("No address '" + ToStringBuilder.reflectionToString(each) + "' can be connectable ");
+				LOG.info("Access to {} using {} is failed", machineName, daemonUri);
 			}
 		}
-	}
-
-	public void prepare() {
-		try {
-			dockerClient.pull(image);
-		} catch (Exception e) {
-			throw processException(e);
-		}
+		throw new NGrinderRuntimeException("No address for " + machineName + " can be connectible ");
 	}
 
 	/**
@@ -133,30 +125,6 @@ public class AgentAutoScaleDockerClient implements Closeable {
 	}
 
 	/**
-	 * This function checks the status of docker daemon connection status, if the ping returns OK, which means
-	 * the connection is ready, and then inspectContainer will not throw exception.
-	 *
-	 * @return boolean the status of whether the http connection is ready.
-	 */
-	private boolean checkHttpConnectionReady() {
-		for (int i = 0; i < 20; i++) {
-			try {
-				if (dockerClient.ping().equalsIgnoreCase("OK")) {
-					return true;
-				}
-			} catch (Exception e) {
-				if (i % 4 == 0) {
-					LOG.info("Http connection is not ready...({})", i);
-				} else {
-					LOG.debug("Http connection is not ready...({})", i);
-				}
-				sleep(5000);
-			}
-		}
-		return false;
-	}
-
-	/**
 	 * Create the docker container with the given name.
 	 *
 	 * @param containerId the container id or name of which to be created
@@ -165,11 +133,21 @@ public class AgentAutoScaleDockerClient implements Closeable {
 		LOG.info("Create docker container: {}", containerId);
 		try {
 			try {
+				try {
+					dockerClient.inspectImage(image);
+				} catch (DockerException e) {
+					LOG.info("Image " + image + " does not exist. Try to download.");
+					dockerClient.pull(image, new ProgressHandler() {
+						@Override
+						public void progress(ProgressMessage message) throws DockerException {
+							LOG.info("Image " + image + " is downloading {}", message.progressDetail());
+						}
+					});
+				}
+
 				/*
 				 * Below function can wait some time until the http connection is ok before timeout
 				 */
-				checkHttpConnectionReady();
-
 				final ContainerInfo containerInfo = dockerClient.inspectContainer(containerId);
 				if (containerInfo.state().running()) {
 					LOG.info("Container {} is already running, stop it", containerId);
@@ -180,6 +158,7 @@ public class AgentAutoScaleDockerClient implements Closeable {
 						.image(image)
 						.hostConfig(HostConfig.builder().networkMode("host").build())
 						.env("CONTROLLER_ADDR=" + controllerUrl)
+						.env("REGION=" + region)
 						.hostname(serverIP)
 						.build();
 				dockerClient.createContainer(containerConfig, containerId);
@@ -221,7 +200,6 @@ public class AgentAutoScaleDockerClient implements Closeable {
 	 */
 	protected String convertNameToId(String containerName) {
 		ListContainersParam listContainersParam = DockerClient.ListContainersParam.allContainers(true);
-		String containerId = null;
 		String tempName = "/" + containerName;
 		try {
 			List<Container> containers = dockerClient.listContainers(listContainersParam);
@@ -242,22 +220,22 @@ public class AgentAutoScaleDockerClient implements Closeable {
 	/**
 	 * Unit Test purpose
 	 */
-	protected String ping() {
+	protected void removeContainer(String containerName) {
 		try {
-			return dockerClient.ping();
+			dockerClient.removeContainer(containerName, true);
 		} catch (Exception e) {
-			return null;
+			throw processException(e);
 		}
 	}
 
 	/**
 	 * Unit Test purpose
 	 */
-	protected void removeContainer(String containerName) {
+	protected String ping() {
 		try {
-			dockerClient.removeContainer(containerName, true);
+			return dockerClient.ping();
 		} catch (Exception e) {
-			throw processException(e);
+			return null;
 		}
 	}
 

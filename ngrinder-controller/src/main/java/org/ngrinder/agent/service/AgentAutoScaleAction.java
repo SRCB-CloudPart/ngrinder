@@ -38,11 +38,8 @@ public abstract class AgentAutoScaleAction {
 	 * @param count node to be activated.
 	 */
 	public abstract void activateNodes(int count) throws AgentAutoScaleService.NotSufficientAvailableNodeException;
-	
-	/**
-	 * Suspend unnecessary nodes.
-	 */
-	public abstract void suspendAllNodes();
+
+	public abstract int getMaxNodeCount();
 
 	/**
 	 * Touch the given node
@@ -51,7 +48,6 @@ public abstract class AgentAutoScaleAction {
 	 */
 	public abstract void touch(String name);
 
-	public abstract boolean isPrepared();
 
 	public abstract String getDiagnosticInfo();
 

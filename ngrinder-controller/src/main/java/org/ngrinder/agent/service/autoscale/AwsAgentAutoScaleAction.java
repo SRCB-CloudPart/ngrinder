@@ -2,10 +2,6 @@ package org.ngrinder.agent.service.autoscale;
 
 
 import com.google.common.cache.*;
-import com.google.common.io.Files;
-import net.grinder.common.processidentity.AgentIdentity;
-import net.grinder.engine.controller.AgentControllerIdentityImplementation;
-import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.builder.ToStringBuilder;
 import org.apache.commons.lang3.StringUtils;
@@ -15,9 +11,6 @@ import org.dasein.cloud.ContextRequirements;
 import org.dasein.cloud.ProviderContext;
 import org.dasein.cloud.aws.AWSCloud;
 import org.dasein.cloud.compute.*;
-import org.dasein.cloud.identity.IdentityServices;
-import org.dasein.cloud.identity.SSHKeypair;
-import org.dasein.cloud.identity.ShellKeySupport;
 import org.dasein.cloud.network.RawAddress;
 import org.ngrinder.agent.service.AgentAutoScaleAction;
 import org.ngrinder.agent.service.AgentAutoScaleService;
@@ -27,17 +20,12 @@ import org.ngrinder.perftest.service.AgentManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.core.io.ClassPathResource;
 
-import java.io.File;
-import java.io.InputStream;
-import java.nio.charset.Charset;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 
 import static com.google.common.collect.Lists.newArrayList;
 import static com.google.common.collect.Sets.newHashSet;
-import static java.util.Collections.sort;
 import static org.apache.commons.lang3.builder.ToStringBuilder.reflectionToString;
 import static org.ngrinder.common.util.ExceptionUtils.processException;
 import static org.ngrinder.common.util.Preconditions.checkNotEmpty;
@@ -48,10 +36,10 @@ import static org.ngrinder.common.util.ThreadUtils.sleep;
  * Agent auto scale action for aws.
  */
 @Qualifier("aws")
-public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements RemovalListener<String, Long> {
+public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements RemovalListener<String, VirtualMachine> {
 
 	private static final Logger LOG = LoggerFactory.getLogger(AwsAgentAutoScaleAction.class);
-	private static final String NGRINDER_AGENT_TAG_KEY = "ngrinder_agent";
+	private static final String NGRINDER_AGENT_TAG_KEY = "ngrinder-agent";
 	/**
 	 * The list representing the ordered terminatable vm state.
 	 */
@@ -64,13 +52,12 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	private AgentManager agentManager;
 	private ScheduledTaskService scheduledTaskService;
 	private VirtualMachineSupport virtualMachineSupport;
-	private MachineImageSupport machineImageSupport;
 	private CloudProvider cloudProvider;
 
 	/**
 	 * Cache b/w virtual machine ID and last touched date
 	 */
-	private Cache<String, Long> touchCache = CacheBuilder.newBuilder().expireAfterWrite(60, TimeUnit.MINUTES).removalListener(this).build();
+	private Cache<String, VirtualMachine> touchCache = CacheBuilder.newBuilder().expireAfterAccess(60, TimeUnit.MINUTES).removalListener(this).build();
 
 	/**
 	 * Tag for agent group identification.
@@ -83,18 +70,6 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	private int maxNodeCount = 0;
 
 
-	/**
-	 * Docker initialization script which will be executed when the node is created.
-	 */
-	private String dockerInitScript;
-
-	private boolean prepared = false;
-
-	@Override
-	public boolean isPrepared() {
-		return prepared;
-	}
-
 	@Override
 	public String getDiagnosticInfo() {
 		StringBuilder builder = new StringBuilder();
@@ -104,10 +79,20 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		return builder.toString();
 	}
 
+	final Runnable maxNodeCountUpdateRunnable = new Runnable() {
+		@Override
+		public void run() {
+			final List<VirtualMachine> virtualMachines = listAllVM();
+			maxNodeCount = virtualMachines.size();
+		}
+	};
+
 	@Override
 	public void destroy() {
+		scheduledTaskService.removeScheduledJob(maxNodeCountUpdateRunnable);
 		cloudProvider.close();
 	}
+
 
 	@Override
 	public void init(Config config, AgentManager agentManager, ScheduledTaskService scheduledTaskService) {
@@ -115,50 +100,26 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		this.agentManager = agentManager;
 		this.scheduledTaskService = scheduledTaskService;
 		this.tag = getTagString(config);
-		this.maxNodeCount = config.getAgentAutoScaleMaxNodes();
 		initFilterMap(config);
 		initComputeService(config);
-		initDockerInitScript();
-		this.scheduledTaskService.runAsync(new Runnable() {
-			@Override
-			public void run() {
-				initNodes(tag, maxNodeCount);
-			}
-		});
-
 	}
 
 	private String getTagString(Config config) {
-		return config.getAgentAutoScaleControllerIP().replaceAll("\\.", "d");
+		return config.getAgentAutoScaleControllerIP();
 	}
 
 	private void initFilterMap(Config config) {
-		filterMap.put("ngrinder_agent", getTagString(config));
-	}
-
-	protected void initDockerInitScript() {
-		ClassPathResource resource = new ClassPathResource("agent_autoscale_script/docker-init.sh");
-		InputStream inputStream = null;
-		try {
-			inputStream = resource.getInputStream();
-			dockerInitScript = IOUtils.toString(inputStream);
-		} catch (Exception e) {
-			throw processException(e);
-		} finally {
-			IOUtils.closeQuietly(inputStream);
-		}
+		filterMap.put(NGRINDER_AGENT_TAG_KEY, tag);
 	}
 
 	protected void initComputeService(Config config) {
 		try {
+			// Use that information to register the cloud
+			@SuppressWarnings("unchecked") Cloud cloud = setUpProvider();
+
 			String regionId = checkNotNull(config.getAgentAutoScaleRegion(), "agent.auto_scale.region option should be provided to activate AWS agent auto scale.");
-			String cloudName = "AWS";
-			String providerName = "Amazon";
 			String proxyHost = config.getProxyHost();
 			int proxyPort = config.getProxyPort();
-
-			// Use that information to register the cloud
-			@SuppressWarnings("unchecked") Cloud cloud = Cloud.register(providerName, cloudName, "", AWSCloud.class);
 
 			// Find what additional fields are necessary to connect to the cloud
 			ContextRequirements requirements = cloud.buildProvider().getContextRequirements();
@@ -183,32 +144,17 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 				}
 			}
 			ProviderContext ctx = cloud.createContext("", regionId, values.toArray(new ProviderContext.Value[values.size()]));
-			cloudProvider = ctx.connect();
-			//cloudProvider.close();
-			virtualMachineSupport = checkNotNull(cloudProvider.getComputeServices()).getVirtualMachineSupport();
-			machineImageSupport = checkNotNull(cloudProvider.getComputeServices()).getImageSupport();
+			this.cloudProvider = ctx.connect();
+			this.virtualMachineSupport = checkNotNull(cloudProvider.getComputeServices()).getVirtualMachineSupport();
+			this.scheduledTaskService.addFixedDelayedScheduledTask(maxNodeCountUpdateRunnable, 60 * 1000);
 		} catch (Exception e) {
 			throw processException("Exception occured while setting up AWS agent auto scale", e);
 		}
 	}
 
-	protected void initNodes(String tag, int count) {
-		try {
-			List<VirtualMachine> existingVMs = listVMByState(newHashSet(VmState.PENDING, VmState.RUNNING, VmState.REBOOTING, VmState.STOPPED, VmState.STOPPING));
-			int size = existingVMs.size();
-			if (size <= count) {
-				prepareNodes(tag, count - size, false);
-			} else if (size > count) {
-				terminateNodes(existingVMs, size - count);
-			}
-		} catch (Exception e) {
-			LOG.error("Node initializations is failed.", e);
-			throw processException(e);
-		} finally {
-			prepared = true;
-		}
+	protected Cloud setUpProvider() {
+		return Cloud.register("Amazon", "AWS", "", AWSCloud.class);
 	}
-
 
 	protected List<VirtualMachine> listAllVM() {
 		return listVMByState(Collections.<VmState>emptySet());
@@ -233,26 +179,11 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 
 
 	@Override
-	public void suspendAllNodes() {
-		final List<VirtualMachine> virtualMachines = listVMByState(new HashSet<VmState>());
-		try {
-			final VirtualMachineCapabilities capabilities = virtualMachineSupport.getCapabilities();
-			for (VirtualMachine vm : virtualMachines) {
-				if (capabilities.canStop(vm.getCurrentState())) {
-					virtualMachineSupport.stop(vm.getProviderVirtualMachineId());
-				}
-			}
-		} catch (Exception e) {
-			throw processException(e);
-		}
-	}
-
-	@Override
 	public void activateNodes(int count) throws AgentAutoScaleService.NotSufficientAvailableNodeException {
 		List<VirtualMachine> vms = listVMByState(newHashSet(VmState.STOPPED));
 		if (vms.size() < count) {
 			throw new AgentAutoScaleService.NotSufficientAvailableNodeException(
-					String.format("%d node activation is requested. But only %d nodes are available. The activation is canceled.", count, vms.size())
+					String.format("%d node activation is requested. But only %d stopped nodes (total %d nodes) are available. The activation is canceled.", count, vms.size(), maxNodeCount)
 			);
 		}
 		List<VirtualMachine> candidates = vms.subList(0, count);
@@ -263,6 +194,11 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		activateNodes(candidates);
 	}
 
+	@Override
+	public int getMaxNodeCount() {
+		return maxNodeCount;
+	}
+
 	/**
 	 * Activate the given nodes.
 	 * Activation includes starting node and starting ngrinder agent docker container.
@@ -271,13 +207,12 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	 */
 	protected void activateNodes(List<VirtualMachine> vms) {
 		List<String> vmIds = newArrayList();
-
 		try {
-
+			List<VirtualMachine> activatedNodes = newArrayList();
 			for (VirtualMachine each : vms) {
 				try {
 					activateNode(each);
-					vmIds.add(each.getProviderVirtualMachineId());
+					activatedNodes.add(each);
 				} catch (Exception e) {
 					LOG.error("Failed to activate node {}", each.getProviderVirtualMachineId(), e);
 				}
@@ -285,77 +220,31 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 			/*
 			 * this waiting can not be removed, else that start container can not be executed...
 			 */
-			waitUntilVmState(vmIds, VmState.RUNNING, 3000);
+			activatedNodes = waitUntilVmState(activatedNodes, VmState.RUNNING, 3000);
 
-			for (VirtualMachine each : vms) {
+			List<VirtualMachine> containerStartedNode = newArrayList();
+
+			for (VirtualMachine each : activatedNodes) {
 				try {
 					startContainer(each);
+					containerStartedNode.add(each);
 				} catch (Exception e) {
 					LOG.error("Failed to start container in node {}", each.getProviderVirtualMachineId(), e);
 				}
 			}
 
+			if (containerStartedNode.isEmpty()) {
+				return;
+			}
 			//We need more elaborated way to wait， here, wait 15min at most
-			boolean allHere = false;
 			for (int i = 0; i < 650; i++) {
-				if (agentManager.getAllFreeApprovedAgents().size() >= vms.size()) {
-					allHere = true;
+				if (agentManager.getAllFreeApprovedAgents().size() >= containerStartedNode.size()) {
 					return;
 				}
 				sleep(1000);
 			}
-			final List<VirtualMachine> rVms = vms;
-			if (!allHere) {
-				scheduledTaskService.runAsync(new Runnable() {
-					@Override
-					public void run() {
-						recoverNodes(rVms);
-					}
-				});
-			}
 		} catch (Exception e) {
 			throw processException(e);
-		}
-	}
-
-	private void recoverNodes(List<VirtualMachine> vms) {
-
-		Set<AgentIdentity> freeAgents = agentManager.getAllFreeApprovedAgents();
-		List<String> agentIPs = newArrayList();
-		for (AgentIdentity ai : freeAgents) {
-			AgentControllerIdentityImplementation agentIdentityImpl = agentManager.convert(ai);
-			agentIPs.add(agentIdentityImpl.getIp());
-			LOG.debug("Approved IP: " + agentIdentityImpl.getIp());
-		}
-
-		int countToRecover = 0;
-		for (VirtualMachine vm : vms) {
-			RawAddress privateIPs[] = vm.getPrivateAddresses();
-			boolean attached = false;
-			for (RawAddress address : privateIPs) {
-				if (agentIPs.contains(address.getIpAddress())) {
-					attached = true;
-					break;
-				}
-			}
-			if (!attached) {
-				/*
-				 * If the VM is not attached to agentManager, then treat this node meets error, to terminate it.
-				 */
-				terminateNode(vm);
-				countToRecover++;
-			}
-		}
-
-		LOG.info("Begin to recover {} node(s)...", countToRecover);
-		List<String> recVmIds = prepareNodes(getTagString(config), countToRecover, true);
-		for (String vmId : recVmIds) {
-			try {
-				VirtualMachine recVm = virtualMachineSupport.getVirtualMachine(vmId);
-				startContainer(recVm);
-			} catch (Exception e) {
-				throw processException(e);
-			}
 		}
 	}
 
@@ -373,179 +262,35 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		}
 	}
 
-
-	protected void terminateNodes(List<VirtualMachine> vms, int count) {
-		terminateNodes(selectTerminatableNodes(vms, count));
-	}
-
-	protected void terminateNodes(List<VirtualMachine> vms) {
+	protected List<VirtualMachine> waitUntilVmState(List<VirtualMachine> vms, VmState vmState, int millisec) {
+		List<VirtualMachine> result = newArrayList();
 		for (VirtualMachine each : vms) {
-			try {
-				terminateNode(each);
-			} catch (Exception e) {
-				LOG.error("Error while terminating {} node", each.getProviderVirtualMachineId());
-			}
-		}
-	}
-
-	protected void terminateNode(VirtualMachine vm) {
-		try {
-			VirtualMachineCapabilities capabilities = virtualMachineSupport.getCapabilities();
-			if (capabilities.canTerminate(vm.getCurrentState())) {
-				LOG.info("Terminating {} from state {} ...", vm.getProviderVirtualMachineId(), vm.getCurrentState());
-				virtualMachineSupport.terminate(vm.getProviderVirtualMachineId());
-			}
-		} catch (Exception e) {
-			throw processException(e);
-		}
-	}
-
-
-	/**
-	 * Select the most appropriate nodes which can be terminated among the given vms
-	 * <p/>
-	 * This method sort the virtual machine with given #TERMINATABLE_STATE_ORDER state order.
-	 *
-	 * @param vms   virtual machines
-	 * @param count the number of machines which will be terminated.
-	 * @return selected virtual machines.
-	 */
-	protected List<VirtualMachine> selectTerminatableNodes(List<VirtualMachine> vms, int count) {
-		List<VirtualMachine> sorted = new ArrayList<VirtualMachine>(vms);
-		sort(sorted, new Comparator<VirtualMachine>() {
-			@Override
-			public int compare(VirtualMachine o1, VirtualMachine o2) {
-				return TERMINATABLE_STATE_ORDER.indexOf(o1.getCurrentState()) - TERMINATABLE_STATE_ORDER.indexOf(o2.getCurrentState());
-			}
-		});
-		return sorted.subList(0, Math.min(sorted.size(), count));
-	}
-
-
-	protected MachineImage getMachineImage(String ownerId) {
-		try {
-			for (MachineImage img : machineImageSupport.searchImages(ownerId, null, Platform.UNIX, Architecture.I64, ImageClass.MACHINE)) {
-				if (img.getCurrentState().equals(MachineImageState.ACTIVE)) {
-					LOG.info("Machine image {} is available for application.", img.getName());
-					return img;
-				}
-			}
-		} catch (Exception e) {
-			throw processException(e);
-		}
-		throw processException("No machine image owned by " + ownerId + ") is available.");
-	}
-
-
-	public List<String> prepareNodes(String tag, int count, boolean recover) {
-		try {
-			// To speed up.
-			if (count <= 0) {
-				return null;
-			}
-			MachineImage machineImage = getMachineImage(getOwnerId());
-			VirtualMachineProduct product = getVirtualMachineProduct(getVirtualMachineProductDescription());
-			List<String> vmids = (List<String>) createVmLaunchOptions("ngrinder-agent", machineImage, product, tag).buildMany(cloudProvider, count);
-			LOG.info("Launched {} virtual machines, waiting for they become running ...", count);
-			/*
-			 * If find that the timer is not enough for the NON-recover condition, you can enlarge the timer unit (e.g. 3000 to 5000)
-			 */
-			if (!recover) {
-				waitUntilVmState(vmids, VmState.RUNNING, 100);
-				suspendNodes(vmids);
-			} else {
-				waitUntilVmState(vmids, VmState.RUNNING, 3000);
-			}
-			return vmids;
-		} catch (Exception e) {
-			throw processException(e);
-		}
-	}
-
-	private void suspendNodes(List<String> vmids) {
-		for (String vmId : vmids) {
-			try {
-				/*
-				 * Attention, for AWS, EC2 can not support suspend operation...
-				 */
-				virtualMachineSupport.stop(vmId);
-			} catch (Exception e) {
-				LOG.error("Error while suspending " + vmId, e);
-			}
-		}
-	}
-
-
-	protected void waitUntilVmState(List<String> vmIds, VmState vmState, int millisec) {
-		for (String vmId : vmIds) {
-			VirtualMachine vm = getVirtualMachine(vmId);
+			VirtualMachine vm = getVirtualMachine(each.getProviderVirtualMachineId());
 			int tries = 0;
 			try {
 				while (vm != null && !vm.getCurrentState().equals(vmState)) {
 					sleep(millisec);
-					vm = getVirtualMachine(vmId);
+					vm = getVirtualMachine(each.getProviderVirtualMachineId());
 					if (tries++ >= 20) {
 						LOG.info("after 20 tries, it's failed to make the vm to " + vmState.name());
 						break;
 					}
 				}
 			} catch (Exception e) {
-				LOG.error("Waiting for VM " + vmId + " has beend failed", e);
+				LOG.error("Waiting for VM " + vm.getProviderVirtualMachineId() + " has beend failed", e);
 			}
 			if (vm == null) {
 				LOG.info("VM self-terminated before entering a usable state");
 			} else {
+				result.add(vm);
 				LOG.info("Node {}  State change complete ({}), PubIP: {}, PriIP {} ",
 						new Object[]{vm.getProviderVirtualMachineId(), vm.getCurrentState(), reflectionToString(vm.getPublicAddresses()), reflectionToString(vm.getPrivateAddresses())});
 			}
 		}
+		return result;
 
 	}
 
-	protected VirtualMachineProduct getVirtualMachineProduct(String description) {
-		VirtualMachineProductFilterOptions vmProductFilterOpt = VirtualMachineProductFilterOptions.getInstance().withArchitecture(Architecture.I64);
-		try {
-			for (VirtualMachineProduct each : virtualMachineSupport.listProducts(vmProductFilterOpt)) {
-				if (each.getDescription().contains(description)) {
-					return each;
-				}
-			}
-		} catch (Exception e) {
-			throw processException(e);
-		}
-		throw processException("No virtual machine named(" + description + ") is available.");
-	}
-
-	protected VMLaunchOptions createVmLaunchOptions(String hostName, MachineImage machineImage, VirtualMachineProduct product, String tag) {
-		VMLaunchOptions options = VMLaunchOptions.getInstance(
-				checkNotNull(product).getProviderProductId(),
-				checkNotNull(machineImage).getProviderMachineImageId(),
-				checkNotNull(hostName), hostName, hostName)
-				.withMetaData(NGRINDER_AGENT_TAG_KEY, tag);
-		try {
-			IdentityServices identity = cloudProvider.getIdentityServices();
-			ShellKeySupport keySupport = checkNotNull(identity).getShellKeySupport();
-			options.withUserData(dockerInitScript);
-
-			for (SSHKeypair each : checkNotNull(keySupport).list()) {
-				if (checkNotNull(each.getProviderKeypairId()).equalsIgnoreCase("ngrinder")) {
-					return options.withBootstrapKey(each.getProviderKeypairId());
-				}
-			}
-
-
-			File keyFile = new File(config.getHome().getDirectory(), "ssh/id_rsa.pub");
-			if (keyFile.exists()) {
-				String pubKey = Files.toString(keyFile, Charset.forName("ISO-8859-1")).trim();
-				pubKey = new String(Base64.encodeBase64(pubKey.getBytes()));
-				String keyId = keySupport.importKeypair("ngrinder", pubKey).getProviderKeypairId();
-				options.withBootstrapKey(checkNotNull(keyId));
-			}
-			return options;
-		} catch (Exception e) {
-			throw processException(e);
-		}
-	}
 
 	/**
 	 * The reason why to use VM ID as the bridge between touchCache and vmCache is that VM will lost IP information,
@@ -559,15 +304,12 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	@Override
 	public void touch(String name) {
 		synchronized (this) {
-			final Long value = touchCache.getIfPresent(name);
-			if (value != null) {
-				touchCache.put(name, System.currentTimeMillis());
-			}
+			touchCache.getIfPresent(name);
 		}
 	}
 
 	@Override
-	public void onRemoval(RemovalNotification<String, Long> removal) {
+	public void onRemoval(RemovalNotification<String, VirtualMachine> removal) {
 		synchronized (this) {
 			final String key = removal.getKey();
 			RemovalCause removalCause = removal.getCause();
@@ -578,7 +320,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 						                              try {
 							                              virtualMachineSupport.stop(checkNotNull(key));
 						                              } catch (Exception e) {
-							                              throw processException(e);
+							                              LOG.error("Error while stopping vm {}", key, e);
 						                              }
 					                              }
 				                              }
@@ -587,10 +329,15 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		}
 	}
 
-	protected List<RawAddress> getAddresses(VirtualMachine vm) {
-		List<RawAddress> rawAddresses = new ArrayList<RawAddress>(Arrays.asList(vm.getPrivateAddresses()));
-		rawAddresses.addAll(Arrays.asList(vm.getPublicAddresses()));
-		return rawAddresses;
+	protected List<String> getAddresses(VirtualMachine vm) {
+		List<String> result = newArrayList();
+		for (RawAddress each : vm.getPrivateAddresses()) {
+			result.add(each.getIpAddress());
+		}
+		for (RawAddress each : vm.getPublicAddresses()) {
+			result.add(each.getIpAddress());
+		}
+		return result;
 	}
 
 	private VirtualMachine getVirtualMachine(String vmID) {
@@ -602,27 +349,12 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	}
 
 	public void startContainer(VirtualMachine vm) {
-		/*
-		 * To avoid that the VM becomes to be RUNNING after activate is missing
-		 */
-		VirtualMachine rtVm = getVirtualMachine(vm.getProviderVirtualMachineId());
-		if (rtVm.getCurrentState() == VmState.RUNNING) {
-			AgentAutoScaleDockerClient dockerClient = null;
-			try {
-				dockerClient = new AgentAutoScaleDockerClient(config, getAddresses(rtVm));
-				dockerClient.createAndStartContainer("ngrinder-agent");
-			} finally {
-				IOUtils.closeQuietly(dockerClient);
-			}
+		AgentAutoScaleDockerClient dockerClient = null;
+		try {
+			dockerClient = new AgentAutoScaleDockerClient(config, vm.getProviderMachineImageId(), getAddresses(vm));
+			dockerClient.createAndStartContainer("ngrinder-agent");
+		} finally {
+			IOUtils.closeQuietly(dockerClient);
 		}
-	}
-
-
-	protected String getVirtualMachineProductDescription() {
-		return "m1.medium";
-	}
-
-	protected String getOwnerId() {
-		return "137112412989";
 	}
 }

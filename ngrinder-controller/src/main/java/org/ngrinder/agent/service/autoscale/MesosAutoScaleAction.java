@@ -1,6 +1,7 @@
 package org.ngrinder.agent.service.autoscale;
 
 import org.ngrinder.agent.service.AgentAutoScaleAction;
+import org.ngrinder.agent.service.AgentAutoScaleService;
 import org.ngrinder.agent.service.AgentManagerService;
 import org.ngrinder.infra.config.Config;
 import org.ngrinder.infra.schedule.ScheduledTaskService;
@@ -21,24 +22,18 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction {
 	}
 
 	@Override
-	public void activateNodes(int count) {
-
+	public void activateNodes(int count) throws AgentAutoScaleService.NotSufficientAvailableNodeException {
 	}
 
 	@Override
-	public void suspendAllNodes() {
-
+	public int getMaxNodeCount() {
+		return 0;
 	}
 
 	@Override
 	public void touch(String name) {
-
 	}
 
-	@Override
-	public boolean isPrepared() {
-		return false;
-	}
 
 	@Override
 	public String getDiagnosticInfo() {
@@ -47,6 +42,5 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction {
 
 	@Override
 	public void destroy() {
-
 	}
 }
