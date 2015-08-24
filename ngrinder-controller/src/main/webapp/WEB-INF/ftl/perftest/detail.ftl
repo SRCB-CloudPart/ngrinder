@@ -325,7 +325,6 @@ $(document).ready(function () {
 	$.ajaxSetup({
 		cache : false //close AJAX cache
 	});
-
 	initTags();
 	initDuration();
 	initScheduleDate();
@@ -706,6 +705,7 @@ function getBrowserTimeApplyingTimezone(time) {
 	}
 }	
 
+
 function bindEvent() {
 	$("#script_name").change(function() {
 		bindNewScript($(this), false);
@@ -920,16 +920,6 @@ function bindEvent() {
 		}
 	});
 
-    $("#expand_node_info_btn").click(function() {
-        $(this).toggleClass("collapse");
-        var $panel = $("#node_info_show_panel");
-        if ($panel.is(":hidden")) {
-            $panel.show("slow");
-        } else {
-            $panel.slideUp();
-        }
-    });
-
 	$("#select_hour, #select_min, #select_sec").change(function() {
 		$("#duration_ratio").click();
 	});
@@ -1076,7 +1066,7 @@ function updateVuserPolicy(vuser) {
 }
 
 function updateVuserGraph() {
-	//if ramp-up chart is not enabled, update prepare process count as total
+	//if ramp-up chart is not enabled, update init process count as total
 	if ($("#use_ramp_up")[0].checked) {
 		updateRampUpChart();
 	}

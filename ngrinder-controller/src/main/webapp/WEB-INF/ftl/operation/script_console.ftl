@@ -47,6 +47,7 @@ Following variables are available.
 - config (org.ngrinder.infra.config.Config)
 - pluginManager (org.ngrinder.infra.plugin.PluginManager)
 - cacheManager (org.springframework.cache.CacheManager)
+- agentAutoScaleService  (org.ngrinder.agent.service.AgentAutoScaleService)
 
 Please type following and click the Submit button as a example
 

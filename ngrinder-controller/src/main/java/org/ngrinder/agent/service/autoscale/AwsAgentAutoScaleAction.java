@@ -14,6 +14,7 @@ import org.dasein.cloud.compute.*;
 import org.dasein.cloud.network.RawAddress;
 import org.ngrinder.agent.service.AgentAutoScaleAction;
 import org.ngrinder.agent.service.AgentAutoScaleService;
+import org.ngrinder.common.constant.AgentAutoScaleConstants;
 import org.ngrinder.infra.config.Config;
 import org.ngrinder.infra.schedule.ScheduledTaskService;
 import org.ngrinder.perftest.service.AgentManager;
@@ -29,6 +30,7 @@ import java.util.concurrent.TimeUnit;
 import static com.google.common.collect.Lists.newArrayList;
 import static com.google.common.collect.Sets.newHashSet;
 import static org.apache.commons.lang3.builder.ToStringBuilder.reflectionToString;
+import static org.ngrinder.common.constant.AgentAutoScaleConstants.*;
 import static org.ngrinder.common.util.ExceptionUtils.processException;
 import static org.ngrinder.common.util.Preconditions.checkNotEmpty;
 import static org.ngrinder.common.util.Preconditions.checkNotNull;
@@ -94,7 +96,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	}
 
 	private String getTagString(Config config) {
-		return config.getAgentAutoScaleControllerIP();
+		return config.getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_CONTROLLER_IP) + ":" + config.getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_CONTROLLER_PORT);
 	}
 
 	private void initFilterMap(Config config) {
@@ -105,8 +107,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		try {
 			// Use that information to register the cloud
 			@SuppressWarnings("unchecked") Cloud cloud = setUpProvider();
-
-			String regionId = checkNotNull(config.getAgentAutoScaleRegion(), "agent.auto_scale.region option should be provided to activate AWS agent auto scale.");
+			String regionId = checkNotNull(config.getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_REGION), "agent.auto_scale.region option should be provided to activate AWS agent auto scale.");
 			String proxyHost = config.getProxyHost();
 			int proxyPort = config.getProxyPort();
 
@@ -118,9 +119,10 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 			List<ProviderContext.Value> values = new ArrayList<ProviderContext.Value>();
 			for (ContextRequirements.Field f : fields) {
 				if (f.type.equals(ContextRequirements.FieldType.KEYPAIR)) {
-					String shared = checkNotEmpty(config.getAgentAutoScaleIdentity(),
+
+					String shared = checkNotEmpty(config.getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_IDENTITY),
 							"agent.auto_scale.identity option should be provided to activate the AWS agent auto scale.");
-					String secret = checkNotEmpty(config.getAgentAutoScaleCredential(),
+					String secret = checkNotEmpty(config.getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_CREDENTIAL),
 							"agent.auto_scale.credential option should be provided to activate the AWS agent auto scale.");
 					values.add(ProviderContext.Value.parseValue(f, shared, secret));
 				} else {
@@ -189,7 +191,8 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 			return vmCountCache.get(VM_COUNT_CACHE_TOTAL_NODES, new Callable<Integer>() {
 				@Override
 				public Integer call() throws Exception {
-					return listAllVM().size();
+					return Math.min(listAllVM().size(),
+							config.getAgentAutoScaleProperties().getPropertyInt(PROP_AGENT_AUTO_SCALE_MAX_NODES));
 				}
 			});
 		} catch (ExecutionException e) {
@@ -204,7 +207,8 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 			return vmCountCache.get(VM_COUNT_CACHE_STOPPED_NODES, new Callable<Integer>() {
 				@Override
 				public Integer call() throws Exception {
-					return listVMByState(newHashSet(VmState.STOPPED)).size();
+					return Math.min(listVMByState(newHashSet(VmState.STOPPED)).size(),
+							config.getAgentAutoScaleProperties().getPropertyInt(PROP_AGENT_AUTO_SCALE_MAX_NODES));
 				}
 			});
 		} catch (ExecutionException e) {

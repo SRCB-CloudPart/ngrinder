@@ -19,7 +19,6 @@
     }
 
 </style>
-
 <!--suppress ALL -->
 <div class="row">
 	<div class="span6">
@@ -29,35 +28,35 @@
 		<div class="form-horizontal form-horizontal-2">
 
 			<div class="row">
-				<div class="span4">
-					<@control_group name="agentCount" label_message_key="perfTest.config.agent"
-						inline_help="${clustered?string}" err_style="height:20px">
-						<@input_append name="agentCount"
-							value="${test.agentCount}"
-							message="perfTest.config.agent"
-							append_prefix="perfTest.config.max" append='<span id="maxAgentCount"></span>' />
-					</@control_group>
-				</div>
-
-				<div class="span2">
-					<#if clustered == true>
-						<@control_group name="region" label_message_key="perfTest.config.region"
-							label_help_message_key="perfTest.config.region"
-							label_style="margin-left:-50px;width:80px"
-							err_style="margin-left: -140px;width: 170px;display:inline-block;margin-top:6px;
-							height:20px">
-							<select id="region" name="region" class="pull-right required" style="width: 110px">
-								<option value=""></option>
-								<#list regions as each>
-									<option value="${each}" <#if (test.region?? && test.region == each)>selected</#if> >
-										<@spring.message "${each}"/>
-									</option>
-								</#list>
-							</select>
+					<div class="span4">
+						<@control_group name="agentCount" label_message_key="perfTest.config.agent"
+							inline_help="${clustered?string}" err_style="height:20px">
+							<@input_append name="agentCount"
+								value="${test.agentCount}"
+								message="perfTest.config.agent"
+								append_prefix="perfTest.config.max" append='<span id="maxAgentCount"></span>' />
 						</@control_group>
-					</#if>
+					</div>
+
+					<div class="span2">
+						<#if clustered == true>
+							<@control_group name="region" label_message_key="perfTest.config.region"
+								label_help_message_key="perfTest.config.region"
+								label_style="margin-left:-50px;width:80px"
+								err_style="margin-left: -140px;width: 170px;display:inline-block;margin-top:6px;
+								height:20px">
+								<select id="region" name="region" class="pull-right required" style="width: 110px">
+									<option value=""></option>
+									<#list regions as each>
+										<option value="${each}" <#if (test.region?? && test.region == each)>selected</#if> >
+											<@spring.message "${each}"/>
+										</option>
+									</#list>
+								</select>
+							</@control_group>
+						</#if>
+					</div>
 				</div>
-			</div>
 
 			<@control_group  name="vuserPerAgent" label_message_key="perfTest.config.vuserPerAgent">
 				<@input_append name="vuserPerAgent"

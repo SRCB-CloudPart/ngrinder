@@ -8,7 +8,9 @@ import org.dasein.cloud.network.RawAddress;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+import org.ngrinder.common.constant.AgentAutoScaleConstants;
 import org.ngrinder.common.model.Home;
+import org.ngrinder.common.util.PropertiesWrapper;
 import org.ngrinder.infra.config.Config;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,6 +22,7 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assume.assumeTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.ngrinder.common.constant.AgentAutoScaleConstants.*;
 
 /**
  * Created by junoyoon on 15. 8. 18.
@@ -37,12 +40,12 @@ public class AgentAutoScaleDockerClientTest {
 
 	@Before
 	public void init() {
-		when(config.getAgentAutoScaleControllerIP()).thenReturn("176.34.4.181");
-		when(config.getAgentAutoScaleControllerPort()).thenReturn("8080");
-		when(config.getAgentAutoScaleControllerIP()).thenReturn("11.11.11.11");
-		when(config.getAgentAutoScaleControllerPort()).thenReturn("80");
-		when(config.getAgentAutoScaleDockerRepo()).thenReturn("ngrinder/agent");
-		when(config.getAgentAutoScaleDockerTag()).thenReturn("3.3-p1");
+		PropertiesWrapper agentProperties = mock(PropertiesWrapper.class);
+		when(config.getAgentAutoScaleProperties()).thenReturn(agentProperties);
+		when(agentProperties.getProperty(PROP_AGENT_AUTO_SCALE_CONTROLLER_IP)).thenReturn("176.34.4.181");
+		when(agentProperties.getProperty(PROP_AGENT_AUTO_SCALE_CONTROLLER_PORT)).thenReturn("8080");
+		when(agentProperties.getProperty(PROP_AGENT_AUTO_SCALE_DOCKER_REPO)).thenReturn("ngrinder/agent");
+		when(agentProperties.getProperty(PROP_AGENT_AUTO_SCALE_DOCKER_TAG)).thenReturn("3.3-p1");
 		dockerClient = new AgentAutoScaleDockerClient(config, "hello", Lists.newArrayList("127.0.0.1"));
 		assumeTrue("OK".equalsIgnoreCase(dockerClient.ping()));
 	}

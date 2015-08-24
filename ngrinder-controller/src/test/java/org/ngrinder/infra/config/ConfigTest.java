@@ -120,32 +120,4 @@ public class ConfigTest implements ControllerConstants, ClusterConstants, AgentA
 		assertThat(config.getRegion(), is("TestNewRegion"));
 	}
 
-	@Test
-	public void testGetDynamicAgentProperties() {
-		PropertiesWrapper wrapper = mock(PropertiesWrapper.class);
-		config.setDynamicAgentProperties(wrapper);
-
-		when(wrapper.getProperty(PROP_AGENT_AUTO_SCALE_TYPE)).thenReturn("EC2");
-		assertThat(config.getAgentAutoScaleType(), is("EC2"));
-
-		when(wrapper.getProperty(PROP_AGENT_AUTO_SCALE_IDENTITY)).thenReturn("abcd");
-		assertThat(config.getAgentAutoScaleIdentity(), is("abcd"));
-
-		when(wrapper.getProperty(PROP_AGENT_AUTO_SCALE_CREDENTIAL)).thenReturn("abcd111");
-		assertThat(config.getAgentAutoScaleCredential(), is("abcd111"));
-
-		when(wrapper.getProperty(PROP_AGENT_AUTO_SCALE_DOCKER_REPO)).thenReturn("ngrinder/agent");
-		assertThat(config.getAgentAutoScaleDockerRepo(), is("ngrinder/agent"));
-
-		when(wrapper.getProperty(PROP_AGENT_AUTO_SCALE_DOCKER_TAG)).thenReturn("3.3");
-		assertThat(config.getAgentAutoScaleDockerTag(), is("3.3"));
-
-		when(wrapper.getProperty(PROP_AGENT_AUTO_SCALE_CONTROLLER_IP)).thenReturn("1.2.3.4");
-		assertThat(config.getAgentAutoScaleControllerIP(), is("1.2.3.4"));
-
-		when(wrapper.getProperty(PROP_AGENT_AUTO_SCALE_CONTROLLER_PORT)).thenReturn("8080");
-		assertThat(config.getAgentAutoScaleControllerPort(), is("8080"));
-
-		assertThat(config.isAgentAutoScaleEnabled(), is(true));
-	}
 }

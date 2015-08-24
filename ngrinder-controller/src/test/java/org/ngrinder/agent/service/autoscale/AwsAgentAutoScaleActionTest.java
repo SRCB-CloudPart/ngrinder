@@ -10,6 +10,8 @@ import org.junit.Before;
 import org.junit.Test;
 import org.ngrinder.agent.service.AgentAutoScaleAction;
 import org.ngrinder.agent.service.AgentAutoScaleService;
+import org.ngrinder.common.constant.AgentAutoScaleConstants;
+import org.ngrinder.common.util.PropertiesWrapper;
 import org.ngrinder.infra.config.Config;
 import org.ngrinder.perftest.service.AgentManager;
 
@@ -20,6 +22,7 @@ import static org.fest.assertions.Assertions.assertThat;
 import static org.fest.assertions.Index.atIndex;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.ngrinder.common.constant.AgentAutoScaleConstants.*;
 
 
 /**
@@ -32,13 +35,16 @@ public class AwsAgentAutoScaleActionTest {
 	@Before
 	public void init() {
 		Config config = mock(Config.class);
-		when(config.getAgentAutoScaleRegion()).thenReturn("ap-southeast-1");
-		when(config.getAgentAutoScaleIdentity()).thenReturn(System.getProperty("agent.auto_scale.identity"));
-		when(config.getAgentAutoScaleCredential()).thenReturn(System.getProperty("agent.auto_scale.credential"));
-		when(config.getAgentAutoScaleControllerIP()).thenReturn("176.34.4.181");
-		when(config.getAgentAutoScaleControllerPort()).thenReturn("8080");
-		when(config.getAgentAutoScaleDockerRepo()).thenReturn("ngrinder/agent");
-		when(config.getAgentAutoScaleDockerTag()).thenReturn("3.3-p1");
+		PropertiesWrapper agentProperties = mock(PropertiesWrapper.class);
+		when(config.getAgentAutoScaleProperties()).thenReturn(agentProperties);
+
+		when(agentProperties.getProperty(PROP_AGENT_AUTO_SCALE_REGION)).thenReturn("ap-southeast-1");
+		when(agentProperties.getProperty(PROP_AGENT_AUTO_SCALE_IDENTITY)).thenReturn(System.getProperty("agent.auto_scale.identity"));
+		when(agentProperties.getProperty(PROP_AGENT_AUTO_SCALE_CREDENTIAL)).thenReturn(System.getProperty("agent.auto_scale.credential"));
+		when(agentProperties.getProperty(PROP_AGENT_AUTO_SCALE_CONTROLLER_IP)).thenReturn("176.34.4.181");
+		when(agentProperties.getProperty(PROP_AGENT_AUTO_SCALE_CONTROLLER_PORT)).thenReturn("8080");
+		when(agentProperties.getProperty(PROP_AGENT_AUTO_SCALE_DOCKER_REPO)).thenReturn("ngrinder/agent");
+		when(agentProperties.getProperty(PROP_AGENT_AUTO_SCALE_DOCKER_TAG)).thenReturn("3.3-p1");
 		if (StringUtils.isNotBlank(System.getProperty("controller.proxy_host"))) {
 			when(config.getProxyHost()).thenReturn(System.getProperty("controller.proxy_host"));
 			when(config.getProxyPort()).thenReturn(Integer.parseInt(System.getProperty("controller.proxy_port")));

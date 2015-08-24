@@ -5,7 +5,9 @@ import com.spotify.docker.client.DockerClient.ListContainersParam;
 import com.spotify.docker.client.messages.*;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.ngrinder.common.constant.AgentAutoScaleConstants;
 import org.ngrinder.common.exception.NGrinderRuntimeException;
+import org.ngrinder.common.util.PropertiesWrapper;
 import org.ngrinder.infra.config.Config;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -13,6 +15,7 @@ import org.slf4j.LoggerFactory;
 import java.io.Closeable;
 import java.util.List;
 
+import static org.ngrinder.common.constant.AgentAutoScaleConstants.*;
 import static org.ngrinder.common.util.ExceptionUtils.processException;
 import static org.ngrinder.common.util.Preconditions.checkTrue;
 import static org.ngrinder.common.util.ThreadUtils.sleep;
@@ -51,8 +54,8 @@ public class AgentAutoScaleDockerClient implements Closeable {
 	 */
 	public AgentAutoScaleDockerClient(Config config, String machineName, List<String> addresses) {
 		this.region = config.getRegion();
-		this.image = config.getAgentAutoScaleDockerRepo() + ":" + config.getAgentAutoScaleDockerTag();
-		controllerUrl = config.getAgentAutoScaleControllerIP() + ":" + config.getAgentAutoScaleControllerPort();
+		this.image = getImageName(config);
+		controllerUrl = getConnectionUrl(config);
 		checkTrue(!addresses.isEmpty(), "Address should contains more than 1 element");
 		for (String each : addresses) {
 			String daemonUri = "http://" + each + ":" + DAEMON_TCP_PORT;
@@ -76,6 +79,16 @@ public class AgentAutoScaleDockerClient implements Closeable {
 			}
 		}
 		throw new NGrinderRuntimeException("No address for " + machineName + " can be connectible ");
+	}
+
+	private String getConnectionUrl(Config config) {
+		final PropertiesWrapper agentAutoScaleProperties = config.getAgentAutoScaleProperties();
+		return agentAutoScaleProperties.getProperty(PROP_AGENT_AUTO_SCALE_CONTROLLER_IP) + ":" + agentAutoScaleProperties.getProperty(PROP_AGENT_AUTO_SCALE_CONTROLLER_PORT);
+	}
+
+	private String getImageName(Config config) {
+		final PropertiesWrapper agentAutoScaleProperties = config.getAgentAutoScaleProperties();
+		return agentAutoScaleProperties.getProperty(PROP_AGENT_AUTO_SCALE_DOCKER_REPO) + ":" + agentAutoScaleProperties.getProperty(PROP_AGENT_AUTO_SCALE_DOCKER_TAG);
 	}
 
 	/**

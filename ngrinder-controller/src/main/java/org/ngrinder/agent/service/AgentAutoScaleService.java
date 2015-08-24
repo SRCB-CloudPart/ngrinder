@@ -14,6 +14,7 @@
 package org.ngrinder.agent.service;
 
 import org.ngrinder.agent.service.autoscale.NullAgentAutoScaleAction;
+import org.ngrinder.common.constant.AgentAutoScaleConstants;
 import org.ngrinder.infra.config.Config;
 import org.ngrinder.infra.schedule.ScheduledTaskService;
 import org.ngrinder.perftest.service.AgentManager;
@@ -32,6 +33,7 @@ import java.beans.PropertyChangeListener;
 import java.util.Set;
 import java.util.concurrent.locks.ReentrantLock;
 
+import static org.ngrinder.common.constant.AgentAutoScaleConstants.PROP_AGENT_AUTO_SCALE_TYPE;
 import static org.ngrinder.common.util.ExceptionUtils.processException;
 
 /**
@@ -102,26 +104,25 @@ public class AgentAutoScaleService {
 
 	AgentAutoScaleAction createAgentAutoScaleAction() {
 		AgentAutoScaleAction action = NULL_AGENT_AUTO_SCALE_ACTION;
-		if (config.isAgentAutoScaleEnabled()) {
-			String agentAutoScaleType = config.getAgentAutoScaleType();
-			try {
-				Class<? extends AgentAutoScaleAction> type = NullAgentAutoScaleAction.class;
-				for (Class<? extends AgentAutoScaleAction> each : agentAutoScaleActions) {
-					Qualifier annotation = each.getAnnotation(Qualifier.class);
-					if (annotation != null && annotation.value().equalsIgnoreCase(agentAutoScaleType)) {
-						type = each;
-						break;
-					}
+		String agentAutoScaleType = config.getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_TYPE);
+		try {
+			Class<? extends AgentAutoScaleAction> type = NullAgentAutoScaleAction.class;
+			for (Class<? extends AgentAutoScaleAction> each : agentAutoScaleActions) {
+				Qualifier annotation = each.getAnnotation(Qualifier.class);
+				if (annotation != null && annotation.value().equalsIgnoreCase(agentAutoScaleType)) {
+					type = each;
+					break;
 				}
-				action = type.newInstance();
-			} catch (InstantiationException e) {
-				throw processException(e);
-			} catch (IllegalAccessException e) {
-				throw processException(e);
 			}
+			action = type.newInstance();
+		} catch (InstantiationException e) {
+			throw processException(e);
+		} catch (IllegalAccessException e) {
+			throw processException(e);
 		}
 		return action;
 	}
+
 
 	public void touchNode(String name) {
 		agentAutoScaleAction.touch(name);
@@ -175,6 +176,7 @@ public class AgentAutoScaleService {
 		public AutoScaleProviderNotReadyException(String message) {
 			super(message);
 		}
+
 	}
 
 	/**
