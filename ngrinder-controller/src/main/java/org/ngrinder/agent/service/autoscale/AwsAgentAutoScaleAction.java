@@ -59,7 +59,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	/**
 	 * Cache b/w virtual machine ID and last touched date
 	 */
-	private Cache<String, Integer> vmCountCache = CacheBuilder.newBuilder().expireAfterWrite(30, TimeUnit.MINUTES).build();
+	private Cache<String, Integer> vmCountCache = CacheBuilder.newBuilder().expireAfterWrite(5, TimeUnit.MINUTES).build();
 
 
 	/**
@@ -337,6 +337,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 						                              } catch (Exception e) {
 							                              LOG.error("Error while stopping vm {}", key, e);
 						                              }
+						                              vmCountCache.invalidate(VM_COUNT_CACHE_STOPPED_NODES);
 					                              }
 				                              }
 				);
