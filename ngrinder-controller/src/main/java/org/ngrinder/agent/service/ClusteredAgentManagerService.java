@@ -25,7 +25,6 @@ import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang.mutable.MutableInt;
 import org.ngrinder.agent.model.ClusteredAgentRequest;
 import org.ngrinder.infra.logger.CoreLogger;
-import org.ngrinder.infra.schedule.ScheduledTaskService;
 import org.ngrinder.model.AgentInfo;
 import org.ngrinder.model.User;
 import org.ngrinder.monitor.controller.model.SystemDataModel;
@@ -36,7 +35,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cache.Cache;
 import org.springframework.cache.Cache.ValueWrapper;
 import org.springframework.cache.CacheManager;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.transaction.annotation.Transactional;
 
 import javax.annotation.Nullable;
@@ -70,9 +68,11 @@ public class ClusteredAgentManagerService extends AgentManagerService {
 
 	private Cache agentMonitoringTargetsCache;
 
+	private Cache activatableNodeCount;
 
 	@Autowired
 	private RegionService regionService;
+
 
 	/**
 	 * Initialize.
@@ -83,14 +83,17 @@ public class ClusteredAgentManagerService extends AgentManagerService {
 		agentMonitoringTargetsCache = cacheManager.getCache("agent_monitoring_targets");
 		if (getConfig().isClustered()) {
 			agentRequestCache = cacheManager.getCache("agent_request");
+			activatableNodeCount = cacheManager.getCache("activatable_node_count");
+
 			scheduledTaskService.addFixedDelayedScheduledTask(new Runnable() {
 				@Override
 				public void run() {
 					List<String> keys = cast(((Ehcache) agentRequestCache.getNativeCache())
 							.getKeysWithExpiryCheck());
-					String region = getConfig().getRegion() + "|";
+					final String region = getConfig().getRegion();
+					String regionPrefix = region + "|";
 					for (String each : keys) {
-						if (each.startsWith(region)) {
+						if (each.startsWith(regionPrefix)) {
 							if (agentRequestCache.get(each) != null) {
 								try {
 									ClusteredAgentRequest agentRequest = cast(agentRequestCache.get(each).get());
@@ -112,6 +115,7 @@ public class ClusteredAgentManagerService extends AgentManagerService {
 							}
 						}
 					}
+					activatableNodeCount.put(region, getAgentAutoScaleService().getActivatableNodeSize());
 				}
 			}, 3000);
 		}
@@ -301,8 +305,14 @@ public class ClusteredAgentManagerService extends AgentManagerService {
 			int shareAgentCount = mutableInt.intValue();
 			mutableInt.setValue(Math.min(shareAgentCount, maxAgentSizePerConsole));
 			mutableInt.add(availUserOwnAgent.get(region));
+			mutableInt.add(getActivatableNodeCount(region));
 		}
 		return availShareAgents;
+	}
+
+	private Integer getActivatableNodeCount(String region) {
+		ValueWrapper activatableNodeCount = this.activatableNodeCount.get(region);
+		return activatableNodeCount == null ? 0 : (Integer) activatableNodeCount.get();
 	}
 
 	protected Set<String> getRegions() {

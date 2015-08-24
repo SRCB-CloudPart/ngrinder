@@ -48,7 +48,4 @@ public interface WebConstants {
     String PARAM_SAFE_FILE_DISTRIBUTION = "safeFileDistribution";
 
     String PARAM_SECURITY_MODE = "securityMode";
-
-    String PARAM_AGENT_AUTO_SCALE_ENABLED = "agentAutoScaleEnabled";
-
 }

@@ -41,6 +41,7 @@ public abstract class AgentAutoScaleAction {
 
 	public abstract int getMaxNodeCount();
 
+	public abstract int getActivatableNodeCount();
 	/**
 	 * Touch the given node
 	 *

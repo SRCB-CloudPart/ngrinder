@@ -259,7 +259,6 @@ public class PerfTestController extends BaseController {
             offset = TimeZone.getDefault().getOffset(System.currentTimeMillis());
         }
         model.addAttribute(PARAM_TIMEZONE_OFFSET, offset);
-        model.addAttribute(PARAM_AGENT_AUTO_SCALE_ENABLED, getConfig().isAgentAutoScaleEnabled());
     }
 
     /**

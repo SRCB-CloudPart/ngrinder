@@ -59,12 +59,4 @@ public class AwsAgentAutoScaleActionTest {
 		awsAgentAutoScaleAction.activateNodes(2);
 	}
 
-
-	private VirtualMachine createVm(String name, VmState state) {
-		VirtualMachine machine = new VirtualMachine();
-		machine.setName(name);
-		machine.setCurrentState(state);
-		return machine;
-	}
-
 }

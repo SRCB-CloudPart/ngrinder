@@ -69,6 +69,13 @@ public class AgentManagerService extends AbstractAgentManagerService {
 
 	private Runnable runnable;
 
+	protected AgentAutoScaleService getAgentAutoScaleService() {
+		return agentAutoScaleService;
+	}
+
+	@Autowired
+	private AgentAutoScaleService agentAutoScaleService;
+
 	@PostConstruct
 	public void init() {
 		runnable = new Runnable() {
@@ -199,6 +206,7 @@ public class AgentManagerService extends AbstractAgentManagerService {
 			}
 		}
 
+		availableShareAgents += agentAutoScaleService.getActivatableNodeSize();
 		int maxAgentSizePerConsole = getMaxAgentSizePerConsole();
 		availableShareAgents = (Math.min(availableShareAgents, maxAgentSizePerConsole));
 		Map<String, MutableInt> result = new HashMap<String, MutableInt>(1);

@@ -22,6 +22,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 
 import java.util.*;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
 import static com.google.common.collect.Lists.newArrayList;
@@ -40,13 +42,8 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 
 	private static final Logger LOG = LoggerFactory.getLogger(AwsAgentAutoScaleAction.class);
 	private static final String NGRINDER_AGENT_TAG_KEY = "ngrinder-agent";
-	/**
-	 * The list representing the ordered terminatable vm state.
-	 */
-	private static final List<VmState> TERMINATABLE_STATE_ORDER = newArrayList(VmState.ERROR,
-			VmState.TERMINATED, VmState.STOPPED, VmState.STOPPING, VmState.SUSPENDED, VmState.PAUSED,
-			VmState.PAUSING, VmState.PENDING, VmState.RUNNING, VmState.REBOOTING);
-
+	private static final String VM_COUNT_CACHE_STOPPED_NODES = "stopped-nodes";
+	private static final String VM_COUNT_CACHE_TOTAL_NODES = "total-node";
 	private final Map<String, String> filterMap = new HashMap<String, String>();
 	private Config config;
 	private AgentManager agentManager;
@@ -60,14 +57,15 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	private Cache<String, VirtualMachine> touchCache = CacheBuilder.newBuilder().expireAfterAccess(60, TimeUnit.MINUTES).removalListener(this).build();
 
 	/**
+	 * Cache b/w virtual machine ID and last touched date
+	 */
+	private Cache<String, Integer> vmCountCache = CacheBuilder.newBuilder().expireAfterWrite(30, TimeUnit.MINUTES).build();
+
+
+	/**
 	 * Tag for agent group identification.
 	 */
 	private String tag;
-
-	/**
-	 * Max node to be created.
-	 */
-	private int maxNodeCount = 0;
 
 
 	@Override
@@ -79,17 +77,8 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		return builder.toString();
 	}
 
-	final Runnable maxNodeCountUpdateRunnable = new Runnable() {
-		@Override
-		public void run() {
-			final List<VirtualMachine> virtualMachines = listAllVM();
-			maxNodeCount = virtualMachines.size();
-		}
-	};
-
 	@Override
 	public void destroy() {
-		scheduledTaskService.removeScheduledJob(maxNodeCountUpdateRunnable);
 		cloudProvider.close();
 	}
 
@@ -146,7 +135,6 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 			ProviderContext ctx = cloud.createContext("", regionId, values.toArray(new ProviderContext.Value[values.size()]));
 			this.cloudProvider = ctx.connect();
 			this.virtualMachineSupport = checkNotNull(cloudProvider.getComputeServices()).getVirtualMachineSupport();
-			this.scheduledTaskService.addFixedDelayedScheduledTask(maxNodeCountUpdateRunnable, 60 * 1000);
 		} catch (Exception e) {
 			throw processException("Exception occured while setting up AWS agent auto scale", e);
 		}
@@ -180,10 +168,11 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 
 	@Override
 	public void activateNodes(int count) throws AgentAutoScaleService.NotSufficientAvailableNodeException {
+		vmCountCache.cleanUp();
 		List<VirtualMachine> vms = listVMByState(newHashSet(VmState.STOPPED));
 		if (vms.size() < count) {
 			throw new AgentAutoScaleService.NotSufficientAvailableNodeException(
-					String.format("%d node activation is requested. But only %d stopped nodes (total %d nodes) are available. The activation is canceled.", count, vms.size(), maxNodeCount)
+					String.format("%d node activation is requested. But only %d stopped nodes (total %d nodes) are available. The activation is canceled.", count, vms.size(), getMaxNodeCount())
 			);
 		}
 		List<VirtualMachine> candidates = vms.subList(0, count);
@@ -196,7 +185,32 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 
 	@Override
 	public int getMaxNodeCount() {
-		return maxNodeCount;
+		try {
+			return vmCountCache.get(VM_COUNT_CACHE_TOTAL_NODES, new Callable<Integer>() {
+				@Override
+				public Integer call() throws Exception {
+					return listAllVM().size();
+				}
+			});
+		} catch (ExecutionException e) {
+			LOG.error("Error while counting total nodes", e);
+			return 0;
+		}
+	}
+
+
+	public int getActivatableNodeCount() {
+		try {
+			return vmCountCache.get(VM_COUNT_CACHE_STOPPED_NODES, new Callable<Integer>() {
+				@Override
+				public Integer call() throws Exception {
+					return listVMByState(newHashSet(VmState.STOPPED)).size();
+				}
+			});
+		} catch (ExecutionException e) {
+			LOG.error("Error while counting activatable nodes", e);
+			return 0;
+		}
 	}
 
 	/**
@@ -206,9 +220,9 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	 * @param vms virtual machines to be activated.
 	 */
 	protected void activateNodes(List<VirtualMachine> vms) {
-		List<String> vmIds = newArrayList();
 		try {
 			List<VirtualMachine> activatedNodes = newArrayList();
+
 			for (VirtualMachine each : vms) {
 				try {
 					activateNode(each);
@@ -217,13 +231,13 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 					LOG.error("Failed to activate node {}", each.getProviderVirtualMachineId(), e);
 				}
 			}
+			vmCountCache.invalidate(VM_COUNT_CACHE_STOPPED_NODES);
 			/*
 			 * this waiting can not be removed, else that start container can not be executed...
 			 */
 			activatedNodes = waitUntilVmState(activatedNodes, VmState.RUNNING, 3000);
-
+			sleep(3000);
 			List<VirtualMachine> containerStartedNode = newArrayList();
-
 			for (VirtualMachine each : activatedNodes) {
 				try {
 					startContainer(each);
@@ -238,10 +252,11 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 			}
 			//We need more elaborated way to wait， here, wait 15min at most
 			for (int i = 0; i < 650; i++) {
-				if (agentManager.getAllFreeApprovedAgents().size() >= containerStartedNode.size()) {
+				if (agentManager.getAllFreeApprovedAgents().size() < containerStartedNode.size()) {
+					sleep(1000);
+				} else {
 					return;
 				}
-				sleep(1000);
 			}
 		} catch (Exception e) {
 			throw processException(e);

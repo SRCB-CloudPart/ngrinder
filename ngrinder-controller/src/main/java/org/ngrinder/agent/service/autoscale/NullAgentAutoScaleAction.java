@@ -30,6 +30,11 @@ public class NullAgentAutoScaleAction extends AgentAutoScaleAction {
 	}
 
 	@Override
+	public int getActivatableNodeCount() {
+		return 0;
+	}
+
+	@Override
 	public void touch(String name) {
 	}
 

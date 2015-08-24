@@ -45,6 +45,13 @@
 				properties="replicateAsynchronously=true, replicatePuts=true, replicateUpdates=true, replicateUpdatesViaCopy=true, replicateRemovals=true"/>
 	</cache>
 
+	<cache name="activatable_node_count" maxElementsInMemory="100"
+		   overflowToDisk="false" timeToLiveSeconds="10">
+		<cacheEventListenerFactory
+				class="net.sf.ehcache.distribution.RMICacheReplicatorFactory"
+				properties="replicateAsynchronously=true, replicatePuts=true, replicateUpdates=true, replicateUpdatesViaCopy=true, replicateRemovals=true"/>
+	</cache>
+
 	<!-- distributed caches end -->
 
 	<cache name="agent_monitoring_targets" maxElementsInMemory="1000"

@@ -145,6 +145,15 @@ public class AgentAutoScaleService {
 		}
 	}
 
+	public int getActivatableNodeSize() {
+		return agentAutoScaleAction.getActivatableNodeCount();
+	}
+
+	public int getTotalNodeSize() {
+		return agentAutoScaleAction.getMaxNodeCount();
+	}
+
+
 	public boolean isInProgress() {
 		return lock.isLocked();
 	}
