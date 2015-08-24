@@ -1,11 +1,12 @@
 package org.ngrinder.agent.service.autoscale;
 
 import com.spotify.docker.client.*;
-import com.spotify.docker.client.DockerClient.ListContainersParam;
-import com.spotify.docker.client.messages.*;
+import com.spotify.docker.client.messages.ContainerConfig;
+import com.spotify.docker.client.messages.ContainerInfo;
+import com.spotify.docker.client.messages.HostConfig;
+import com.spotify.docker.client.messages.ProgressMessage;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
-import org.ngrinder.common.constant.AgentAutoScaleConstants;
 import org.ngrinder.common.exception.NGrinderRuntimeException;
 import org.ngrinder.common.util.PropertiesWrapper;
 import org.ngrinder.infra.config.Config;
@@ -25,12 +26,10 @@ import static org.ngrinder.common.util.ThreadUtils.sleep;
  * is running in the docker container running in VM.
  *
  * @author shihuc
- * @version 8/14/15 v1
+ * @version 3.3.2
  */
 public class AgentAutoScaleDockerClient implements Closeable {
 	private static final Logger LOG = LoggerFactory.getLogger(AgentAutoScaleDockerClient.class);
-
-	private String serverIP;
 
 	private DockerClient dockerClient;
 
@@ -42,9 +41,9 @@ public class AgentAutoScaleDockerClient implements Closeable {
 	/*
 	 * The docker image repository which identifies which image to run agent
 	 */
-	private String image;
-	private String controllerUrl;
-	private String region;
+	private final String image;
+	private final String controllerUrl;
+	private final String region;
 
 	/**
 	 * Constructor function, in this function to do docker client api initialization.
@@ -172,7 +171,6 @@ public class AgentAutoScaleDockerClient implements Closeable {
 						.hostConfig(HostConfig.builder().networkMode("host").build())
 						.env("CONTROLLER_ADDR=" + controllerUrl)
 						.env("REGION=" + region)
-						.hostname(serverIP)
 						.build();
 				dockerClient.createContainer(containerConfig, containerId);
 				LOG.info("Container {} is creating", containerId);
@@ -206,31 +204,6 @@ public class AgentAutoScaleDockerClient implements Closeable {
 	}
 
 	/**
-	 * Convert the container name to the related container ID
-	 *
-	 * @param containerName container name
-	 * @return String the container ID of the specified container name
-	 */
-	protected String convertNameToId(String containerName) {
-		ListContainersParam listContainersParam = DockerClient.ListContainersParam.allContainers(true);
-		String tempName = "/" + containerName;
-		try {
-			List<Container> containers = dockerClient.listContainers(listContainersParam);
-			for (Container con : containers) {
-				List<String> names = con.names();
-				if (names != null && names.contains(tempName)) {
-					return con.id();
-				}
-			}
-		} catch (Exception e) {
-			throw processException(e);
-		}
-
-		return null;
-	}
-
-
-	/**
 	 * Unit Test purpose
 	 */
 	protected void removeContainer(String containerName) {
@@ -244,11 +217,11 @@ public class AgentAutoScaleDockerClient implements Closeable {
 	/**
 	 * Unit Test purpose
 	 */
-	protected String ping() {
+	protected void ping() {
 		try {
-			return dockerClient.ping();
+			dockerClient.ping();
 		} catch (Exception e) {
-			return null;
+			throw processException(e);
 		}
 	}
 

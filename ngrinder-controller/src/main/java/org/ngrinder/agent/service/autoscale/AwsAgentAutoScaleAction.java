@@ -84,7 +84,6 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		cloudProvider.close();
 	}
 
-
 	@Override
 	public void init(Config config, AgentManager agentManager, ScheduledTaskService scheduledTaskService) {
 		this.config = config;
@@ -99,7 +98,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		return config.getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_CONTROLLER_IP) + ":" + config.getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_CONTROLLER_PORT);
 	}
 
-	private void initFilterMap(Config config) {
+	protected void initFilterMap(Config config) {
 		filterMap.put(NGRINDER_AGENT_TAG_KEY, tag);
 	}
 
