@@ -22,9 +22,8 @@ import static org.ngrinder.common.util.Preconditions.checkTrue;
 import static org.ngrinder.common.util.ThreadUtils.sleep;
 
 /**
- * This class is used to control the docker daemon which locates in the cloud. <p>
- * <p/>
- * The agent is  running in the docker container in VM.
+ * This class is used to control the docker daemon which locates in the created AWS VM. The agent is
+ * is running in the docker container running in VM.
  *
  * @author shihuc
  * @version 3.3.2
