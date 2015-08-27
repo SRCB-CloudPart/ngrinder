@@ -19,6 +19,7 @@ import java.io.File;
 
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assume.assumeNoException;
 import static org.junit.Assume.assumeTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -47,7 +48,7 @@ public class AgentAutoScaleDockerClientTest {
 		when(agentProperties.getProperty(PROP_AGENT_AUTO_SCALE_DOCKER_REPO)).thenReturn("ngrinder/agent");
 		when(agentProperties.getProperty(PROP_AGENT_AUTO_SCALE_DOCKER_TAG)).thenReturn("3.3-p1");
 		dockerClient = new AgentAutoScaleDockerClient(config, "hello", Lists.newArrayList("127.0.0.1"));
-		assumeTrue("OK".equalsIgnoreCase(dockerClient.ping()));
+		assumeConnection(dockerClient);
 	}
 
 	@After
@@ -61,64 +62,45 @@ public class AgentAutoScaleDockerClientTest {
 	}
 
 
+	public void assumeConnection(AgentAutoScaleDockerClient client) {
+		Exception exception = null;
+		try {
+			dockerClient.ping();
+		} catch(Exception e) {
+			exception = e;
+		}
+		assumeNoException(exception);
+	}
 	@Test
 	public void testCreateContainer1() {
 		String containerName = "HelloUT";
-
-		assumeTrue("OK".equalsIgnoreCase(dockerClient.ping()));
-
 		dockerClient.createContainer(containerName);
-		String containerId = dockerClient.convertNameToId(containerName);
-
-		assumeTrue(containerId != null);
 		dockerClient.removeContainer(containerName);
 		LOG.info("createContainer (try branch) is test...");
 	}
 
 	@Test
 	public void testCreateContainer2() {
-
 		String containerName = "HelloUT";
-
-		assumeTrue("OK".equalsIgnoreCase(dockerClient.ping()));
-
 		dockerClient.createContainer(containerName);
-		String containerId = dockerClient.convertNameToId(containerName);
-		assumeTrue(containerId != null);
 		dockerClient.startContainer(containerName);
-
-		dockerClient.createContainer(containerName);
+		dockerClient.stopContainer(containerName);
 		dockerClient.removeContainer(containerName);
-
-		String containerId2 = dockerClient.convertNameToId(containerName);
-		assertTrue(containerId2 == null);
 		LOG.info("createContainer (catch branch) is test...");
 	}
 
 	@Test
 	public void testCreateAndStartContainer() {
 		String containerName = "HelloUT";
-
-		assumeTrue("OK".equalsIgnoreCase(dockerClient.ping()));
-
 		dockerClient.createAndStartContainer(containerName);
-		String containerId = dockerClient.convertNameToId(containerName);
-		assumeTrue(containerId != null);
-
 		dockerClient.stopContainer(containerName);
 		dockerClient.removeContainer(containerName);
 
-		String containerId2 = dockerClient.convertNameToId(containerName);
-		assertTrue(containerId2 == null);
-		LOG.info("createAndStartContainer is test...");
 	}
 
 	@Test
 	public void stopContainerTest() {
 		String containerName = "HelloUT";
-
-		assumeTrue("OK".equalsIgnoreCase(dockerClient.ping()));
-
 		dockerClient.createContainer(containerName);
 		dockerClient.startContainer(containerName);
 		dockerClient.stopContainer(containerName);
@@ -132,9 +114,6 @@ public class AgentAutoScaleDockerClientTest {
 	@Test
 	public void testStartContainer() {
 		String containerName = "HelloUT";
-
-		assumeTrue("OK".equalsIgnoreCase(dockerClient.ping()));
-
 		dockerClient.createContainer(containerName);
 		dockerClient.startContainer(containerName);
 
@@ -151,8 +130,6 @@ public class AgentAutoScaleDockerClientTest {
 	@Test
 	public void testWaitUtilContainerIsOn() {
 		String containerName = "HelloUT";
-
-		assumeTrue("OK".equalsIgnoreCase(dockerClient.ping()));
 
 		dockerClient.createContainer(containerName);
 		dockerClient.startContainer(containerName);
