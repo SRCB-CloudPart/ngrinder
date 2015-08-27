@@ -2,6 +2,7 @@ package org.ngrinder.agent.service.autoscale;
 
 
 import com.google.common.cache.*;
+import com.google.common.collect.Lists;
 import com.spotify.docker.client.DockerException;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.builder.ToStringBuilder;
@@ -345,11 +346,18 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 
 	protected List<String> getAddresses(VirtualMachine vm) {
 		List<String> result = newArrayList();
+		boolean preferPrivateIp = config.getAgentAutoScaleProperties().getPropertyBoolean(PROP_AGENT_AUTO_SCALE_PREFER_PRIVATE_IP);
+
+		for (RawAddress each : vm.getPublicAddresses()) {
+			result.add(each.getIpAddress());
+		}
+
 		for (RawAddress each : vm.getPrivateAddresses()) {
 			result.add(each.getIpAddress());
 		}
-		for (RawAddress each : vm.getPublicAddresses()) {
-			result.add(each.getIpAddress());
+
+		if (preferPrivateIp) {
+			result = Lists.reverse(result);
 		}
 		return result;
 	}
