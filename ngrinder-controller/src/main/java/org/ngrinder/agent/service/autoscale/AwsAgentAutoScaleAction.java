@@ -2,6 +2,7 @@ package org.ngrinder.agent.service.autoscale;
 
 
 import com.google.common.cache.*;
+import com.spotify.docker.client.DockerException;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.builder.ToStringBuilder;
 import org.apache.commons.lang3.StringUtils;

@@ -1,23 +1,19 @@
 package org.ngrinder.agent.service.autoscale;
 
-import com.beust.jcommander.internal.Lists;
+import com.spotify.docker.client.DockerException;
 import com.spotify.docker.client.messages.ContainerInfo;
 import org.apache.commons.io.IOUtils;
-import org.apache.commons.lang.StringUtils;
-import org.dasein.cloud.network.RawAddress;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
-import org.ngrinder.common.constant.AgentAutoScaleConstants;
-import org.ngrinder.common.model.Home;
 import org.ngrinder.common.util.PropertiesWrapper;
 import org.ngrinder.infra.config.Config;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.File;
+import java.util.List;
 
-import static org.junit.Assert.assertNotNull;
+import static com.google.common.collect.Lists.newArrayList;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assume.assumeNoException;
 import static org.junit.Assume.assumeTrue;
@@ -47,7 +43,8 @@ public class AgentAutoScaleDockerClientTest {
 		when(agentProperties.getProperty(PROP_AGENT_AUTO_SCALE_CONTROLLER_PORT)).thenReturn("8080");
 		when(agentProperties.getProperty(PROP_AGENT_AUTO_SCALE_DOCKER_REPO)).thenReturn("ngrinder/agent");
 		when(agentProperties.getProperty(PROP_AGENT_AUTO_SCALE_DOCKER_TAG)).thenReturn("3.3-p1");
-		dockerClient = new AgentAutoScaleDockerClient(config, "hello", Lists.newArrayList("127.0.0.1"));
+		List<String> address = newArrayList("127.0.0.1");
+		dockerClient = new AgentAutoScaleDockerClient(config, "hello", address);
 		assumeConnection(dockerClient);
 	}
 
@@ -57,7 +54,7 @@ public class AgentAutoScaleDockerClientTest {
 	}
 
 	@Test
-	public void testDockerImageDownload() {
+	public void testDockerImageDownload() throws DockerException, InterruptedException {
 		dockerClient.createAndStartContainer("wow2");
 	}
 
@@ -66,13 +63,14 @@ public class AgentAutoScaleDockerClientTest {
 		Exception exception = null;
 		try {
 			dockerClient.ping();
-		} catch(Exception e) {
+		} catch (Exception e) {
 			exception = e;
 		}
 		assumeNoException(exception);
 	}
+
 	@Test
-	public void testCreateContainer1() {
+	public void testCreateContainer1() throws DockerException, InterruptedException {
 		String containerName = "HelloUT";
 		dockerClient.createContainer(containerName);
 		dockerClient.removeContainer(containerName);
@@ -80,7 +78,7 @@ public class AgentAutoScaleDockerClientTest {
 	}
 
 	@Test
-	public void testCreateContainer2() {
+	public void testCreateContainer2() throws DockerException, InterruptedException {
 		String containerName = "HelloUT";
 		dockerClient.createContainer(containerName);
 		dockerClient.startContainer(containerName);
@@ -90,7 +88,7 @@ public class AgentAutoScaleDockerClientTest {
 	}
 
 	@Test
-	public void testCreateAndStartContainer() {
+	public void testCreateAndStartContainer() throws DockerException, InterruptedException {
 		String containerName = "HelloUT";
 		dockerClient.createAndStartContainer(containerName);
 		dockerClient.stopContainer(containerName);
@@ -99,7 +97,7 @@ public class AgentAutoScaleDockerClientTest {
 	}
 
 	@Test
-	public void stopContainerTest() {
+	public void stopContainerTest() throws DockerException, InterruptedException {
 		String containerName = "HelloUT";
 		dockerClient.createContainer(containerName);
 		dockerClient.startContainer(containerName);
@@ -112,7 +110,7 @@ public class AgentAutoScaleDockerClientTest {
 	}
 
 	@Test
-	public void testStartContainer() {
+	public void testStartContainer() throws DockerException, InterruptedException {
 		String containerName = "HelloUT";
 		dockerClient.createContainer(containerName);
 		dockerClient.startContainer(containerName);
@@ -128,7 +126,7 @@ public class AgentAutoScaleDockerClientTest {
 	}
 
 	@Test
-	public void testWaitUtilContainerIsOn() {
+	public void testWaitUtilContainerIsOn() throws DockerException, InterruptedException {
 		String containerName = "HelloUT";
 
 		dockerClient.createContainer(containerName);
