@@ -10,7 +10,9 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
 /**
- * Created by junoyoon on 15. 7. 29.
+ * Mesos AgentAutoScaleAction
+ *
+ * @since 3.3.2
  */
 @Qualifier("mesos")
 public class MesosAutoScaleAction extends AgentAutoScaleAction {

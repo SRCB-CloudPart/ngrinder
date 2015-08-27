@@ -36,7 +36,7 @@ import static org.ngrinder.common.util.Preconditions.checkNotNull;
 import static org.ngrinder.common.util.ThreadUtils.sleep;
 
 /**
- * Agent auto scale action for aws.
+ * AWS AutoScaleAction.
  */
 @Qualifier("aws")
 public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements RemovalListener<String, VirtualMachine> {
@@ -58,7 +58,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	private Cache<String, VirtualMachine> touchCache = CacheBuilder.newBuilder().expireAfterAccess(60, TimeUnit.MINUTES).removalListener(this).build();
 
 	/**
-	 * Cache b/w virtual machine ID and last touched date
+	 * Cache b/w virtual machine count by state
 	 */
 	private Cache<String, Integer> vmCountCache = CacheBuilder.newBuilder().expireAfterWrite(5, TimeUnit.MINUTES).build();
 
@@ -242,7 +242,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 			 * this waiting can not be removed, else that start container can not be executed...
 			 */
 			activatedNodes = waitUntilVmState(activatedNodes, VmState.RUNNING, 3000);
-			sleep(3000);
+			sleep(2000);
 			List<VirtualMachine> containerStartedNode = newArrayList();
 			for (VirtualMachine each : activatedNodes) {
 				try {
@@ -313,15 +313,6 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	}
 
 
-	/**
-	 * The reason why to use VM ID as the bridge between touchCache and vmCache is that VM will lost IP information,
-	 * and, VM can have the same name (tag:Name or tag:Description in AWS), the VM ID is unique.
-	 * <p/>
-	 * When performance test is on going (start, running or stop),  IP of one VM should be available, because first
-	 * step is to activate nodes, then the node information required should be cached in vmCache.
-	 *
-	 * @param name private IP of node
-	 */
 	@Override
 	public void touch(String name) {
 		synchronized (this) {

@@ -22,8 +22,9 @@ import static org.ngrinder.common.util.Preconditions.checkTrue;
 import static org.ngrinder.common.util.ThreadUtils.sleep;
 
 /**
- * This class is used to control the docker daemon which locates in the created AWS VM. The agent is
- * is running in the docker container running in VM.
+ * This class is used to control the docker daemon which locates in the cloud. <p>
+ * <p/>
+ * The agent is  running in the docker container in VM.
  *
  * @author shihuc
  * @version 3.3.2
@@ -71,6 +72,8 @@ public class AgentAutoScaleDockerClient implements Closeable {
 						.readTimeoutMillis(READ_TIMEOUT_MILLIS)
 						.build();
 				LOG.info("Try to connect {} docker using {}", machineName, daemonUri);
+				// If this fails, docker client will try with another address.
+				dockerClient.ping();
 				return;
 			} catch (Exception e) {
 				// Fall through

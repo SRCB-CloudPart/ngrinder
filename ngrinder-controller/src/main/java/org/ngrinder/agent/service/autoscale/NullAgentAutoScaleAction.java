@@ -7,7 +7,9 @@ import org.ngrinder.perftest.service.AgentManager;
 import org.springframework.beans.factory.annotation.Qualifier;
 
 /**
- * Created by junoyoon on 15. 7. 29.
+ * Null object for AgentAutoScaleAction
+ *
+ * @since 3.3.2
  */
 @Qualifier("null")
 public class NullAgentAutoScaleAction extends AgentAutoScaleAction {

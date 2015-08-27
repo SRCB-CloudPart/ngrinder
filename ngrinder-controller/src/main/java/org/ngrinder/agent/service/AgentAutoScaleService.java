@@ -37,27 +37,11 @@ import static org.ngrinder.common.constant.AgentAutoScaleConstants.PROP_AGENT_AU
 import static org.ngrinder.common.util.ExceptionUtils.processException;
 
 /**
- * Dynamic Agent Provisioning Handler.
- * <p/>
- * This class involves the JClouds API to create node groups which may contain number of instances (e.g. EC2 VM).
- * And, use script to do some required operation about docker image installation and startup. The docker image is
- * from github by default (e.g. $ docker pull ngrinder/agent:3.3).
- * <p/>
- * The agent downloading and starting is done by the agent docker image when docker daemon to run the docker
- * image pulled from github.
- * <p/>
- * DO NOT use root to execute this ngrinder if want to use dynamic agent provisioning.
- * <p/>
- * The operation in the script is as below:
- * <ul>
- * <li>Add node to group</li>
- * <li>Turn off all the nodes in group</li>
- * <li>Turn on all the nodes in group</li>
- * <li>Destroy all the nodes in group</li>
- * </ul>
+ * Agent Auto Scale service.
  *
  * @author shihuc
- * @since 3.4
+ * @author juno
+ * @since 3.3.2
  */
 @Profile("production")
 @Component("agentAutoScaleService")
@@ -95,7 +79,7 @@ public class AgentAutoScaleService {
 		agentAutoScaleAction.destroy();
 	}
 
-	void initAgentAutoScaleService() {
+	synchronized void initAgentAutoScaleService() {
 		agentAutoScaleAction.destroy();
 		agentAutoScaleAction = createAgentAutoScaleAction();
 		agentAutoScaleAction.init(config, agentManager, scheduledTaskService);
@@ -103,7 +87,7 @@ public class AgentAutoScaleService {
 
 
 	AgentAutoScaleAction createAgentAutoScaleAction() {
-		AgentAutoScaleAction action = NULL_AGENT_AUTO_SCALE_ACTION;
+		AgentAutoScaleAction result = NULL_AGENT_AUTO_SCALE_ACTION;
 		String agentAutoScaleType = config.getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_TYPE);
 		try {
 			Class<? extends AgentAutoScaleAction> type = NullAgentAutoScaleAction.class;
@@ -114,13 +98,13 @@ public class AgentAutoScaleService {
 					break;
 				}
 			}
-			action = type.newInstance();
+			result = type.newInstance();
 		} catch (InstantiationException e) {
 			throw processException(e);
 		} catch (IllegalAccessException e) {
 			throw processException(e);
 		}
-		return action;
+		return result;
 	}
 
 
