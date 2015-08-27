@@ -192,11 +192,11 @@ public class NGrinderControllerStarter {
 	/**
 	 * Agent auto scale related props
 	 */
-	@Parameter(names = {"-ast", "--auto-scale-type"}, description = "agent auto scale - type")
+	@Parameter(names = {"-ast", "--auto-scale-type"}, description = "agent auto scale - type : aws only")
 	private String agentAutoScaleType = null;
 
-	@Parameter(names = {"-asgt", "--auto-scale-guard-time"}, description = "agent auto scale - the guard time for agent shutdown")
-	private Integer agentAutoScaleGuardTime = null;
+	@Parameter(names = {"-asr", "--auto-scale-region"}, description = "agent auto scale - region the guard time for agent shutdown")
+	private String agentAutoScaleRegion = null;
 
 	@Parameter(names = {"-asmn", "--auto-scale-max-nodes"}, description = "agent auto scale - the max node count can be created")
 	private Integer agentAutoScaleMaxNodes = null;
@@ -349,7 +349,7 @@ public class NGrinderControllerStarter {
 		setSystemProp("agent.auto_scale.controller_port", svr.agentAutoScaleControllerPort);
 		setSystemProp("agent.auto_scale.docker_repo", svr.agentAutoScaleDockerRepo);
 		setSystemProp("agent.auto_scale.docker_tag", svr.agentAutoScaleDockerTag);
-		setSystemProp("agent.auto_scale.guard_time", svr.agentAutoScaleGuardTime);
+		setSystemProp("agent.auto_sacle.region", svr.agentAutoScaleRegion);
 		setSystemProp("agent.auto_scale.max_nodes", svr.agentAutoScaleMaxNodes);
 	}
 
