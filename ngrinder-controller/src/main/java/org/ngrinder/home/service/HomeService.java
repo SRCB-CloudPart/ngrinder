@@ -20,12 +20,16 @@ import com.sun.syndication.io.XmlReader;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.StringUtils;
 import org.ngrinder.home.model.PanelEntry;
+import org.ngrinder.infra.config.Config;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Component;
 
 import java.net.HttpURLConnection;
+import java.net.InetSocketAddress;
+import java.net.Proxy;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -44,6 +48,9 @@ public class HomeService {
 	private static final int PANEL_ENTRY_SIZE = 6;
 
 	private static final Logger LOG = LoggerFactory.getLogger(HomeService.class);
+
+	@Autowired
+	private Config config;
 
 	/**
 	 * Get the let panel entries from the given feed RUL.
@@ -79,13 +86,20 @@ public class HomeService {
 	 * @return {@link PanelEntry} list
 	 */
 	public List<PanelEntry> getPanelEntries(String feedURL, int maxSize, boolean includeReply) {
+		final String proxyHost = config.getProxyHost();
+		final int proxyPort = config.getProxyPort();
 		SyndFeedInput input = new SyndFeedInput();
 		XmlReader reader = null;
 		HttpURLConnection feedConnection = null;
 		try {
 			List<PanelEntry> panelEntries = new ArrayList<PanelEntry>();
 			URL url = new URL(feedURL);
-			feedConnection = (HttpURLConnection) url.openConnection();
+			if (StringUtils.isNotBlank(proxyHost) && proxyPort != 0) {
+				Proxy proxy = new Proxy(Proxy.Type.HTTP, new InetSocketAddress(proxyHost, proxyPort));
+				feedConnection = (HttpURLConnection) url.openConnection(proxy);
+			} else {
+				feedConnection = (HttpURLConnection) url.openConnection();
+			}
 			feedConnection.setConnectTimeout(4000);
 			feedConnection.setReadTimeout(4000);
 			reader = new XmlReader(feedConnection);
