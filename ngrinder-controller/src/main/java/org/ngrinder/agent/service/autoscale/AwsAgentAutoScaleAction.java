@@ -2,6 +2,7 @@ package org.ngrinder.agent.service.autoscale;
 
 
 import com.google.common.cache.*;
+import com.spotify.docker.client.DockerException;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.builder.ToStringBuilder;
 import org.apache.commons.lang3.StringUtils;
@@ -353,10 +354,11 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 
 	protected List<String> getAddresses(VirtualMachine vm) {
 		List<String> result = newArrayList();
-		for (RawAddress each : vm.getPrivateAddresses()) {
+		//first to try public IP address
+		for (RawAddress each : vm.getPublicAddresses()) {
 			result.add(each.getIpAddress());
 		}
-		for (RawAddress each : vm.getPublicAddresses()) {
+		for (RawAddress each : vm.getPrivateAddresses()) {
 			result.add(each.getIpAddress());
 		}
 		return result;
@@ -372,11 +374,29 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 
 	public void startContainer(VirtualMachine vm) {
 		AgentAutoScaleDockerClient dockerClient = null;
-		try {
-			dockerClient = new AgentAutoScaleDockerClient(config, vm.getProviderMachineImageId(), getAddresses(vm));
-			dockerClient.createAndStartContainer("ngrinder-agent");
-		} finally {
-			IOUtils.closeQuietly(dockerClient);
+		List<String> ips = getAddresses(vm);
+		boolean ok = true;
+		String vmId = vm.getProviderVirtualMachineId();
+		for(String ip: ips) {
+			ok = true;
+			try {
+				dockerClient = new AgentAutoScaleDockerClient(config, vm.getProviderMachineImageId(), ip);
+				dockerClient.createAndStartContainer("ngrinder-agent");
+			} catch (InterruptedException e) {
+				ok = false;
+				LOG.info(e.getMessage());
+			} catch (DockerException e) {
+				ok = false;
+				LOG.info(e.getMessage());
+			} finally {
+				IOUtils.closeQuietly(dockerClient);
+				if(ok){
+					break;
+				}
+			}
+		}
+		if(!ok){
+			throw processException("Docker client operation failed with all the potential IP address of VM: " + vmId);
 		}
 	}
 }

@@ -49,35 +49,35 @@ public class AgentAutoScaleDockerClient implements Closeable {
 	 * Constructor function, in this function to do docker client api initialization.
 	 *
 	 * @param config    used to specify which docker image will be used
-	 * @param addresses the docker daemon addresses
+	 * @param address the docker daemon addresses
 	 */
-	public AgentAutoScaleDockerClient(Config config, String machineName, List<String> addresses) {
+	public AgentAutoScaleDockerClient(Config config, String machineName, String address) {
 		this.region = config.getRegion();
 		this.image = getImageName(config);
 		controllerUrl = getConnectionUrl(config);
-		checkTrue(!addresses.isEmpty(), "Address should contains more than 1 element");
-		for (String each : addresses) {
-			String daemonUri = "http://" + each + ":" + DAEMON_TCP_PORT;
-			try {
-				ProxyAwareDockerClient.Builder builder = ProxyAwareDockerClient.builder();
-				if (StringUtils.isNotEmpty(config.getProxyHost()) && config.getProxyPort() != 0) {
-					builder = builder
-							.proxyHost(config.getProxyHost())
-							.proxyPort(config.getProxyPort());
-				}
-				dockerClient = builder
-						.uri(daemonUri)
-						.connectTimeoutMillis(CONNECT_TIMEOUT_MILLIS)
-						.readTimeoutMillis(READ_TIMEOUT_MILLIS)
-						.build();
-				LOG.info("Try to connect {} docker using {}", machineName, daemonUri);
-				return;
-			} catch (Exception e) {
-				// Fall through
-				LOG.info("Access to {} using {} is failed", machineName, daemonUri);
+		checkTrue(!address.isEmpty(), "Address should contains more than 1 element");
+
+		String daemonUri = "http://" + address + ":" + DAEMON_TCP_PORT;
+		try {
+			ProxyAwareDockerClient.Builder builder = ProxyAwareDockerClient.builder();
+			if (StringUtils.isNotEmpty(config.getProxyHost()) && config.getProxyPort() != 0) {
+				builder = builder
+						.proxyHost(config.getProxyHost())
+						.proxyPort(config.getProxyPort());
 			}
+			dockerClient = builder
+					.uri(daemonUri)
+					.connectTimeoutMillis(CONNECT_TIMEOUT_MILLIS)
+					.readTimeoutMillis(READ_TIMEOUT_MILLIS)
+					.build();
+			LOG.info("Try to connect {} docker using {}", machineName, daemonUri);
+			return;
+		} catch (Exception e) {
+			// Fall through
+			LOG.info("Access to {} using {} is failed", machineName, daemonUri);
 		}
-		throw new NGrinderRuntimeException("No address for " + machineName + " can be connectible ");
+
+		//throw new NGrinderRuntimeException("No address for " + machineName + " can be connectible ");
 	}
 
 	private String getConnectionUrl(Config config) {
@@ -104,7 +104,7 @@ public class AgentAutoScaleDockerClient implements Closeable {
 	 *
 	 * @param containerId the container id or name which to start
 	 */
-	public void createAndStartContainer(String containerId) {
+	public void createAndStartContainer(String containerId) throws DockerException, InterruptedException {
 		createContainer(containerId);
 		startContainer(containerId);
 	}
@@ -137,47 +137,68 @@ public class AgentAutoScaleDockerClient implements Closeable {
 	}
 
 	/**
+	 * This function checks the status of docker daemon connection status, if the ping returns OK, which means
+	 * the connection is ready, and then inspectContainer will not throw exception.
+	 *
+	 * @return boolean the status of whether the http connection is ready.
+	 */
+	private boolean checkHttpConnectionReady(){
+		int ret = 0;
+		while(ret <= 20){
+			try {
+				if(dockerClient.ping().equalsIgnoreCase("OK")){
+					return true;
+				}
+			} catch (Exception e){
+				if(ret % 4 == 0) {
+					LOG.info("Http connection is not ready...({})", ret);
+				}
+				sleep(6000);
+			}
+			ret++;
+		}
+		return false;
+	}
+
+	/**
 	 * Create the docker container with the given name.
 	 *
 	 * @param containerId the container id or name of which to be created
 	 */
-	protected void createContainer(String containerId) {
+	protected void createContainer(String containerId) throws InterruptedException, DockerException {
 		LOG.info("Create docker container: {}", containerId);
 		try {
 			try {
-				try {
-					dockerClient.inspectImage(image);
-				} catch (DockerException e) {
-					LOG.info("Image " + image + " does not exist. Try to download.");
-					dockerClient.pull(image, new ProgressHandler() {
-						@Override
-						public void progress(ProgressMessage message) throws DockerException {
-							LOG.info("Image " + image + " is downloading {}", message.progressDetail());
-						}
-					});
-				}
-
-				/*
-				 * Below function can wait some time until the http connection is ok before timeout
-				 */
-				final ContainerInfo containerInfo = dockerClient.inspectContainer(containerId);
-				if (containerInfo.state().running()) {
-					LOG.info("Container {} is already running, stop it", containerId);
-					dockerClient.stopContainer(containerId, 0);
-				}
-			} catch (ContainerNotFoundException e) {
-				ContainerConfig containerConfig = ContainerConfig.builder()
-						.image(image)
-						.hostConfig(HostConfig.builder().networkMode("host").build())
-						.env("CONTROLLER_ADDR=" + controllerUrl)
-						.env("REGION=" + region)
-						.build();
-				dockerClient.createContainer(containerConfig, containerId);
-				LOG.info("Container {} is creating", containerId);
+				checkHttpConnectionReady();
+				dockerClient.inspectImage(image);
+			} catch (DockerException e) {
+				LOG.info("Image " + image + " does not exist. Try to download.");
+				dockerClient.pull(image, new ProgressHandler() {
+					@Override
+					public void progress(ProgressMessage message) throws DockerException {
+						LOG.info("Image " + image + " is downloading {}", message.progressDetail());
+					}
+				});
 			}
 
-		} catch (Exception e) {
-			throw processException(e);
+			/*
+			 * Below function can wait some time until the http connection is ok before timeout
+			 */
+			checkHttpConnectionReady();
+			final ContainerInfo containerInfo = dockerClient.inspectContainer(containerId);
+			if (containerInfo.state().running()) {
+				LOG.info("Container {} is already running, stop it", containerId);
+				dockerClient.stopContainer(containerId, 0);
+			}
+		} catch (ContainerNotFoundException e) {
+			ContainerConfig containerConfig = ContainerConfig.builder()
+					.image(image)
+					.hostConfig(HostConfig.builder().networkMode("host").build())
+					.env("CONTROLLER_ADDR=" + controllerUrl)
+					.env("REGION=" + region)
+					.build();
+			dockerClient.createContainer(containerConfig, containerId);
+			LOG.info("Container {} is creating", containerId);
 		}
 	}
 
