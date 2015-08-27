@@ -33,7 +33,7 @@ public class AgentAutoScaleDockerClient implements Closeable {
 
 	private DockerClient dockerClient;
 
-	private static final long CONNECT_TIMEOUT_MILLIS = 1000;
+	private static final long CONNECT_TIMEOUT_MILLIS = 2 * 1000;
 	private static final long READ_TIMEOUT_MILLIS = 5 * 1000;
 
 	private static final int DAEMON_TCP_PORT = 10000;
@@ -73,6 +73,7 @@ public class AgentAutoScaleDockerClient implements Closeable {
 				LOG.info("Try to connect {} docker using {}", machineName, daemonUri);
 				// If this fails, docker client will try with another address.
 				dockerClient.ping();
+				LOG.info("connected to {} docker using {}", machineName, daemonUri);
 				return;
 			} catch (Exception e) {
 				// Fall through
