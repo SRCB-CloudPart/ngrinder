@@ -44,7 +44,6 @@ public class AwsAgentAutoScaleDockerClientTest {
 		when(agentProperties.getProperty(PROP_AGENT_AUTO_SCALE_CONTROLLER_PORT)).thenReturn("8080");
 		when(agentProperties.getProperty(PROP_AGENT_AUTO_SCALE_DOCKER_REPO)).thenReturn("ngrinder/agent");
 		when(agentProperties.getProperty(PROP_AGENT_AUTO_SCALE_DOCKER_TAG)).thenReturn("3.3-p1");
-		when(agentProperties.getPropertyInt(PROP_AGENT_AUTO_SCALE_DOCKER_DAEMON_PORT)).thenReturn(10000);
 		if (StringUtils.isNotBlank(System.getProperty("controller.proxy_host"))) {
 			when(config.getProxyHost()).thenReturn(System.getProperty("controller.proxy_host"));
 			when(config.getProxyPort()).thenReturn(Integer.parseInt(System.getProperty("controller.proxy_port")));
@@ -56,7 +55,7 @@ public class AwsAgentAutoScaleDockerClientTest {
 		List<String> address = newArrayList("54.251.21.16");
 		Exception ex = null;
 		try {
-			dockerClient = new AgentAutoScaleDockerClient(config, "hello", address);
+			dockerClient = new AgentAutoScaleDockerClient(config, "hello", address, 10000);
 		} catch (Exception e) {
 			ex = e;
 		}

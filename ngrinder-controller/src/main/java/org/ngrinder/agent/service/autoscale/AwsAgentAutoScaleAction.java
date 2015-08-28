@@ -51,7 +51,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	private ScheduledTaskService scheduledTaskService;
 	private VirtualMachineSupport virtualMachineSupport;
 	private CloudProvider cloudProvider;
-
+	private int daemonPort;
 
 	/**
 	 * Cache b/w virtual machine ID and last touched date
@@ -90,6 +90,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		this.agentManager = agentManager;
 		this.scheduledTaskService = scheduledTaskService;
 		this.tag = getTagString(config);
+		this.daemonPort = config.getAgentAutoScaleProperties().getPropertyInt(PROP_AGENT_AUTO_SCALE_DOCKER_DAEMON_PORT);
 		initFilterMap(config);
 		initComputeService(config);
 
@@ -414,7 +415,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	public void startContainer(VirtualMachine vm) {
 		AgentAutoScaleDockerClient dockerClient = null;
 		try {
-			dockerClient = new AgentAutoScaleDockerClient(config, vm.getProviderMachineImageId(), getAddresses(vm));
+			dockerClient = new AgentAutoScaleDockerClient(config, vm.getProviderMachineImageId(), getAddresses(vm), daemonPort);
 			dockerClient.createAndStartContainer("ngrinder-agent");
 		} finally {
 			IOUtils.closeQuietly(dockerClient);

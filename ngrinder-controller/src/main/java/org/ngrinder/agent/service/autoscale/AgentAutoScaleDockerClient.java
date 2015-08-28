@@ -35,9 +35,6 @@ public class AgentAutoScaleDockerClient implements Closeable {
 
 	private static final long CONNECT_TIMEOUT_MILLIS = 2 * 1000;
 	private static final long READ_TIMEOUT_MILLIS = 5 * 1000;
-
-	private static final int DAEMON_TCP_PORT = 10000;
-
 	/*
 	 * The docker image repository which identifies which image to run agent
 	 */
@@ -51,11 +48,10 @@ public class AgentAutoScaleDockerClient implements Closeable {
 	 * @param config    used to specify which docker image will be used
 	 * @param addresses the docker daemon addresses
 	 */
-	public AgentAutoScaleDockerClient(Config config, String machineName, List<String> addresses) {
+	public AgentAutoScaleDockerClient(Config config, String machineName, List<String> addresses, int daemonPort) {
 		this.region = config.getRegion();
 		this.image = getImageName(config);
 		controllerUrl = getConnectionUrl(config);
-		int daemonPort = config.getAgentAutoScaleProperties().getPropertyInt(PROP_AGENT_AUTO_SCALE_DOCKER_DAEMON_PORT);
 		checkTrue(!addresses.isEmpty(), "Address should contains more than 1 element");
 		for (String each : addresses) {
 			String daemonUri = "http://" + each + ":" + daemonPort;
