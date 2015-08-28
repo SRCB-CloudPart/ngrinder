@@ -43,9 +43,16 @@ public class AgentAutoScaleDockerClientTest {
 		when(agentProperties.getProperty(PROP_AGENT_AUTO_SCALE_CONTROLLER_PORT)).thenReturn("8080");
 		when(agentProperties.getProperty(PROP_AGENT_AUTO_SCALE_DOCKER_REPO)).thenReturn("ngrinder/agent");
 		when(agentProperties.getProperty(PROP_AGENT_AUTO_SCALE_DOCKER_TAG)).thenReturn("3.3-p1");
+		when(agentProperties.getPropertyInt(PROP_AGENT_AUTO_SCALE_DOCKER_DAEMON_PORT)).thenReturn(10000);
 		List<String> address = newArrayList("127.0.0.1");
-		dockerClient = new AgentAutoScaleDockerClient(config, "hello", address);
-		assumeConnection(dockerClient);
+		Exception ex = null;
+		try {
+			dockerClient = new AgentAutoScaleDockerClient(config, "hello", address);
+		} catch (Exception e) {
+			ex = e;
+		}
+		assumeNoException(ex);
+
 	}
 
 	@After
@@ -58,16 +65,6 @@ public class AgentAutoScaleDockerClientTest {
 		dockerClient.createAndStartContainer("wow2");
 	}
 
-
-	public void assumeConnection(AgentAutoScaleDockerClient client) {
-		Exception exception = null;
-		try {
-			dockerClient.ping();
-		} catch (Exception e) {
-			exception = e;
-		}
-		assumeNoException(exception);
-	}
 
 	@Test
 	public void testCreateContainer1() throws DockerException, InterruptedException {
