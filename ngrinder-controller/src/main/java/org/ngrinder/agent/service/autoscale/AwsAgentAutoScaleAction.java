@@ -15,6 +15,7 @@ import org.dasein.cloud.compute.*;
 import org.dasein.cloud.network.RawAddress;
 import org.ngrinder.agent.service.AgentAutoScaleAction;
 import org.ngrinder.agent.service.AgentAutoScaleService;
+import org.ngrinder.common.exception.NGrinderRuntimeException;
 import org.ngrinder.infra.config.Config;
 import org.ngrinder.infra.schedule.ScheduledTaskService;
 import org.ngrinder.perftest.service.AgentManager;
@@ -229,21 +230,8 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	 */
 	protected void activateNodes(List<VirtualMachine> vms) {
 		try {
-			List<VirtualMachine> activatedNodes = newArrayList();
-
-			for (VirtualMachine each : vms) {
-				try {
-					activateNode(each);
-					activatedNodes.add(each);
-				} catch (Exception e) {
-					LOG.error("Failed to activate node {}", each.getProviderVirtualMachineId(), e);
-				}
-			}
-			vmCountCache.invalidate(VM_COUNT_CACHE_STOPPED_NODES);
-			/*
-			 * this waiting can not be removed, else that start container can not be executed...
-			 */
 			final int port = config.getAgentAutoScaleProperties().getPropertyInt(PROP_AGENT_AUTO_SCALE_DOCKER_DAEMON_PORT);
+			List<VirtualMachine> activatedNodes = startNodes(vms);
 			activatedNodes = waitUntilVmState(activatedNodes, VmState.RUNNING, 3 * 1000);
 			activatedNodes = waitUntilPortAvailable(activatedNodes, port, 60 * 1000);
 			activatedNodes = startContainers(activatedNodes);
@@ -251,6 +239,20 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		} catch (Exception e) {
 			throw processException(e);
 		}
+	}
+
+	private List<VirtualMachine> startNodes(List<VirtualMachine> vms) {
+		List<VirtualMachine> result = newArrayList();
+		for (VirtualMachine each : vms) {
+			try {
+				startNodes(each);
+				result.add(each);
+			} catch (Exception e) {
+				LOG.error("Failed to activate node {}", each.getProviderVirtualMachineId(), e);
+			}
+		}
+		vmCountCache.invalidate(VM_COUNT_CACHE_STOPPED_NODES);
+		return result;
 	}
 
 	private void waitUntilAgentOn(List<VirtualMachine> activatedNodes, int checkInterval) {
@@ -309,14 +311,14 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		return result;
 	}
 
-	protected void activateNode(VirtualMachine vm) {
+	protected void startNodes(VirtualMachine vm) {
 		try {
 			VirtualMachineCapabilities capabilities = virtualMachineSupport.getCapabilities();
 			if (capabilities.canStart(vm.getCurrentState())) {
 				LOG.info("VM Activation : activate {} from state {} ...", vm.getProviderVirtualMachineId(), vm.getCurrentState());
 				virtualMachineSupport.start(vm.getProviderVirtualMachineId());
 			} else {
-				LOG.error("VM Activation : can not activate {} from state {}", vm.getProviderVirtualMachineId(), vm.getCurrentState());
+				throw new NGrinderRuntimeException("VM Activation : " + vm.getProviderVirtualMachineId() + " is not the startable state. " + vm.getCurrentState());
 			}
 		} catch (Exception e) {
 			LOG.error("VM Activation : can not activate {}", vm.getProviderVirtualMachineId(), e);
