@@ -55,9 +55,10 @@ public class AgentAutoScaleDockerClient implements Closeable {
 		this.region = config.getRegion();
 		this.image = getImageName(config);
 		controllerUrl = getConnectionUrl(config);
+		int daemonPort = config.getAgentAutoScaleProperties().getPropertyInt(PROP_AGENT_AUTO_SCALE_DOCKER_DAEMON_PORT);
 		checkTrue(!addresses.isEmpty(), "Address should contains more than 1 element");
 		for (String each : addresses) {
-			String daemonUri = "http://" + each + ":" + DAEMON_TCP_PORT;
+			String daemonUri = "http://" + each + ":" + daemonPort;
 			try {
 				ProxyAwareDockerClient.Builder builder = ProxyAwareDockerClient.builder();
 				if (StringUtils.isNotEmpty(config.getProxyHost()) && config.getProxyPort() != 0) {

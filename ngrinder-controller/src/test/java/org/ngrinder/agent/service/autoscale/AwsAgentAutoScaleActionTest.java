@@ -6,6 +6,7 @@ import net.grinder.engine.controller.AgentControllerIdentityImplementation;
 import org.apache.commons.lang3.StringUtils;
 import org.dasein.cloud.compute.VirtualMachine;
 import org.dasein.cloud.compute.VmState;
+import org.hamcrest.Matchers;
 import org.junit.Before;
 import org.junit.Test;
 import org.ngrinder.agent.service.AgentAutoScaleAction;
@@ -20,6 +21,8 @@ import java.util.List;
 import static com.google.common.collect.Lists.newArrayList;
 import static org.fest.assertions.Assertions.assertThat;
 import static org.fest.assertions.Index.atIndex;
+import static org.hamcrest.Matchers.greaterThan;
+import static org.junit.Assume.assumeThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.ngrinder.common.constant.AgentAutoScaleConstants.*;
@@ -43,6 +46,7 @@ public class AwsAgentAutoScaleActionTest {
 		when(agentProperties.getProperty(PROP_AGENT_AUTO_SCALE_CREDENTIAL)).thenReturn(System.getProperty("agent.auto_scale.credential"));
 		when(agentProperties.getProperty(PROP_AGENT_AUTO_SCALE_CONTROLLER_IP)).thenReturn("176.34.4.181");
 		when(agentProperties.getProperty(PROP_AGENT_AUTO_SCALE_CONTROLLER_PORT)).thenReturn("8080");
+		when(agentProperties.getPropertyInt(PROP_AGENT_AUTO_SCALE_DOCKER_DAEMON_PORT)).thenReturn(10000);
 		when(agentProperties.getProperty(PROP_AGENT_AUTO_SCALE_DOCKER_REPO)).thenReturn("ngrinder/agent");
 		when(agentProperties.getProperty(PROP_AGENT_AUTO_SCALE_DOCKER_TAG)).thenReturn("3.3-p1");
 		if (StringUtils.isNotBlank(System.getProperty("controller.proxy_host"))) {
@@ -57,6 +61,7 @@ public class AwsAgentAutoScaleActionTest {
 		when(agentManager.getAllFreeAgents()).thenReturn(Sets.<AgentIdentity>newHashSet(new AgentControllerIdentityImplementation("ww", "10")));
 		MockScheduledTaskService scheduledTaskService = new MockScheduledTaskService();
 		awsAgentAutoScaleAction.init(config, agentManager, scheduledTaskService);
+		assumeThat(awsAgentAutoScaleAction.getActivatableNodeCount(), greaterThan(1));
 	}
 
 

@@ -134,13 +134,31 @@ public abstract class NetworkUtils {
 		return null;
 	}
 
-	public static boolean tryConnection(String byConnecting, int port, Socket socket) {
+	public static boolean tryConnection(String host, int port, int timeout) {
+		Socket s = new Socket();
 		try {
-			socket.connect(new InetSocketAddress(byConnecting, port), 2000); // 2 seconds timeout
+			if (tryConnection(host, port, timeout, s)) {
+				return true;
+			}
+		} finally {
+			IOUtils.closeQuietly(s);
+		}
+		return false;
+	}
+
+
+
+	public static boolean tryConnection(String byConnecting, int port, int timeout, Socket socket) {
+		try {
+			socket.connect(new InetSocketAddress(byConnecting, port), timeout);
 		} catch (Exception e) {
 			return false;
 		}
 		return true;
+	}
+
+	public static boolean tryConnection(String byConnecting, int port, Socket socket) {
+		return tryConnection(byConnecting, port, 2000, socket);
 	}
 
 	static InetAddress getFirstNonLoopbackAddress(boolean preferIpv4, boolean preferIPv6)

@@ -2,8 +2,7 @@ package org.ngrinder.agent.service.autoscale;
 
 
 import com.google.common.cache.*;
-import com.google.common.collect.Lists;
-import com.spotify.docker.client.DockerException;
+import net.grinder.util.NetworkUtils;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.builder.ToStringBuilder;
 import org.apache.commons.lang3.StringUtils;
@@ -24,9 +23,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 
 import java.util.*;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 
 import static com.google.common.collect.Lists.newArrayList;
 import static com.google.common.collect.Sets.newHashSet;
@@ -53,6 +50,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	private ScheduledTaskService scheduledTaskService;
 	private VirtualMachineSupport virtualMachineSupport;
 	private CloudProvider cloudProvider;
+
 
 	/**
 	 * Cache b/w virtual machine ID and last touched date
@@ -93,7 +91,9 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		this.tag = getTagString(config);
 		initFilterMap(config);
 		initComputeService(config);
+
 	}
+
 
 	private String getTagString(Config config) {
 		if (config.isClustered()) {
@@ -243,75 +243,121 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 			/*
 			 * this waiting can not be removed, else that start container can not be executed...
 			 */
-			activatedNodes = waitUntilVmState(activatedNodes, VmState.RUNNING, 3000);
-			sleep(2000);
-			List<VirtualMachine> containerStartedNode = newArrayList();
-			for (VirtualMachine each : activatedNodes) {
-				try {
-					startContainer(each);
-					containerStartedNode.add(each);
-				} catch (Exception e) {
-					LOG.error("Failed to start container in node {}", each.getProviderVirtualMachineId(), e);
-				}
-			}
-
-			if (containerStartedNode.isEmpty()) {
-				return;
-			}
-			//We need more elaborated way to wait， here, wait 15min at most
-			for (int i = 0; i < 650; i++) {
-				if (agentManager.getAllFreeApprovedAgents().size() < containerStartedNode.size()) {
-					sleep(1000);
-				} else {
-					return;
-				}
-			}
+			final int port = config.getAgentAutoScaleProperties().getPropertyInt(PROP_AGENT_AUTO_SCALE_DOCKER_DAEMON_PORT);
+			activatedNodes = waitUntilVmState(activatedNodes, VmState.RUNNING, 3 * 1000);
+			activatedNodes = waitUntilPortAvailable(activatedNodes, port, 60 * 1000);
+			activatedNodes = startContainers(activatedNodes);
+			waitUntilAgentOn(activatedNodes, 1000);
 		} catch (Exception e) {
 			throw processException(e);
 		}
+	}
+
+	private void waitUntilAgentOn(List<VirtualMachine> activatedNodes, int checkInterval) {
+		if (activatedNodes.isEmpty()) {
+			return;
+		}
+		//We need more elaborated way to wait， here, wait 15min at most
+		for (int i = 0; i < 650; i++) {
+			if (agentManager.getAllFreeApprovedAgents().size() < activatedNodes.size()) {
+				sleep(checkInterval);
+			} else {
+				return;
+			}
+		}
+	}
+
+	private List<VirtualMachine> startContainers(List<VirtualMachine> activatedNodes) {
+		List<VirtualMachine> containerStartedNode = newArrayList();
+		for (VirtualMachine each : activatedNodes) {
+			try {
+				LOG.info("Container Starting : Start the container in VM {}", each.getProviderVirtualMachineId());
+				startContainer(each);
+				containerStartedNode.add(each);
+			} catch (Exception e) {
+				LOG.error("Container Starting : Failed to start container in node {}", each.getProviderVirtualMachineId(), e);
+			}
+		}
+		return containerStartedNode;
+	}
+
+	protected List<VirtualMachine> waitUntilPortAvailable(List<VirtualMachine> vms, final int port, final int timeoutmilli) {
+		ExecutorService taskExecutor = Executors.newFixedThreadPool(vms.size());
+		final List<VirtualMachine> result = newArrayList();
+		for (final VirtualMachine each : vms) {
+			taskExecutor.execute(new Runnable() {
+				@Override
+				public void run() {
+					for (String ip : getAddresses(each)) {
+						if (NetworkUtils.tryConnection(ip, port, timeoutmilli)) {
+							LOG.info("Port Activation : {} {}:{} is activated.", new Object[]{each.getProviderVirtualMachineId(), ip, port});
+							result.add(each);
+							return;
+						}
+					}
+					LOG.error("Port Activation : {} port {} is not activated.", each.getProviderVirtualMachineId(), port);
+				}
+			});
+
+		}
+		taskExecutor.shutdown();
+		try {
+			taskExecutor.awaitTermination(timeoutmilli, TimeUnit.MILLISECONDS);
+		} catch (InterruptedException e) {
+			throw processException(e);
+		}
+		return result;
 	}
 
 	protected void activateNode(VirtualMachine vm) {
 		try {
 			VirtualMachineCapabilities capabilities = virtualMachineSupport.getCapabilities();
 			if (capabilities.canStart(vm.getCurrentState())) {
-				LOG.info("Activating {} from state {} ...", vm.getProviderVirtualMachineId(), vm.getCurrentState());
+				LOG.info("VM Activation : activate {} from state {} ...", vm.getProviderVirtualMachineId(), vm.getCurrentState());
 				virtualMachineSupport.start(vm.getProviderVirtualMachineId());
 			} else {
-				LOG.info("You cannot activate a VM in the state {} ...", vm.getCurrentState());
+				LOG.error("VM Activation : can not activate {} from state {}", vm.getProviderVirtualMachineId(), vm.getCurrentState());
 			}
 		} catch (Exception e) {
+			LOG.error("VM Activation : can not activate {}", vm.getProviderVirtualMachineId(), e);
 			throw processException(e);
 		}
 	}
 
-	protected List<VirtualMachine> waitUntilVmState(List<VirtualMachine> vms, VmState vmState, int millisec) {
-		List<VirtualMachine> result = newArrayList();
-		for (VirtualMachine each : vms) {
-			VirtualMachine vm = getVirtualMachine(each.getProviderVirtualMachineId());
-			int tries = 0;
-			try {
-				while (vm != null && !vm.getCurrentState().equals(vmState)) {
-					sleep(millisec);
-					vm = getVirtualMachine(each.getProviderVirtualMachineId());
-					if (tries++ >= 20) {
-						LOG.info("after 20 tries, it's failed to make the vm to " + vmState.name());
-						break;
+	protected List<VirtualMachine> waitUntilVmState(List<VirtualMachine> vms, final VmState vmState, final int millisec) {
+		final int MAX_RETRY = 20;
+		final List<VirtualMachine> result = newArrayList();
+		ExecutorService taskExecutor = Executors.newFixedThreadPool(vms.size());
+		for (final VirtualMachine each : vms) {
+			taskExecutor.submit(new Runnable() {
+				@Override
+				public void run() {
+					final String providerVirtualMachineId = each.getProviderVirtualMachineId();
+					for (int i = 0; i < MAX_RETRY; i++) {
+						VirtualMachine vm = getVirtualMachine(providerVirtualMachineId);
+						if (vm == null) {
+							LOG.error("VM {} self-terminated before entering a usable state", providerVirtualMachineId);
+							return;
+						}
+						if (vm.getCurrentState().equals(vmState)) {
+							LOG.info("Node {}  State change complete ({}), PubIP: {}, PriIP {} ",
+									new Object[]{providerVirtualMachineId, vm.getCurrentState(), reflectionToString(vm.getPublicAddresses()), reflectionToString(vm.getPrivateAddresses())});
+							result.add(vm);
+							return;
+						}
+						sleep(millisec);
 					}
+					LOG.error("Waiting for VM {}  has been failed", providerVirtualMachineId);
 				}
-			} catch (Exception e) {
-				LOG.error("Waiting for VM " + vm.getProviderVirtualMachineId() + " has beend failed", e);
-			}
-			if (vm == null) {
-				LOG.info("VM self-terminated before entering a usable state");
-			} else {
-				result.add(vm);
-				LOG.info("Node {}  State change complete ({}), PubIP: {}, PriIP {} ",
-						new Object[]{vm.getProviderVirtualMachineId(), vm.getCurrentState(), reflectionToString(vm.getPublicAddresses()), reflectionToString(vm.getPrivateAddresses())});
-			}
+			});
+		}
+		taskExecutor.shutdown();
+		try {
+			taskExecutor.awaitTermination(millisec * MAX_RETRY, TimeUnit.MILLISECONDS);
+		} catch (InterruptedException e) {
+			throw processException(e);
 		}
 		return result;
-
 	}
 
 
@@ -348,16 +394,9 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		List<String> result = newArrayList();
 		boolean preferPrivateIp = config.getAgentAutoScaleProperties().getPropertyBoolean(PROP_AGENT_AUTO_SCALE_PREFER_PRIVATE_IP);
 
-		for (RawAddress each : vm.getPublicAddresses()) {
+		RawAddress[] addresses = preferPrivateIp ? vm.getPrivateAddresses() : vm.getPublicAddresses();
+		for (RawAddress each : addresses) {
 			result.add(each.getIpAddress());
-		}
-
-		for (RawAddress each : vm.getPrivateAddresses()) {
-			result.add(each.getIpAddress());
-		}
-
-		if (preferPrivateIp) {
-			result = Lists.reverse(result);
 		}
 		return result;
 	}
