@@ -172,12 +172,18 @@ public class AgentAutoScaleDockerClient implements Closeable {
 					LOG.info("Container {} is already running, stop it", containerId);
 					dockerClient.stopContainer(containerId, 0);
 				}
+
+				if (!containerInfo.config().env().contains("CONTROLLER_ADDR=" + controllerUrl)) {
+					dockerClient.removeContainer(containerId);
+					LOG.error("Wrong CONTROLLER_ADDR ADDR {}. Create New One with {}", machineName, controllerUrl);
+					throw new ContainerNotFoundException("Wrong CONTROLLER_ADDR ADDR. Create New One");
+				}
+
 			} catch (ContainerNotFoundException e) {
 				ContainerConfig containerConfig = ContainerConfig.builder()
 						.image(image)
 						.hostConfig(HostConfig.builder().networkMode("host").build())
-						.env("CONTROLLER_ADDR=" + controllerUrl)
-						.env("REGION=" + region)
+						.env("CONTROLLER_ADDR=" + controllerUrl, "REGION=" + region)
 						.build();
 				dockerClient.createContainer(containerConfig, containerId);
 				LOG.info("Container {} is creating", containerId);
