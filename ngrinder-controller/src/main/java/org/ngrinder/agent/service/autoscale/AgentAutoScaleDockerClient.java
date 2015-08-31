@@ -33,7 +33,7 @@ public class AgentAutoScaleDockerClient implements Closeable {
 
 	private DockerClient dockerClient;
 
-	private static final long CONNECT_TIMEOUT_MILLIS = 2 * 1000;
+	private static final long CONNECT_TIMEOUT_MILLIS = 3 * 1000;
 	private static final long READ_TIMEOUT_MILLIS = 20 * 1000;
 	/*
 	 * The docker image repository which identifies which image to run agent
