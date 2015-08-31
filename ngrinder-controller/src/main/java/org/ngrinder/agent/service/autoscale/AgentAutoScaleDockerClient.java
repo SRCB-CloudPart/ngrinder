@@ -34,7 +34,7 @@ public class AgentAutoScaleDockerClient implements Closeable {
 	private DockerClient dockerClient;
 
 	private static final long CONNECT_TIMEOUT_MILLIS = 2 * 1000;
-	private static final long READ_TIMEOUT_MILLIS = 5 * 1000;
+	private static final long READ_TIMEOUT_MILLIS = 20 * 1000;
 	/*
 	 * The docker image repository which identifies which image to run agent
 	 */
@@ -145,41 +145,38 @@ public class AgentAutoScaleDockerClient implements Closeable {
 	 * @param containerId the container id or name of which to be created
 	 */
 	protected void createContainer(String containerId) {
-		LOG.info("Create docker container: {}", containerId);
+		boolean createNew = false;
 		try {
 			try {
-				try {
-					dockerClient.inspectImage(image);
-				} catch (DockerException e) {
-					LOG.info("Image " + image + " does not exist. Try to download.");
-					try {
-						dockerClient.pull(image, new ProgressHandler() {
-							@Override
-							public void progress(ProgressMessage message) throws DockerException {
-								LOG.info("Image " + image + " is downloading {}", message.progressDetail());
-							}
-						});
-					} catch (DockerException ex) {
-						throw processException("docker image can not be pullable", ex);
+				LOG.info("Create docker container: {}", containerId);
+				dockerClient.inspectImage(image);
+			} catch (DockerException e) {
+				LOG.info("Image " + image + " does not exist. Try to download.");
+				dockerClient.pull(image, new ProgressHandler() {
+					@Override
+					public void progress(ProgressMessage message) throws DockerException {
+						LOG.info("Image " + image + " is downloading {}", message.progressDetail());
 					}
-				}
+				});
+			}
 
-				/*
-				 * Below function can wait some time until the http connection is ok before timeout
-				 */
+			try {
 				final ContainerInfo containerInfo = dockerClient.inspectContainer(containerId);
 				if (containerInfo.state().running()) {
 					LOG.info("Container {} is already running, stop it", containerId);
 					dockerClient.stopContainer(containerId, 0);
 				}
-
+				// to be safe
 				if (!containerInfo.config().env().contains("CONTROLLER_ADDR=" + controllerUrl)) {
 					dockerClient.removeContainer(containerId);
-					LOG.error("Wrong CONTROLLER_ADDR ADDR {}. Create New One with {}", machineName, controllerUrl);
-					throw new ContainerNotFoundException("Wrong CONTROLLER_ADDR ADDR. Create New One");
+					LOG.error("Wrong CONTROLLER_ADDR {}. Create New One with {}", machineName, controllerUrl);
+					createNew = true;
 				}
-
 			} catch (ContainerNotFoundException e) {
+				createNew = true;
+			}
+
+			if (createNew) {
 				ContainerConfig containerConfig = ContainerConfig.builder()
 						.image(image)
 						.hostConfig(HostConfig.builder().networkMode("host").build())
@@ -188,10 +185,10 @@ public class AgentAutoScaleDockerClient implements Closeable {
 				dockerClient.createContainer(containerConfig, containerId);
 				LOG.info("Container {} is creating", containerId);
 			}
-
 		} catch (Exception e) {
 			throw processException(e);
 		}
+
 	}
 
 	public ContainerInfo waitUtilContainerIsOn(String containerId) {
