@@ -180,7 +180,9 @@ public class AgentAutoScaleDockerClient implements Closeable {
 				ContainerConfig containerConfig = ContainerConfig.builder()
 						.image(image)
 						.hostConfig(HostConfig.builder().networkMode("host").build())
-						.env("CONTROLLER_ADDR=" + controllerUrl, "REGION=" + region)
+						.env("CONTROLLER_ADDR=" + controllerUrl,
+								"REGION=" + region,
+								"HOST_ID=" + machineName)
 						.build();
 				dockerClient.createContainer(containerConfig, containerId);
 				LOG.info("Container {} is creating", containerId);

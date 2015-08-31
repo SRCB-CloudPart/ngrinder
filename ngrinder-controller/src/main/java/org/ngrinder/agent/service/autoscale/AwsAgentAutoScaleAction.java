@@ -42,7 +42,7 @@ import static org.ngrinder.common.util.ThreadUtils.sleep;
  * AWS AutoScaleAction.
  */
 @Qualifier("aws")
-public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements RemovalListener<String, VirtualMachine> {
+public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements RemovalListener<String, Boolean> {
 
 	private static final Logger LOG = LoggerFactory.getLogger(AwsAgentAutoScaleAction.class);
 	private static final String NGRINDER_AGENT_TAG_KEY = "ngrinder-agent";
@@ -59,7 +59,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	/**
 	 * Cache b/w virtual machine ID and last touched date
 	 */
-	private Cache<String, VirtualMachine> touchCache = CacheBuilder.newBuilder().expireAfterAccess(60, TimeUnit.MINUTES).removalListener(this).build();
+	private Cache<String, Boolean> touchCache = CacheBuilder.newBuilder().expireAfterAccess(60, TimeUnit.MINUTES).removalListener(this).build();
 
 	/**
 	 * Cache b/w virtual machine count by state
@@ -103,7 +103,15 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 
 		initFilterMap(config);
 		initComputeService(config);
+		initCache(config);
+	}
 
+	private void initCache(Config config) {
+		for (VirtualMachine vm : listAllVM()) {
+			if (vm.getCurrentState() != VmState.STOPPED) {
+				touchCache.put(vm.getProviderVirtualMachineId(), true);
+			}
+		}
 	}
 
 
@@ -223,7 +231,8 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 			return vmCountCache.get(VM_COUNT_CACHE_STOPPED_NODES, new Callable<Integer>() {
 				@Override
 				public Integer call() throws Exception {
-					return Math.min(listVMByState(newHashSet(VmState.STOPPED)).size(),
+					final int size = listVMByState(newHashSet(VmState.STOPPED)).size();
+					return Math.min(size,
 							config.getAgentAutoScaleProperties().getPropertyInt(PROP_AGENT_AUTO_SCALE_MAX_NODES));
 				}
 			});
@@ -297,7 +306,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	List<VirtualMachine> waitUntilPortAvailable(List<VirtualMachine> vms, final int port, final int timeoutmilli) {
 		ExecutorService taskExecutor = Executors.newFixedThreadPool(vms.size());
 		final List<VirtualMachine> result = synchronizedList(new ArrayList<VirtualMachine>());
-		final int timeout = (proxy == null) ? (timeoutmilli / 20) : 2000;
+		final int timeout = (proxy == null) ? (timeoutmilli / 20) : 4000;
 		for (final VirtualMachine each : vms) {
 			taskExecutor.execute(new Runnable() {
 				@Override
@@ -385,12 +394,12 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	@Override
 	public void touch(String name) {
 		synchronized (this) {
-			touchCache.getIfPresent(name);
+			touchCache.put(name, true);
 		}
 	}
 
 	@Override
-	public void onRemoval(RemovalNotification<String, VirtualMachine> removal) {
+	public void onRemoval(RemovalNotification<String, Boolean> removal) {
 		synchronized (this) {
 			final String key = removal.getKey();
 			RemovalCause removalCause = removal.getCause();
@@ -433,7 +442,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	public void startContainer(VirtualMachine vm) {
 		AgentAutoScaleDockerClient dockerClient = null;
 		try {
-			dockerClient = new AgentAutoScaleDockerClient(config, vm.getProviderMachineImageId(), getAddresses(vm), daemonPort);
+			dockerClient = new AgentAutoScaleDockerClient(config, vm.getProviderVirtualMachineId(), getAddresses(vm), daemonPort);
 			dockerClient.createAndStartContainer("ngrinder-agent");
 		} finally {
 			IOUtils.closeQuietly(dockerClient);
