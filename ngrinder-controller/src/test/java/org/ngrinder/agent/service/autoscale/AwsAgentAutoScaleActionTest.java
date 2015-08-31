@@ -49,6 +49,7 @@ public class AwsAgentAutoScaleActionTest {
 		when(agentProperties.getPropertyInt(PROP_AGENT_AUTO_SCALE_DOCKER_DAEMON_PORT)).thenReturn(10000);
 		when(agentProperties.getProperty(PROP_AGENT_AUTO_SCALE_DOCKER_REPO)).thenReturn("ngrinder/agent");
 		when(agentProperties.getProperty(PROP_AGENT_AUTO_SCALE_DOCKER_TAG)).thenReturn("3.3-p1");
+		when(agentProperties.getPropertyInt(PROP_AGENT_AUTO_SCALE_MAX_NODES)).thenReturn(2);
 		if (StringUtils.isNotBlank(System.getProperty("controller.proxy_host"))) {
 			when(config.getProxyHost()).thenReturn(System.getProperty("controller.proxy_host"));
 			when(config.getProxyPort()).thenReturn(Integer.parseInt(System.getProperty("controller.proxy_port")));
@@ -63,7 +64,6 @@ public class AwsAgentAutoScaleActionTest {
 		awsAgentAutoScaleAction.init(config, agentManager, scheduledTaskService);
 		assumeThat(awsAgentAutoScaleAction.getActivatableNodeCount(), greaterThan(1));
 	}
-
 
 	@Test
 	public void testActivateNodes() throws AgentAutoScaleService.NotSufficientAvailableNodeException {
