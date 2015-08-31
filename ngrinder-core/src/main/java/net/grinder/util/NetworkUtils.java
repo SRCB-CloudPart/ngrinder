@@ -24,7 +24,9 @@ import javax.naming.Context;
 import javax.naming.NamingException;
 import javax.naming.directory.DirContext;
 import javax.naming.directory.InitialDirContext;
+import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.*;
 import java.util.ArrayList;
 import java.util.Enumeration;
@@ -134,6 +136,43 @@ public abstract class NetworkUtils {
 		return null;
 	}
 
+	public static boolean tryHttpConnection(String target, int timeout, Proxy proxy) {
+		URL url;
+		HttpURLConnection feedConnection = null;
+		InputStream inputStream = null;
+		try {
+			url = new URL(target);
+			if (proxy != null) {
+				feedConnection = (HttpURLConnection) url.openConnection(proxy);
+			} else {
+				feedConnection = (HttpURLConnection) url.openConnection();
+			}
+			feedConnection.setConnectTimeout(timeout);
+			feedConnection.setReadTimeout(timeout);
+			feedConnection.connect();
+			inputStream = feedConnection.getInputStream();
+			return true;
+		} catch (ConnectException e) {
+			return false;
+		} catch (SocketTimeoutException e) {
+			return false;
+		} catch (FileNotFoundException e) {
+			return true;
+		} catch (Exception e) {
+			return false;
+		} finally {
+			IOUtils.closeQuietly(inputStream);
+			if (feedConnection != null) {
+				try {
+					feedConnection.disconnect();
+				} catch (Exception e) {
+					// Fall through
+				}
+			}
+		}
+	}
+
+
 	public static boolean tryConnection(String host, int port, int timeout) {
 		Socket s = new Socket();
 		try {
@@ -145,7 +184,6 @@ public abstract class NetworkUtils {
 		}
 		return false;
 	}
-
 
 
 	public static boolean tryConnection(String byConnecting, int port, int timeout, Socket socket) {

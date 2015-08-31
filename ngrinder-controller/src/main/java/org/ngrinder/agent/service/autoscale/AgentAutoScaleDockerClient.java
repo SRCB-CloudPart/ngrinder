@@ -41,6 +41,7 @@ public class AgentAutoScaleDockerClient implements Closeable {
 	private final String image;
 	private final String controllerUrl;
 	private final String region;
+	private String machineName;
 
 	/**
 	 * Constructor function, in this function to do docker client api initialization.
@@ -49,6 +50,7 @@ public class AgentAutoScaleDockerClient implements Closeable {
 	 * @param addresses the docker daemon addresses
 	 */
 	public AgentAutoScaleDockerClient(Config config, String machineName, List<String> addresses, int daemonPort) {
+		this.machineName = machineName;
 		this.region = config.getRegion();
 		this.image = getImageName(config);
 		controllerUrl = getConnectionUrl(config);
@@ -116,8 +118,8 @@ public class AgentAutoScaleDockerClient implements Closeable {
 	 */
 	public void stopContainer(String containerId) {
 		try {
+			LOG.info("Stop docker container: {} in {}", containerId, machineName);
 			dockerClient.stopContainer(containerId, 1);
-			LOG.info("Stop docker container: {}", containerId);
 		} catch (Exception e) {
 			throw processException(e);
 		}
@@ -130,6 +132,7 @@ public class AgentAutoScaleDockerClient implements Closeable {
 	 */
 	protected void startContainer(String containerId) {
 		try {
+			LOG.info("Start docker container: {} in {}", containerId, machineName);
 			dockerClient.startContainer(containerId);
 		} catch (Exception e) {
 			throw processException(e);
@@ -149,12 +152,16 @@ public class AgentAutoScaleDockerClient implements Closeable {
 					dockerClient.inspectImage(image);
 				} catch (DockerException e) {
 					LOG.info("Image " + image + " does not exist. Try to download.");
-					dockerClient.pull(image, new ProgressHandler() {
-						@Override
-						public void progress(ProgressMessage message) throws DockerException {
-							LOG.info("Image " + image + " is downloading {}", message.progressDetail());
-						}
-					});
+					try {
+						dockerClient.pull(image, new ProgressHandler() {
+							@Override
+							public void progress(ProgressMessage message) throws DockerException {
+								LOG.info("Image " + image + " is downloading {}", message.progressDetail());
+							}
+						});
+					} catch (DockerException ex) {
+						throw processException("docker image can not be pullable", ex);
+					}
 				}
 
 				/*

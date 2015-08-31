@@ -2,7 +2,6 @@ package org.ngrinder.agent.service.autoscale;
 
 
 import com.google.common.cache.*;
-import net.grinder.util.NetworkUtils;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.builder.ToStringBuilder;
 import org.apache.commons.lang3.StringUtils;
@@ -23,11 +22,15 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 
+import java.net.InetSocketAddress;
+import java.net.Proxy;
 import java.util.*;
 import java.util.concurrent.*;
 
 import static com.google.common.collect.Lists.newArrayList;
 import static com.google.common.collect.Sets.newHashSet;
+import static java.util.Collections.synchronizedList;
+import static net.grinder.util.NetworkUtils.tryHttpConnection;
 import static org.apache.commons.lang3.builder.ToStringBuilder.reflectionToString;
 import static org.ngrinder.common.constant.AgentAutoScaleConstants.*;
 import static org.ngrinder.common.util.ExceptionUtils.processException;
@@ -69,6 +72,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	 */
 	private String tag;
 
+	private Proxy proxy;
 
 	@Override
 	public String getDiagnosticInfo() {
@@ -91,6 +95,12 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		this.scheduledTaskService = scheduledTaskService;
 		this.tag = getTagString(config);
 		this.daemonPort = config.getAgentAutoScaleProperties().getPropertyInt(PROP_AGENT_AUTO_SCALE_DOCKER_DAEMON_PORT);
+		final String proxyHost = config.getProxyHost();
+		final int proxyPort = config.getProxyPort();
+		if (StringUtils.isNotBlank(proxyHost) && proxyPort != 0) {
+			this.proxy = new Proxy(Proxy.Type.HTTP, new InetSocketAddress(proxyHost, proxyPort));
+		}
+
 		initFilterMap(config);
 		initComputeService(config);
 
@@ -197,8 +207,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 			return vmCountCache.get(VM_COUNT_CACHE_TOTAL_NODES, new Callable<Integer>() {
 				@Override
 				public Integer call() throws Exception {
-					return Math.min(listAllVM().size(),
-							config.getAgentAutoScaleProperties().getPropertyInt(PROP_AGENT_AUTO_SCALE_MAX_NODES));
+					return listAllVM().size();
 				}
 			});
 		} catch (ExecutionException e) {
@@ -213,8 +222,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 			return vmCountCache.get(VM_COUNT_CACHE_STOPPED_NODES, new Callable<Integer>() {
 				@Override
 				public Integer call() throws Exception {
-					return Math.min(listVMByState(newHashSet(VmState.STOPPED)).size(),
-							config.getAgentAutoScaleProperties().getPropertyInt(PROP_AGENT_AUTO_SCALE_MAX_NODES));
+					return listVMByState(newHashSet(VmState.STOPPED)).size();
 				}
 			});
 		} catch (ExecutionException e) {
@@ -229,7 +237,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	 *
 	 * @param vms virtual machines to be activated.
 	 */
-	protected void activateNodes(List<VirtualMachine> vms) {
+	void activateNodes(List<VirtualMachine> vms) {
 		try {
 			final int port = config.getAgentAutoScaleProperties().getPropertyInt(PROP_AGENT_AUTO_SCALE_DOCKER_DAEMON_PORT);
 			List<VirtualMachine> activatedNodes = startNodes(vms);
@@ -242,7 +250,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		}
 	}
 
-	private List<VirtualMachine> startNodes(List<VirtualMachine> vms) {
+	List<VirtualMachine> startNodes(List<VirtualMachine> vms) {
 		List<VirtualMachine> result = newArrayList();
 		for (VirtualMachine each : vms) {
 			try {
@@ -256,7 +264,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		return result;
 	}
 
-	private void waitUntilAgentOn(List<VirtualMachine> activatedNodes, int checkInterval) {
+	void waitUntilAgentOn(List<VirtualMachine> activatedNodes, int checkInterval) {
 		if (activatedNodes.isEmpty()) {
 			return;
 		}
@@ -270,7 +278,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		}
 	}
 
-	private List<VirtualMachine> startContainers(List<VirtualMachine> activatedNodes) {
+	List<VirtualMachine> startContainers(List<VirtualMachine> activatedNodes) {
 		List<VirtualMachine> containerStartedNode = newArrayList();
 		for (VirtualMachine each : activatedNodes) {
 			try {
@@ -284,24 +292,32 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		return containerStartedNode;
 	}
 
-	protected List<VirtualMachine> waitUntilPortAvailable(List<VirtualMachine> vms, final int port, final int timeoutmilli) {
+	List<VirtualMachine> waitUntilPortAvailable(List<VirtualMachine> vms, final int port, final int timeoutmilli) {
 		ExecutorService taskExecutor = Executors.newFixedThreadPool(vms.size());
-		final List<VirtualMachine> result = newArrayList();
+		final List<VirtualMachine> result = synchronizedList(new ArrayList<VirtualMachine>());
+		final int timeout = (proxy == null) ? (timeoutmilli / 20) : 2000;
 		for (final VirtualMachine each : vms) {
 			taskExecutor.execute(new Runnable() {
 				@Override
 				public void run() {
-					for (String ip : getAddresses(each)) {
-						if (NetworkUtils.tryConnection(ip, port, timeoutmilli)) {
-							LOG.info("Port Activation : {} {}:{} is activated.", new Object[]{each.getProviderVirtualMachineId(), ip, port});
-							result.add(each);
-							return;
+					for (int i = 0; i < 20; i++) {
+						for (String ip : getAddresses(each)) {
+							String url = "http://" + ip + ":" + daemonPort;
+							LOG.info("Port Activation : try to connect {}", url);
+
+							if (tryHttpConnection(url, timeout, proxy)) {
+								LOG.info("Port Activation : {} {} is activated.", each.getProviderVirtualMachineId(), url);
+								result.add(each);
+								return;
+							}
+							if (proxy != null) {
+								sleep(timeout);
+							}
 						}
 					}
 					LOG.error("Port Activation : {} port {} is not activated.", each.getProviderVirtualMachineId(), port);
 				}
 			});
-
 		}
 		taskExecutor.shutdown();
 		try {
@@ -312,7 +328,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		return result;
 	}
 
-	protected void startNodes(VirtualMachine vm) {
+	void startNodes(VirtualMachine vm) {
 		try {
 			VirtualMachineCapabilities capabilities = virtualMachineSupport.getCapabilities();
 			if (capabilities.canStart(vm.getCurrentState())) {
@@ -327,9 +343,9 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		}
 	}
 
-	protected List<VirtualMachine> waitUntilVmState(List<VirtualMachine> vms, final VmState vmState, final int millisec) {
+	List<VirtualMachine> waitUntilVmState(List<VirtualMachine> vms, final VmState vmState, final int millisec) {
 		final int MAX_RETRY = 20;
-		final List<VirtualMachine> result = newArrayList();
+		final List<VirtualMachine> result = synchronizedList(new ArrayList<VirtualMachine>());
 		ExecutorService taskExecutor = Executors.newFixedThreadPool(vms.size());
 		for (final VirtualMachine each : vms) {
 			taskExecutor.submit(new Runnable() {

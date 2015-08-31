@@ -29,6 +29,5 @@ public interface AgentAutoScaleConstants {
     String PROP_AGENT_AUTO_SCALE_CONTROLLER_IP = "agent.auto_scale.controller_ip";
     String PROP_AGENT_AUTO_SCALE_CONTROLLER_PORT = "agent.auto_scale.controller_port";
     String PROP_AGENT_AUTO_SCALE_REGION = "agent.auto_scale.region";
-    String PROP_AGENT_AUTO_SCALE_MAX_NODES = "agent.auto_scale.max_nodes";
 
 }
