@@ -207,7 +207,8 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 			return vmCountCache.get(VM_COUNT_CACHE_TOTAL_NODES, new Callable<Integer>() {
 				@Override
 				public Integer call() throws Exception {
-					return listAllVM().size();
+					return Math.min(listAllVM().size(),
+							config.getAgentAutoScaleProperties().getPropertyInt(PROP_AGENT_AUTO_SCALE_MAX_NODES));
 				}
 			});
 		} catch (ExecutionException e) {
@@ -222,7 +223,8 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 			return vmCountCache.get(VM_COUNT_CACHE_STOPPED_NODES, new Callable<Integer>() {
 				@Override
 				public Integer call() throws Exception {
-					return listVMByState(newHashSet(VmState.STOPPED)).size();
+					return Math.min(listVMByState(newHashSet(VmState.STOPPED)).size(),
+							config.getAgentAutoScaleProperties().getPropertyInt(PROP_AGENT_AUTO_SCALE_MAX_NODES));
 				}
 			});
 		} catch (ExecutionException e) {

@@ -20,7 +20,6 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction {
 
 	@Override
 	public void init(Config config, AgentManager agentManager, ScheduledTaskService scheduledTaskService) {
-
 	}
 
 	@Override
