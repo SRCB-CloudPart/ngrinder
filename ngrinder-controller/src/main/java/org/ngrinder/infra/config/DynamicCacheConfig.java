@@ -174,7 +174,7 @@ public class DynamicCacheConfig implements ClusterConstants {
 
 
 	public String getClusterHostName() {
-		String hostName = config.getClusterProperties().getProperty(PROP_CLUSTER_HOST, NetworkUtils.DEFAULT_LOCAL_HOST_ADDRESS);
+		String hostName = config.getControllerAdvertisedHost();
 		try {
 			//noinspection ResultOfMethodCallIgnored
 			InetAddress.getByName(hostName);

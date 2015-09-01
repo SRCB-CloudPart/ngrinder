@@ -1,7 +1,11 @@
 package org.ngrinder.agent.service.autoscale;
 
 
-import com.google.common.cache.*;
+import com.google.common.cache.Cache;
+import com.google.common.cache.RemovalCause;
+import com.google.common.cache.RemovalListener;
+import com.google.common.cache.RemovalNotification;
+import com.google.common.collect.Sets;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.builder.ToStringBuilder;
 import org.apache.commons.lang3.StringUtils;
@@ -12,9 +16,11 @@ import org.dasein.cloud.ProviderContext;
 import org.dasein.cloud.aws.AWSCloud;
 import org.dasein.cloud.compute.*;
 import org.dasein.cloud.network.RawAddress;
+import org.ngrinder.agent.model.AutoScaleNode;
 import org.ngrinder.agent.service.AgentAutoScaleAction;
 import org.ngrinder.agent.service.AgentAutoScaleService;
 import org.ngrinder.common.exception.NGrinderRuntimeException;
+import org.ngrinder.common.util.Suppliers.Supplier;
 import org.ngrinder.infra.config.Config;
 import org.ngrinder.infra.schedule.ScheduledTaskService;
 import org.ngrinder.perftest.service.AgentManager;
@@ -25,10 +31,12 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import java.net.InetSocketAddress;
 import java.net.Proxy;
 import java.util.*;
-import java.util.concurrent.*;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
+import static com.google.common.cache.CacheBuilder.newBuilder;
 import static com.google.common.collect.Lists.newArrayList;
-import static com.google.common.collect.Sets.newHashSet;
 import static java.util.Collections.synchronizedList;
 import static net.grinder.util.NetworkUtils.tryHttpConnection;
 import static org.apache.commons.lang3.builder.ToStringBuilder.reflectionToString;
@@ -36,42 +44,40 @@ import static org.ngrinder.common.constant.AgentAutoScaleConstants.*;
 import static org.ngrinder.common.util.ExceptionUtils.processException;
 import static org.ngrinder.common.util.Preconditions.checkNotEmpty;
 import static org.ngrinder.common.util.Preconditions.checkNotNull;
+import static org.ngrinder.common.util.Suppliers.memoizeWithExpiration;
+import static org.ngrinder.common.util.Suppliers.synchronizedSupplier;
 import static org.ngrinder.common.util.ThreadUtils.sleep;
 
 /**
  * AWS AutoScaleAction.
  */
 @Qualifier("aws")
-public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements RemovalListener<String, Boolean> {
+public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements RemovalListener<String, Long> {
 
 	private static final Logger LOG = LoggerFactory.getLogger(AwsAgentAutoScaleAction.class);
 	private static final String NGRINDER_AGENT_TAG_KEY = "ngrinder-agent";
-	private static final String VM_COUNT_CACHE_STOPPED_NODES = "stopped-nodes";
-	private static final String VM_COUNT_CACHE_TOTAL_NODES = "total-node";
-	private final Map<String, String> filterMap = new HashMap<String, String>();
+	private Map<String, String> filterMap;
 	private Config config;
 	private AgentManager agentManager;
 	private ScheduledTaskService scheduledTaskService;
 	private VirtualMachineSupport virtualMachineSupport;
 	private CloudProvider cloudProvider;
 	private int daemonPort;
+	private int maxNodeCount;
+	/**
+	 * Cache latest virtual machines
+	 */
+	private final Supplier<List<VirtualMachine>> vmCache = synchronizedSupplier(memoizeWithExpiration(vmSupplier(), 1, TimeUnit.MINUTES));
 
 	/**
-	 * Cache b/w virtual machine ID and last touched date
+	 * Cache b/w virtual machine ID and last touched timestamp
 	 */
-	private Cache<String, Boolean> touchCache = CacheBuilder.newBuilder().expireAfterAccess(60, TimeUnit.MINUTES).removalListener(this).build();
-
-	/**
-	 * Cache b/w virtual machine count by state
-	 */
-	private Cache<String, Integer> vmCountCache = CacheBuilder.newBuilder().expireAfterWrite(5, TimeUnit.MINUTES).build();
+	private Cache<String, Long> touchCache = newBuilder().expireAfterAccess(60, TimeUnit.MINUTES).removalListener(this).build();
 
 
 	/**
-	 * Tag for agent group identification.
+	 * Proxy to which the AWS calls are made.
 	 */
-	private String tag;
-
 	private Proxy proxy;
 
 	@Override
@@ -89,42 +95,46 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	}
 
 	@Override
+	public List<AutoScaleNode> getNodes() {
+		List<AutoScaleNode> result = newArrayList();
+		for (VirtualMachine each : listAllVM()) {
+			AutoScaleNode node = new AutoScaleNode();
+			node.setId(each.getProviderVirtualMachineId());
+			node.setName(each.getName());
+			node.setIps(getAddresses(each));
+			node.setState(each.getCurrentState().name());
+			result.add(node);
+		}
+		return result;
+	}
+
+	@Override
 	public void init(Config config, AgentManager agentManager, ScheduledTaskService scheduledTaskService) {
 		this.config = config;
 		this.agentManager = agentManager;
 		this.scheduledTaskService = scheduledTaskService;
-		this.tag = getTagString(config);
 		this.daemonPort = config.getAgentAutoScaleProperties().getPropertyInt(PROP_AGENT_AUTO_SCALE_DOCKER_DAEMON_PORT);
+		this.maxNodeCount = config.getAgentAutoScaleProperties().getPropertyInt(PROP_AGENT_AUTO_SCALE_MAX_NODES);
+		initProxy(config);
+		initFilterMap(config);
+		initComputeService(config);
+	}
+
+	protected void initProxy(Config config) {
 		final String proxyHost = config.getProxyHost();
 		final int proxyPort = config.getProxyPort();
 		if (StringUtils.isNotBlank(proxyHost) && proxyPort != 0) {
 			this.proxy = new Proxy(Proxy.Type.HTTP, new InetSocketAddress(proxyHost, proxyPort));
 		}
-
-		initFilterMap(config);
-		initComputeService(config);
-		initCache(config);
 	}
 
-	private void initCache(Config config) {
-		for (VirtualMachine vm : listAllVM()) {
-			if (vm.getCurrentState() != VmState.STOPPED) {
-				touchCache.put(vm.getProviderVirtualMachineId(), true);
-			}
-		}
-	}
-
-
-	private String getTagString(Config config) {
-		if (config.isClustered()) {
-			return config.getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_CONTROLLER_IP) + ":" + config.getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_CONTROLLER_PORT);
-		} else {
-			return config.getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_CONTROLLER_IP);
-		}
+	protected String getTagString(Config config) {
+		return config.getControllerAdvertisedHost();
 	}
 
 	protected void initFilterMap(Config config) {
-		filterMap.put(NGRINDER_AGENT_TAG_KEY, tag);
+		filterMap = new HashMap<String, String>();
+		filterMap.put(NGRINDER_AGENT_TAG_KEY, getTagString(config));
 	}
 
 	protected void initComputeService(Config config) {
@@ -170,23 +180,36 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		return Cloud.register("Amazon", "AWS", "", AWSCloud.class);
 	}
 
+	private Supplier<List<VirtualMachine>> vmSupplier() {
+		return new Supplier<List<VirtualMachine>>() {
+			public List<VirtualMachine> get() {
+				try {
+					VMFilterOptions vmFilterOptions = VMFilterOptions.getInstance().withTags(filterMap);
+					return (List<VirtualMachine>) virtualMachineSupport.listVirtualMachines(vmFilterOptions);
+				} catch (Exception e) {
+					throw processException(e);
+				}
+			}
+
+			@Override
+			public void invalidate() {
+				// Do nothing.
+			}
+		};
+	}
+
+
 	protected List<VirtualMachine> listAllVM() {
-		return listVMByState(Collections.<VmState>emptySet());
+		return vmCache.get();
 	}
 
 
 	protected List<VirtualMachine> listVMByState(Set<VmState> vmStates) {
 		List<VirtualMachine> filterResult = newArrayList();
-		try {
-			VMFilterOptions vmFilterOptions = VMFilterOptions.getInstance().withTags(filterMap);
-			List<VirtualMachine> vms = (List<VirtualMachine>) virtualMachineSupport.listVirtualMachines(vmFilterOptions);
-			for (VirtualMachine vm : vms) {
-				if (vmStates.isEmpty() || vmStates.contains(vm.getCurrentState())) {
-					filterResult.add(vm);
-				}
+		for (VirtualMachine vm : vmCache.get()) {
+			if (vmStates.isEmpty() || vmStates.contains(vm.getCurrentState())) {
+				filterResult.add(vm);
 			}
-		} catch (Exception e) {
-			throw processException(e);
 		}
 		return filterResult;
 	}
@@ -194,14 +217,13 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 
 	@Override
 	public void activateNodes(int count) throws AgentAutoScaleService.NotSufficientAvailableNodeException {
-		vmCountCache.cleanUp();
-		List<VirtualMachine> vms = listVMByState(newHashSet(VmState.STOPPED));
-		if (vms.size() < count) {
+		int activatableNodeCount = getActivatableNodeCount();
+		if (activatableNodeCount < count) {
 			throw new AgentAutoScaleService.NotSufficientAvailableNodeException(
-					String.format("%d node activation is requested. But only %d stopped nodes (total %d nodes) are available. The activation is canceled.", count, vms.size(), getMaxNodeCount())
+					String.format("%d node activation is requested. But only %d stopped nodes (total %d nodes) are available. The activation is canceled.", count, activatableNodeCount, getMaxNodeCount())
 			);
 		}
-		List<VirtualMachine> candidates = vms.subList(0, count);
+		List<VirtualMachine> candidates = getActivatableNodes().subList(0, count);
 		// To speed up
 		if (candidates.isEmpty()) {
 			return;
@@ -209,37 +231,19 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		activateNodes(candidates);
 	}
 
-	@Override
-	public int getMaxNodeCount() {
-		try {
-			return vmCountCache.get(VM_COUNT_CACHE_TOTAL_NODES, new Callable<Integer>() {
-				@Override
-				public Integer call() throws Exception {
-					return Math.min(listAllVM().size(),
-							config.getAgentAutoScaleProperties().getPropertyInt(PROP_AGENT_AUTO_SCALE_MAX_NODES));
-				}
-			});
-		} catch (ExecutionException e) {
-			LOG.error("Error while counting total nodes", e);
-			return 0;
-		}
+	private List<VirtualMachine> getActivatableNodes() {
+		return listVMByState(Sets.newHashSet(VmState.STOPPED));
 	}
 
+	@Override
+	public int getMaxNodeCount() {
+		return Math.min(listAllVM().size(), maxNodeCount);
 
+	}
+
+	@Override
 	public int getActivatableNodeCount() {
-		try {
-			return vmCountCache.get(VM_COUNT_CACHE_STOPPED_NODES, new Callable<Integer>() {
-				@Override
-				public Integer call() throws Exception {
-					final int size = listVMByState(newHashSet(VmState.STOPPED)).size();
-					return Math.min(size,
-							config.getAgentAutoScaleProperties().getPropertyInt(PROP_AGENT_AUTO_SCALE_MAX_NODES));
-				}
-			});
-		} catch (ExecutionException e) {
-			LOG.error("Error while counting activatable nodes", e);
-			return 0;
-		}
+		return Math.min(getActivatableNodes().size(), maxNodeCount);
 	}
 
 	/**
@@ -250,16 +254,16 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	 */
 	void activateNodes(List<VirtualMachine> vms) {
 		try {
-			final int port = config.getAgentAutoScaleProperties().getPropertyInt(PROP_AGENT_AUTO_SCALE_DOCKER_DAEMON_PORT);
 			List<VirtualMachine> activatedNodes = startNodes(vms);
 			activatedNodes = waitUntilVmState(activatedNodes, VmState.RUNNING, 3 * 1000);
-			activatedNodes = waitUntilPortAvailable(activatedNodes, port, 60 * 1000);
+			activatedNodes = waitUntilPortAvailable(activatedNodes, daemonPort, 60 * 1000);
 			activatedNodes = startContainers(activatedNodes);
 			waitUntilAgentOn(activatedNodes, 1000);
 		} catch (Exception e) {
 			throw processException(e);
 		}
 	}
+
 
 	List<VirtualMachine> startNodes(List<VirtualMachine> vms) {
 		List<VirtualMachine> result = newArrayList();
@@ -271,7 +275,6 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 				LOG.error("Failed to activate node {}", each.getProviderVirtualMachineId(), e);
 			}
 		}
-		vmCountCache.invalidate(VM_COUNT_CACHE_STOPPED_NODES);
 		return result;
 	}
 
@@ -373,6 +376,8 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 							LOG.info("Node {}  State change complete ({}), PubIP: {}, PriIP {} ",
 									new Object[]{providerVirtualMachineId, vm.getCurrentState(), reflectionToString(vm.getPublicAddresses()), reflectionToString(vm.getPrivateAddresses())});
 							result.add(vm);
+							vmCache.invalidate();
+							touch(vm.getProviderVirtualMachineId());
 							return;
 						}
 						sleep(millisec);
@@ -392,18 +397,26 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 
 
 	@Override
-	public void touch(String name) {
+	public void touch(final String name) {
 		synchronized (this) {
-			touchCache.put(name, true);
+			try {
+				Long time = touchCache.getIfPresent(name);
+				if (time == null) {
+					time = System.currentTimeMillis();
+				}
+				touchCache.put(name, time);
+			} catch (Exception e) {
+				LOG.error("Error while touch node {}", name, e);
+			}
 		}
 	}
 
 	@Override
-	public void onRemoval(RemovalNotification<String, Boolean> removal) {
-		synchronized (this) {
-			final String key = removal.getKey();
-			RemovalCause removalCause = removal.getCause();
-			if (removalCause.equals(RemovalCause.EXPIRED)) {
+	public void onRemoval(@SuppressWarnings("NullableProblems") RemovalNotification<String, Long> removal) {
+		final String key = checkNotNull(removal).getKey();
+		RemovalCause removalCause = removal.getCause();
+		if (removalCause.equals(RemovalCause.EXPIRED)) {
+			synchronized (this) {
 				scheduledTaskService.runAsync(new Runnable() {
 					                              @Override
 					                              public void run() {
@@ -412,7 +425,6 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 						                              } catch (Exception e) {
 							                              LOG.error("Error while stopping vm {}", key, e);
 						                              }
-						                              vmCountCache.invalidate(VM_COUNT_CACHE_STOPPED_NODES);
 					                              }
 				                              }
 				);

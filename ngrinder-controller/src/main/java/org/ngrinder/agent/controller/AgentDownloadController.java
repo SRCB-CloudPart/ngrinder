@@ -13,6 +13,7 @@
  */
 package org.ngrinder.agent.controller;
 
+import org.apache.commons.lang3.StringUtils;
 import org.ngrinder.agent.service.AgentPackageService;
 import org.ngrinder.common.controller.BaseController;
 import org.ngrinder.common.util.FileDownloadUtils;
@@ -29,6 +30,7 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.File;
 
+import static org.ngrinder.common.constant.ControllerConstants.PROP_CONTROLLER_ADVERTISED_HOST;
 import static org.ngrinder.common.util.ExceptionUtils.processException;
 import static org.ngrinder.common.util.Preconditions.checkNotEmpty;
 import static org.ngrinder.common.util.Preconditions.checkNotNull;
@@ -95,7 +97,7 @@ public class AgentDownloadController extends BaseController {
 	}
 
 	private String downloadFile(String owner, String region, ModelMap modelMap, HttpServletRequest request) {
-		String connectingIP = request.getServerName();
+		String connectingIP = StringUtils.defaultIfBlank(getConfig().getControllerProperties().getProperty(PROP_CONTROLLER_ADVERTISED_HOST), request.getServerName());
 		int port = getConfig().getControllerPort();
 		try {
 			if (isClustered()) {

@@ -39,8 +39,8 @@ public class AgentAutoScaleDockerClientTest {
 	public void init() {
 		PropertiesWrapper agentProperties = mock(PropertiesWrapper.class);
 		when(config.getAgentAutoScaleProperties()).thenReturn(agentProperties);
-		when(agentProperties.getProperty(PROP_AGENT_AUTO_SCALE_CONTROLLER_IP)).thenReturn("176.34.4.181");
-		when(agentProperties.getProperty(PROP_AGENT_AUTO_SCALE_CONTROLLER_PORT)).thenReturn("8080");
+		when(config.getControllerAdvertisedHost()).thenReturn("176.34.4.181");
+		when(config.getControllerPort()).thenReturn(16001);
 		when(agentProperties.getProperty(PROP_AGENT_AUTO_SCALE_DOCKER_REPO)).thenReturn("ngrinder/agent");
 		when(agentProperties.getProperty(PROP_AGENT_AUTO_SCALE_DOCKER_TAG)).thenReturn("3.3-p1");
 		List<String> address = newArrayList("127.0.0.1");

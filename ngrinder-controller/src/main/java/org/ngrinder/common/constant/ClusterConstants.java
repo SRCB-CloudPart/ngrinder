@@ -24,7 +24,6 @@ public interface ClusterConstants {
 	String PROP_CLUSTER_MEMBERS = "cluster.members";
 	String PROP_CLUSTER_PORT = "cluster.port";
 	String PROP_CLUSTER_REGION = "cluster.region";
-	String PROP_CLUSTER_HOST = "cluster.host";
 	String PROP_CLUSTER_MODE = "cluster.mode";
 	String PROP_CLUSTER_SAFE_DIST = "cluster.safe_dist";
 }

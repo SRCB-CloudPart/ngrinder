@@ -1,10 +1,14 @@
 package org.ngrinder.agent.service.autoscale;
 
+import org.ngrinder.agent.model.AutoScaleNode;
 import org.ngrinder.agent.service.AgentAutoScaleAction;
 import org.ngrinder.infra.config.Config;
 import org.ngrinder.infra.schedule.ScheduledTaskService;
 import org.ngrinder.perftest.service.AgentManager;
 import org.springframework.beans.factory.annotation.Qualifier;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Null object for AgentAutoScaleAction
@@ -51,4 +55,8 @@ public class NullAgentAutoScaleAction extends AgentAutoScaleAction {
 
 	}
 
+	@Override
+	public List<AutoScaleNode> getNodes() {
+		return new ArrayList<AutoScaleNode>();
+	}
 }

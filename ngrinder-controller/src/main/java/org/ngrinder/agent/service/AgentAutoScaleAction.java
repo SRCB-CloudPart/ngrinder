@@ -14,15 +14,20 @@
 package org.ngrinder.agent.service;
 
 import net.sf.cglib.core.DebuggingClassWriter;
+import org.ngrinder.agent.model.AutoScaleNode;
 import org.ngrinder.infra.config.Config;
 import org.ngrinder.infra.schedule.ScheduledTaskService;
 import org.ngrinder.perftest.service.AgentManager;
+
+import java.util.List;
 
 /**
  * Abstract class for Auto Scale Action. The subclass should handle the specific auto scale action depending on the cloud provider.
  */
 public abstract class AgentAutoScaleAction {
 
+
+	private Object nodes;
 
 	/**
 	 * Initialize the AgentAutoScaleAction.
@@ -54,4 +59,5 @@ public abstract class AgentAutoScaleAction {
 
 	public abstract void destroy();
 
+	public abstract List<AutoScaleNode> getNodes();
 }

@@ -170,6 +170,13 @@ public class NGrinderControllerStarter {
 			validateValueWith = PortAvailabilityValidator.class)
 	private Integer port = null;
 
+	@Parameter(names = {"-ch", "--controller-host"}, description = "The controller host name or ip which will be used to listen agent connection.")
+	private String controllerHost = null;
+
+	@Parameter(names = {"-ach", "--advertised-controller-host"}, description = "The advertized controller host name or ip which will be used to listen agent connection.",
+			validateValueWith = PortAvailabilityValidator.class)
+	private String advertisedControllerHost = null;
+
 	@Parameter(names = {"-c", "--context-path"}, description = "context path of the embedded web application.")
 	private String contextPath = "/";
 
@@ -209,12 +216,6 @@ public class NGrinderControllerStarter {
 
 	@Parameter(names = {"-asppi", "--auto-scale-prefer-private-ip"}, description = "agent auto scale - true if private ip connection is prefered")
 	private String agentAutoScalePreferPrivateIP = null;
-
-	@Parameter(names = {"-asci", "--auto-scale-controller-ip"}, description = "agent auto scale - the controller ip for docker to download agent")
-	private String agentAutoScaleControllerIP = null;
-
-	@Parameter(names = {"-ascp", "--auto-scale-controller-port"}, description = "agent auto scale - the controller port for docker to download agent")
-	private Integer agentAutoScaleControllerPort = null;
 
 	@Parameter(names = {"-asdr", "--auto-scale-docker-repo"}, description = "agent auto scale - the docker image repository")
 	private String agentAutoScaleDockerRepo = null;
@@ -319,19 +320,12 @@ public class NGrinderControllerStarter {
 			System.exit(0);
 		}
 
-
 		if (server.help) {
 			commander.usage();
 			System.exit(0);
 		}
 
-		if (server.home != null) {
-			System.setProperty("ngrinder.home", server.home);
-		}
-		if (server.exHome != null) {
-			System.setProperty("ngrinder.ex.home", server.exHome);
-		}
-
+		setGenericParamter(server);
 		setAgentAutoScaleParameters(server);
 		final List<String> unknownOptions = commander.getUnknownOptions();
 		final ClusterMode clusterMode = ClusterMode.valueOf(server.clusterMode);
@@ -344,17 +338,23 @@ public class NGrinderControllerStarter {
 		return "java -XX:MaxPermSize=200m -jar  " + new File(getWarName()).getName();
 	}
 
-	private static void setAgentAutoScaleParameters(NGrinderControllerStarter svr) {
-		setSystemProp("agent.auto_scale.type", svr.agentAutoScaleType);
-		setSystemProp("agent.auto_scale.identity", svr.agentAutoScaleIdentity);
-		setSystemProp("agent.auto_scale.credential", svr.agentAutoScaleCredential);
-		setSystemProp("agent.auto_scale.prefer_private_ip", svr.agentAutoScalePreferPrivateIP);
-		setSystemProp("agent.auto_scale.controller_ip", svr.agentAutoScaleControllerIP);
-		setSystemProp("agent.auto_scale.controller_port", svr.agentAutoScaleControllerPort);
-		setSystemProp("agent.auto_scale.docker_repo", svr.agentAutoScaleDockerRepo);
-		setSystemProp("agent.auto_scale.docker_tag", svr.agentAutoScaleDockerTag);
-		setSystemProp("agent.auto_sacle.region", svr.agentAutoScaleRegion);
-		setSystemProp("agent.auto_scale.max_nodes", svr.agentAutoScaleMaxNodes);
+	public static void setGenericParamter(NGrinderControllerStarter server) {
+		setSystemProp("ngrinder.home", server.home);
+		setSystemProp("ngrinder.ex.home", server.exHome);
+		setSystemProp("controller.host", server.controllerHost);
+		setSystemProp("controller.advertised_host", server.advertisedControllerHost);
+	}
+
+
+	private static void setAgentAutoScaleParameters(NGrinderControllerStarter server) {
+		setSystemProp("agent.auto_scale.type", server.agentAutoScaleType);
+		setSystemProp("agent.auto_scale.identity", server.agentAutoScaleIdentity);
+		setSystemProp("agent.auto_scale.credential", server.agentAutoScaleCredential);
+		setSystemProp("agent.auto_scale.prefer_private_ip", server.agentAutoScalePreferPrivateIP);
+		setSystemProp("agent.auto_scale.docker_repo", server.agentAutoScaleDockerRepo);
+		setSystemProp("agent.auto_scale.docker_tag", server.agentAutoScaleDockerTag);
+		setSystemProp("agent.auto_sacle.region", server.agentAutoScaleRegion);
+		setSystemProp("agent.auto_scale.max_nodes", server.agentAutoScaleMaxNodes);
 	}
 
 	private static void setSystemProp(String key, Object value) {

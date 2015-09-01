@@ -38,7 +38,7 @@ public class RegionInfo implements Serializable {
 	 * Constructor with true visibility.
 	 *
 	 * @param ip              ip
-	 * @param controllerPort  controllerPort
+	 * @param port            controllerPort
 	 * @param agentIdentities agentIdentity Set
 	 */
 	public RegionInfo(String ip, int port, Set<AgentIdentity> agentIdentities) {

@@ -919,7 +919,7 @@ public class PerfTestService extends AbstractPerfTestService implements Controll
 		ConsoleProperties consoleProperties = ConsolePropertiesFactory.createEmptyConsoleProperties();
 		try {
 			consoleProperties.setAndSaveDistributionDirectory(new Directory(getDistributionPath(perfTest)));
-			consoleProperties.setConsoleHost(config.getCurrentIP());
+			consoleProperties.setConsoleHost(config.getControllerHost());
 			consoleProperties.setIgnoreSampleCount(getSafe(perfTest.getIgnoreSampleCount()));
 			consoleProperties.setSampleInterval(1000 * getSafe(perfTest.getSamplingInterval()));
 		} catch (Exception e) {

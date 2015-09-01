@@ -14,7 +14,6 @@
 package org.ngrinder.agent.service;
 
 import org.ngrinder.agent.service.autoscale.NullAgentAutoScaleAction;
-import org.ngrinder.common.constant.AgentAutoScaleConstants;
 import org.ngrinder.infra.config.Config;
 import org.ngrinder.infra.schedule.ScheduledTaskService;
 import org.ngrinder.perftest.service.AgentManager;
@@ -138,11 +137,9 @@ public class AgentAutoScaleService {
 		return agentAutoScaleAction.getMaxNodeCount();
 	}
 
-
 	public boolean isInProgress() {
 		return lock.isLocked();
 	}
-
 
 	/**
 	 * Exception which is occured when the count of nodes is not enough

@@ -16,10 +16,8 @@ package org.ngrinder.region.service;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import net.grinder.common.processidentity.AgentIdentity;
-import net.grinder.util.NetworkUtils;
 import net.sf.ehcache.Ehcache;
 import org.apache.commons.lang.StringUtils;
-import org.ngrinder.common.constant.ClusterConstants;
 import org.ngrinder.common.util.TypeConvertUtils;
 import org.ngrinder.infra.config.Config;
 import org.ngrinder.infra.schedule.ScheduledTaskService;
@@ -91,8 +89,7 @@ public class RegionService {
 		Map<String, RegionInfo> regions = getAll();
 		String localRegion = getCurrent();
 		RegionInfo regionInfo = regions.get(localRegion);
-		if (regionInfo != null && !StringUtils.equals(regionInfo.getIp(), config.getClusterProperties().getProperty
-				(ClusterConstants.PROP_CLUSTER_HOST, NetworkUtils.DEFAULT_LOCAL_HOST_ADDRESS))) {
+		if (regionInfo != null && !StringUtils.equals(regionInfo.getIp(), config.getControllerAdvertisedHost())) {
 			throw processException("The region name, " + localRegion
 					+ ", is already used by other controller " + regionInfo.getIp()
 					+ ". Please set the different region name in this controller.");
@@ -109,7 +106,7 @@ public class RegionService {
 		if (!config.isInvisibleRegion()) {
 			try {
 				HashSet<AgentIdentity> newHashSet = Sets.newHashSet(agentManager.getAllAttachedAgents());
-				final String regionIP = StringUtils.defaultIfBlank(config.getCurrentIP(), NetworkUtils.DEFAULT_LOCAL_HOST_ADDRESS);
+				final String regionIP = config.getControllerAdvertisedHost();
 				cache.put(getCurrent(), new RegionInfo(regionIP, config.getControllerPort(), newHashSet));
 			} catch (Exception e) {
 				LOGGER.error("Error while updating regions. {}", e.getMessage());

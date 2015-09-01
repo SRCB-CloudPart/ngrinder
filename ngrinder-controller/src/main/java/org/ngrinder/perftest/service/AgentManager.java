@@ -93,7 +93,7 @@ public class AgentManager implements ControllerConstants, AgentDownloadRequestLi
 			consoleCommunicationSetting.setInactiveClientTimeOut(config.getInactiveClientTimeOut());
 		}
 
-		agentControllerServerDaemon = new AgentControllerServerDaemon(config.getCurrentIP(), port, consoleCommunicationSetting);
+		agentControllerServerDaemon = new AgentControllerServerDaemon(config.getControllerHost(), port, consoleCommunicationSetting);
 		agentControllerServerDaemon.start();
 		agentControllerServerDaemon.setAgentDownloadRequestListener(this);
 		agentControllerServerDaemon.addLogArrivedListener(new LogArrivedListener() {

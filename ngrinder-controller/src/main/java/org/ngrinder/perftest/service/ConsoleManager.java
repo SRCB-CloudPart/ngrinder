@@ -68,14 +68,14 @@ public class ConsoleManager {
 	public void init() {
 		int consoleSize = getConsoleSize();
 		consoleQueue = new ArrayBlockingQueue<ConsoleEntry>(consoleSize);
-		final String currentIP = config.getCurrentIP();
+		final String currentIP = config.getControllerHost();
 		for (int each : getAvailablePorts(currentIP, consoleSize, getConsolePortBase(), MAX_PORT_NUMBER)) {
-			final ConsoleEntry e = new ConsoleEntry(config.getCurrentIP(), each);
+			final ConsoleEntry e = new ConsoleEntry(config.getControllerHost(), each);
 			try {
 				e.occupySocket();
 				consoleQueue.add(e);
 			} catch (Exception ex) {
-				LOG.error("socket binding to {}:{} is failed", config.getCurrentIP(), each);
+				LOG.error("socket binding to {}:{} is failed", config.getControllerHost(), each);
 			}
 
 		}
@@ -135,7 +135,7 @@ public class ConsoleManager {
 				if (config.getInactiveClientTimeOut() > 0) {
 					consoleCommunicationSetting.setInactiveClientTimeOut(config.getInactiveClientTimeOut());
 				}
-				SingleConsole singleConsole = new SingleConsole(config.getCurrentIP(), consoleEntry.getPort(),
+				SingleConsole singleConsole = new SingleConsole(config.getControllerHost(), consoleEntry.getPort(),
 						consoleCommunicationSetting, baseConsoleProperties);
 				getConsoleInUse().add(singleConsole);
 				return singleConsole;
@@ -231,7 +231,7 @@ public class ConsoleManager {
 	 * @return {@link SingleConsole} instance if found. Otherwise, {@link NullSingleConsole} instance.
 	 */
 	public SingleConsole getConsoleUsingPort(Integer port) {
-		String currentIP = config.getCurrentIP();
+		String currentIP = config.getControllerHost();
 		for (SingleConsole each : consoleInUse) {
 			// Avoid to Klocwork error.
 			if (each instanceof NullSingleConsole) {

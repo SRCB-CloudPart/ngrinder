@@ -39,7 +39,8 @@ public class AgentAutoScaleDockerClient implements Closeable {
 	 * The docker image repository which identifies which image to run agent
 	 */
 	private final String image;
-	private final String controllerUrl;
+	private final String controllerHost;
+	private final int controllerPort;
 	private final String region;
 	private String machineName;
 
@@ -53,7 +54,8 @@ public class AgentAutoScaleDockerClient implements Closeable {
 		this.machineName = machineName;
 		this.region = config.getRegion();
 		this.image = getImageName(config);
-		controllerUrl = getConnectionUrl(config);
+		this.controllerHost = config.getControllerAdvertisedHost();
+		this.controllerPort = config.getControllerPort();
 		checkTrue(!addresses.isEmpty(), "Address should contains more than 1 element");
 		for (String each : addresses) {
 			String daemonUri = "http://" + each + ":" + daemonPort;
@@ -82,10 +84,6 @@ public class AgentAutoScaleDockerClient implements Closeable {
 		throw new NGrinderRuntimeException("No address for " + machineName + " can be connectible ");
 	}
 
-	private String getConnectionUrl(Config config) {
-		final PropertiesWrapper agentAutoScaleProperties = config.getAgentAutoScaleProperties();
-		return agentAutoScaleProperties.getProperty(PROP_AGENT_AUTO_SCALE_CONTROLLER_IP) + ":" + agentAutoScaleProperties.getProperty(PROP_AGENT_AUTO_SCALE_CONTROLLER_PORT);
-	}
 
 	private String getImageName(Config config) {
 		final PropertiesWrapper agentAutoScaleProperties = config.getAgentAutoScaleProperties();
@@ -167,9 +165,10 @@ public class AgentAutoScaleDockerClient implements Closeable {
 					dockerClient.stopContainer(containerId, 0);
 				}
 				// to be safe
-				if (!containerInfo.config().env().contains("CONTROLLER_ADDR=" + controllerUrl)) {
+				final List<String> cmd = containerInfo.config().cmd();
+				if (!(cmd.contains(controllerHost) && cmd.contains(controllerPort) && cmd.contains(region) && cmd.contains(machineName))) {
 					dockerClient.removeContainer(containerId);
-					LOG.error("Wrong CONTROLLER_ADDR {}. Create New One with {}", machineName, controllerUrl);
+					LOG.error("Wrong configuration on {}. Create New One with", machineName);
 					createNew = true;
 				}
 			} catch (ContainerNotFoundException e) {
@@ -180,9 +179,7 @@ public class AgentAutoScaleDockerClient implements Closeable {
 				ContainerConfig containerConfig = ContainerConfig.builder()
 						.image(image)
 						.hostConfig(HostConfig.builder().networkMode("host").build())
-						.env("CONTROLLER_ADDR=" + controllerUrl,
-								"REGION=" + region,
-								"HOST_ID=" + machineName)
+						.cmd("-ch", controllerHost, "-cp", String.valueOf(controllerPort), "-r", region, "-hi", machineName)
 						.build();
 				dockerClient.createContainer(containerConfig, containerId);
 				LOG.info("Container {} is creating", containerId);
@@ -215,9 +212,7 @@ public class AgentAutoScaleDockerClient implements Closeable {
 		return null;
 	}
 
-	/**
-	 * Unit Test purpose
-	 */
+
 	protected void removeContainer(String containerName) {
 		try {
 			dockerClient.removeContainer(containerName, true);
@@ -226,20 +221,6 @@ public class AgentAutoScaleDockerClient implements Closeable {
 		}
 	}
 
-	/**
-	 * Unit Test purpose
-	 */
-	protected void ping() {
-		try {
-			dockerClient.ping();
-		} catch (Exception e) {
-			throw processException(e);
-		}
-	}
-
-	/**
-	 * Unit Test purpose
-	 */
 	protected ContainerInfo inspectContainer(String containerName) {
 		try {
 			return dockerClient.inspectContainer(containerName);

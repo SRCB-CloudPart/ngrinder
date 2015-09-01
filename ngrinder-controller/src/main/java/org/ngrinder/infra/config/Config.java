@@ -18,6 +18,7 @@ import ch.qos.logback.classic.joran.JoranConfigurator;
 import ch.qos.logback.core.joran.spi.JoranException;
 import net.grinder.util.ListenerSupport;
 import net.grinder.util.ListenerSupport.Informer;
+import net.grinder.util.NetworkUtils;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.io.IOUtils;
@@ -91,10 +92,8 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
 	@Autowired
 	private SpringContext context;
 
-	/**
-	 * Make it singleton.
-	 */
-	Config() {
+
+	public Config() {
 	}
 
 	/**
@@ -626,17 +625,38 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
 		return verbose;
 	}
 
-	/**
-	 * Get the currently configured controller IP.
-	 *
-	 * @return current IP.
-	 */
+	@Deprecated
 	public String getCurrentIP() {
-		if (cluster) {
-			return StringUtils.trimToEmpty(getClusterProperties().getProperty(PROP_CLUSTER_HOST));
-		} else {
-			return StringUtils.trimToEmpty(getControllerProperties().getProperty(PROP_CONTROLLER_IP));
+		return getControllerHost();
+	}
+
+	/**
+	 * Get the currently configured controller host or IP.
+	 *
+	 * @return current host or IP.
+	 * @since 3.3.2
+	 */
+	public String getControllerHost() {
+		return StringUtils.trimToEmpty(getControllerProperties().getProperty(PROP_CONTROLLER_HOST));
+	}
+
+
+	/**
+	 * Get the controller host or IP which is advertised to agent.
+	 *
+	 * @return  advertised host or IP.
+	 * @since 3.3.2
+	 */
+	public String getControllerAdvertisedHost() {
+		String exposedIP = getControllerProperties().getProperty(PROP_CONTROLLER_ADVERTISED_HOST);
+		String currentIP = getControllerHost();
+		if (StringUtils.isNotEmpty(exposedIP)) {
+			return exposedIP;
 		}
+		if (StringUtils.isNotEmpty(currentIP)) {
+			return currentIP;
+		}
+		return NetworkUtils.DEFAULT_LOCAL_HOST_ADDRESS;
 	}
 
 
