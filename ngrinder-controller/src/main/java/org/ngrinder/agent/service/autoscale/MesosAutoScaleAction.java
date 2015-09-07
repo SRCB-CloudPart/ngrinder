@@ -23,7 +23,7 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction {
 	}
 
 	@Override
-	public void activateNodes(int count) throws AgentAutoScaleService.NotSufficientAvailableNodeException {
+	public void activateNodes(int activateCount, int requiredCount) throws AgentAutoScaleService.NotSufficientAvailableNodeException {
 	}
 
 	@Override

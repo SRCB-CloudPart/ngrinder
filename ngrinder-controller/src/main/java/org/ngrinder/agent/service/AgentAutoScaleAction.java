@@ -35,9 +35,10 @@ public abstract class AgentAutoScaleAction {
 	/**
 	 * Activate the given count of node.
 	 *
-	 * @param count node to be activated.
+	 * @param activateCount node to be activated.
+	 * @param requiredCount node required for the performance test
 	 */
-	public abstract void activateNodes(int count) throws AgentAutoScaleService.NotSufficientAvailableNodeException;
+	public abstract void activateNodes(int activateCount, int requiredCount) throws AgentAutoScaleService.NotSufficientAvailableNodeException;
 
 	public abstract int getMaxNodeCount();
 

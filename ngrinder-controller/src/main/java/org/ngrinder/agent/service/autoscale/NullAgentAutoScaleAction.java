@@ -23,7 +23,7 @@ public class NullAgentAutoScaleAction extends AgentAutoScaleAction {
 	}
 
 	@Override
-	public void activateNodes(int count) {
+	public void activateNodes(int activateCount, int requiredCount) {
 	}
 
 	@Override

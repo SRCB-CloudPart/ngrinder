@@ -164,13 +164,13 @@ public class PerfTestRunnable implements ControllerConstants {
 	}
 
 	private void scaleUpAgent(PerfTest runCandidate) {
-		int requiredAgentCount = 0;
+		int activateCount = 0;
 		try {
-			requiredAgentCount = runCandidate.getAgentCount() -
-					agentManager.getAllFreeApprovedAgentsForUser(runCandidate.getCreatedUser()).size();
-			agentAutoScaleService.activateNodes(requiredAgentCount);
+			int requiredCount = runCandidate.getAgentCount();
+			activateCount = requiredCount -	agentManager.getAllFreeApprovedAgentsForUser(runCandidate.getCreatedUser()).size();
+			agentAutoScaleService.activateNodes(activateCount, requiredCount);
 		} catch (Exception e) {
-			LOG.error("Error while activating {} agents.", requiredAgentCount, e);
+			LOG.error("Error while activating {} agents.", activateCount, e);
 			perfTestService.markProgress(runCandidate, "The agent activation is canceled.\n" + e.getMessage());
 		}
 	}
@@ -246,6 +246,7 @@ public class PerfTestRunnable implements ControllerConstants {
 		List<AgentIdentity> allAttachedAgents = singleConsole.getAllAttachedAgents();
 		List<String> names = new ArrayList<String>(allAttachedAgents.size());
 		for (AgentIdentity each : allAttachedAgents) {
+			LOG.info("agent name: {}", each.getName());
 			agentAutoScaleService.touchNode(each.getName());
 		}
 	}
