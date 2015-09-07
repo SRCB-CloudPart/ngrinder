@@ -321,9 +321,11 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 								result.add(each);
 								return;
 							}
-							if (proxy != null) {
-								sleep(timeout);
-							}
+							//below is a bug???
+//							if (proxy != null) {
+//								sleep(timeout);
+//							}
+							sleep(timeout);
 						}
 					}
 					LOG.error("Port Activation : {} port {} is not activated.", each.getProviderVirtualMachineId(), port);
