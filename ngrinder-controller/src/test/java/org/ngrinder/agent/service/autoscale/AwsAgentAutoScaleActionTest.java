@@ -57,7 +57,7 @@ public class AwsAgentAutoScaleActionTest {
 
 	@Test
 	public void testActivateNodes() throws AgentAutoScaleService.NotSufficientAvailableNodeException {
-		awsAgentAutoScaleAction.activateNodes(2);
+		awsAgentAutoScaleAction.activateNodes(2, 2);
 	}
 
 }
