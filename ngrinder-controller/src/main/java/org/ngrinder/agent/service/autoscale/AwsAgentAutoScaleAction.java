@@ -6,7 +6,6 @@ import com.google.common.cache.RemovalCause;
 import com.google.common.cache.RemovalListener;
 import com.google.common.cache.RemovalNotification;
 import com.google.common.collect.Sets;
-import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.builder.ToStringBuilder;
 import org.apache.commons.lang3.StringUtils;
 import org.dasein.cloud.*;
@@ -109,7 +108,6 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	@Override
 	public void stopNode(String nodeId) {
 		try {
-
 			vmCache.invalidate();
 			LOG.info("VM : Start stopping {}", nodeId);
 			virtualMachineSupport.stop(checkNotNull(nodeId));
@@ -292,13 +290,12 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		return result;
 	}
 
-	void waitUntilAgentOn(int requiredCount, int checkInterval) {
-		if (requiredCount == 0) {
+	void waitUntilAgentOn(int count, int checkInterval) {
+		if (count == 0) {
 			return;
 		}
-		//We need more elaborated way to wait， here, wait 15min at most
-		for (int i = 0; i < 650; i++) {
-			if (agentManager.getAllFreeApprovedAgents().size() < requiredCount) {
+		for (int i = 0; i < 100; i++) {
+			if (agentManager.getAllFreeApprovedAgents().size() < count) {
 				sleep(checkInterval);
 			} else {
 				return;
@@ -328,8 +325,8 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 			taskExecutor.execute(new Runnable() {
 				@Override
 				public void run() {
-					for (int i = 0; i < 20; i++) {
-						for (String ip : getAddresses(each)) {
+					for (String ip : getAddresses(each)) {
+						for (int i = 0; i < 20; i++) {
 							String url = "http://" + ip + ":" + daemonPort;
 							LOG.info("Port Activation : try to connect {}", url);
 
@@ -446,17 +443,11 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 
 	protected List<String> getAddresses(VirtualMachine vm) {
 		List<String> result = newArrayList();
-		boolean preferPrivateIp = config.getAgentAutoScaleProperties().getPropertyBoolean(PROP_AGENT_AUTO_SCALE_PREFER_PRIVATE_IP);
+		boolean preferPrivateIp = config.getAgentAutoScaleProperties().getPropertyBoolean(PROP_AGENT_AUTO_SCALE_PRIVATE_IP);
 		RawAddress[] addresses = preferPrivateIp ? vm.getPrivateAddresses() : vm.getPublicAddresses();
 		for (RawAddress each : addresses) {
 			result.add(each.getIpAddress());
 		}
-
-		addresses = preferPrivateIp ? vm.getPublicAddresses() : vm.getPrivateAddresses();
-		for (RawAddress each : addresses) {
-			result.add(each.getIpAddress());
-		}
-
 		return result;
 	}
 
