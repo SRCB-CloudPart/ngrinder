@@ -2,6 +2,7 @@ package org.ngrinder.agent.service.autoscale;
 
 import org.ngrinder.agent.model.AutoScaleNode;
 import org.ngrinder.agent.service.AgentAutoScaleAction;
+import org.ngrinder.agent.service.AgentAutoScaleService;
 import org.ngrinder.infra.config.Config;
 import org.ngrinder.infra.schedule.ScheduledTaskService;
 import org.ngrinder.perftest.service.AgentManager;
@@ -27,8 +28,10 @@ public class NullAgentAutoScaleAction extends AgentAutoScaleAction {
 	}
 
 	@Override
-	public void activateNodes(int activateCount, int requiredCount) {
+	public void activateNodes(int total, int required) throws AgentAutoScaleService.NotSufficientAvailableNodeException {
+
 	}
+
 
 	@Override
 	public int getMaxNodeCount() {
@@ -58,5 +61,10 @@ public class NullAgentAutoScaleAction extends AgentAutoScaleAction {
 	@Override
 	public List<AutoScaleNode> getNodes() {
 		return new ArrayList<AutoScaleNode>();
+	}
+
+	@Override
+	public void stopNode(String nodeId) {
+
 	}
 }

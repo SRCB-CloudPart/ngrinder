@@ -27,8 +27,6 @@ import java.util.List;
 public abstract class AgentAutoScaleAction {
 
 
-	private Object nodes;
-
 	/**
 	 * Initialize the AgentAutoScaleAction.
 	 *
@@ -40,14 +38,15 @@ public abstract class AgentAutoScaleAction {
 	/**
 	 * Activate the given count of node.
 	 *
-	 * @param activateCount node to be activated.
-	 * @param requiredCount node required for the performance test
+	 * @param total    the total count of agent .
+	 * @param required the count of agent activating.
 	 */
-	public abstract void activateNodes(int activateCount, int requiredCount) throws AgentAutoScaleService.NotSufficientAvailableNodeException;
+	public abstract void activateNodes(int total, int required) throws AgentAutoScaleService.NotSufficientAvailableNodeException;
 
 	public abstract int getMaxNodeCount();
 
 	public abstract int getActivatableNodeCount();
+
 	/**
 	 * Touch the given node
 	 *
@@ -61,4 +60,6 @@ public abstract class AgentAutoScaleAction {
 	public abstract void destroy();
 
 	public abstract List<AutoScaleNode> getNodes();
+
+	public abstract void stopNode(String nodeId);
 }

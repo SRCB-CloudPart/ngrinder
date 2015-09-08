@@ -18,6 +18,8 @@ import java.util.List;
 
 import static org.ngrinder.common.constant.AgentAutoScaleConstants.*;
 import static org.ngrinder.common.util.ExceptionUtils.processException;
+import static org.ngrinder.common.util.Preconditions.checkNotEmpty;
+import static org.ngrinder.common.util.Preconditions.checkNotNull;
 import static org.ngrinder.common.util.Preconditions.checkTrue;
 import static org.ngrinder.common.util.ThreadUtils.sleep;
 
@@ -51,9 +53,9 @@ public class AgentAutoScaleDockerClient implements Closeable {
 	 * @param addresses the docker daemon addresses
 	 */
 	public AgentAutoScaleDockerClient(Config config, String machineName, List<String> addresses, int daemonPort) {
-		this.machineName = machineName;
-		this.region = config.getRegion();
-		this.image = getImageName(config);
+		this.machineName = checkNotEmpty(machineName);
+		this.region = checkNotEmpty(config.getRegion());
+		this.image = checkNotEmpty(getImageName(config));
 		this.controllerHost = config.getControllerAdvertisedHost();
 		this.controllerPort = config.getControllerPort();
 		checkTrue(!addresses.isEmpty(), "Address should contains more than 1 element");

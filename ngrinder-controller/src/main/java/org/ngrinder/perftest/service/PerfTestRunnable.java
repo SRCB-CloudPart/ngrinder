@@ -166,9 +166,10 @@ public class PerfTestRunnable implements ControllerConstants {
 	private void activateAgents(PerfTest runCandidate) {
 		int requiredAgentCount = 0;
 		try {
-			requiredAgentCount = runCandidate.getAgentCount() -
+			final Integer agentCount = runCandidate.getAgentCount();
+			requiredAgentCount = agentCount -
 					agentManager.getAllFreeApprovedAgentsForUser(runCandidate.getCreatedUser()).size();
-			agentAutoScaleService.activateNodes(requiredAgentCount);
+			agentAutoScaleService.activateNodes(agentCount, requiredAgentCount);
 		} catch (AgentAutoScaleService.NotSufficientAvailableNodeException e) {
 			LOG.debug(e.getMessage());
 		} catch (Exception e) {

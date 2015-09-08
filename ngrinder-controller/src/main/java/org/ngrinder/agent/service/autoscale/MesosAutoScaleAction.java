@@ -27,7 +27,8 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction {
 	}
 
 	@Override
-	public void activateNodes(int activateCount, int requiredCount) throws AgentAutoScaleService.NotSufficientAvailableNodeException {
+	public void activateNodes(int total, int required) throws AgentAutoScaleService.NotSufficientAvailableNodeException {
+
 	}
 
 	@Override
@@ -57,5 +58,10 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction {
 	@Override
 	public List<AutoScaleNode> getNodes() {
 		return new ArrayList<AutoScaleNode>();
+	}
+
+	@Override
+	public void stopNode(String nodeId) {
+
 	}
 }

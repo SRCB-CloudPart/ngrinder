@@ -1,7 +1,7 @@
 agent.auto_scale.type,,
 agent.auto_scale.identity,,
 agent.auto_scale.credential,,
-agent.auto_scale.prefer_private_ip,true,
+agent.auto_scale.prefer_private_ip,false,
 agent.auto_scale.docker_daemon_port,10000,
 agent.auto_scale.docker_repo,ngrinder/agent,
 agent.auto_scale.docker_tag,3.3-p2,

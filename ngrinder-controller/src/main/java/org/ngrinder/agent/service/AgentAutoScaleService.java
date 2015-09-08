@@ -13,6 +13,7 @@
  */
 package org.ngrinder.agent.service;
 
+import org.ngrinder.agent.model.AutoScaleNode;
 import org.ngrinder.agent.service.autoscale.NullAgentAutoScaleAction;
 import org.ngrinder.infra.config.Config;
 import org.ngrinder.infra.schedule.ScheduledTaskService;
@@ -23,12 +24,14 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Profile;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 
 import javax.annotation.PostConstruct;
 import javax.annotation.PreDestroy;
 import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -120,10 +123,10 @@ public class AgentAutoScaleService {
 		this.config = config;
 	}
 
-	public void activateNodes(int activateCount, int requiredCount) throws AutoScaleProviderNotReadyException, NotSufficientAvailableNodeException {
+	public void activateNodes(int total, int required) throws AutoScaleProviderNotReadyException, NotSufficientAvailableNodeException {
 		lock.lock();
 		try {
-			agentAutoScaleAction.activateNodes(activateCount, requiredCount);
+			agentAutoScaleAction.activateNodes(total, required);
 		} finally {
 			lock.unlock();
 		}
@@ -139,6 +142,24 @@ public class AgentAutoScaleService {
 
 	public boolean isInProgress() {
 		return lock.isLocked();
+	}
+
+
+	/**
+	 * Only for diagnostics.
+	 *
+	 * @return agentAutoscaleAction.
+	 */
+	public AgentAutoScaleAction getAgentAutoScaleAction() {
+		return this.agentAutoScaleAction;
+	}
+
+	public List<AutoScaleNode> getNodes() {
+		return this.agentAutoScaleAction.getNodes();
+	}
+
+	public void stopNode(String nodeId) {
+		this.agentAutoScaleAction.stopNode(nodeId);
 	}
 
 	/**
@@ -160,13 +181,5 @@ public class AgentAutoScaleService {
 
 	}
 
-	/**
-	 * Only for diagnostics.
-	 *
-	 * @return agentAutoscaleAction.
-	 */
-	public AgentAutoScaleAction getAgentAutoScaleAction() {
-		return this.agentAutoScaleAction;
-	}
 
 }

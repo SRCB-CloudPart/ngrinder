@@ -1,12 +1,12 @@
 package org.ngrinder.agent.controller;
 
-import org.ngrinder.agent.service.AgentAutoScaleAction;
 import org.ngrinder.agent.service.AgentAutoScaleService;
 import org.ngrinder.common.controller.BaseController;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
 
@@ -21,19 +21,38 @@ import org.springframework.web.bind.annotation.RequestMethod;
 public class AgentAutoScaleController extends BaseController {
 
 	@Autowired
-	private AgentAutoScaleService service;
+	private AgentAutoScaleService agentAutoScaleService;
 
 	/**
-	 * Open the agent auto scale viewer.
+	 * Show agent's nodes
 	 *
 	 * @param model model
-	 * @return operation/announcement
+	 * @return agent/auto_scale
 	 */
 
 	@RequestMapping(value = {"node_mgnt/", "node_mgnt"}, method = RequestMethod.GET)
-	public String open(Model model) {
-		final AgentAutoScaleAction agentAutoScaleAction = service.getAgentAutoScaleAction();
-		model.addAttribute("nodes", agentAutoScaleAction.getNodes());
+	public String view(Model model) {
+		model.addAttribute("nodes", agentAutoScaleService.getNodes());
 		return "agent/auto_scale";
 	}
+
+
+	@Autowired
+	private AgentAutoScaleService service;
+
+	/**
+	 * Stop the agent's node
+	 *
+	 * @param nodeId node id
+	 * @param model  model
+	 * @return agent/auto_scale
+	 */
+
+	@RequestMapping(value = {"node_mgnt/{id}"}, method = RequestMethod.DELETE)
+	public String stopNode(@PathVariable("id") String nodeId, Model model) {
+		agentAutoScaleService.stopNode(nodeId);
+		return view(model);
+	}
+
+
 }
