@@ -38,14 +38,10 @@ public abstract class AgentAutoScaleAction {
 	/**
 	 * Activate the given count of node.
 	 *
-	 * @param total    the total count of agent .
-	 * @param required the count of agent activating.
+	 * @param total    the total count of necessary agent
+	 * @param required the required count of agents which should be activated more.
 	 */
 	public abstract void activateNodes(int total, int required) throws AgentAutoScaleService.NotSufficientAvailableNodeException;
-
-	public abstract int getMaxNodeCount();
-
-	public abstract int getActivatableNodeCount();
 
 	/**
 	 * Touch the given node
@@ -54,12 +50,41 @@ public abstract class AgentAutoScaleAction {
 	 */
 	public abstract void touch(String name);
 
+	/**
+	 * Stop the given node.
+	 * @param nodeId node id
+	 */
+	public abstract void stopNode(String nodeId);
 
+	/**
+	 * Get the max count of node allowed
+	 * @return the count of node
+	 */
+	public abstract int getMaxNodeCount();
+
+	/**
+	 * Get the count of activatbale node
+	 * @return the count of node
+	 */
+	public abstract int getActivatableNodeCount();
+
+
+	/**
+	 * For diagnositc
+	 * @return info
+	 */
 	public abstract String getDiagnosticInfo();
 
+	/**
+	 * Destroy component
+	 */
 	public abstract void destroy();
 
+	/**
+	 * Get all nodes info
+	 * @return node info
+	 */
 	public abstract List<AutoScaleNode> getNodes();
 
-	public abstract void stopNode(String nodeId);
+
 }
