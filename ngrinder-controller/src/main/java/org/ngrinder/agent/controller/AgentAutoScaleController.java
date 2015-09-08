@@ -2,6 +2,7 @@ package org.ngrinder.agent.controller;
 
 import org.ngrinder.agent.service.AgentAutoScaleService;
 import org.ngrinder.common.controller.BaseController;
+import org.ngrinder.common.controller.RestAPI;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Controller;
@@ -16,7 +17,7 @@ import org.springframework.web.bind.annotation.RequestMethod;
  * @since 3.3.1
  */
 @Controller
-@RequestMapping("/agent/")
+@RequestMapping("/agent/node_mgnt")
 @PreAuthorize("hasAnyRole('A', 'S')")
 public class AgentAutoScaleController extends BaseController {
 
@@ -30,7 +31,7 @@ public class AgentAutoScaleController extends BaseController {
 	 * @return agent/auto_scale
 	 */
 
-	@RequestMapping(value = {"node_mgnt/", "node_mgnt"}, method = RequestMethod.GET)
+	@RequestMapping(value = {"/", ""}, method = RequestMethod.GET)
 	public String view(Model model) {
 		model.addAttribute("totalNodeCount", agentAutoScaleService.getTotalNodeSize());
 		model.addAttribute("activatableNodeCount", agentAutoScaleService.getActivatableNodeSize());
@@ -49,8 +50,8 @@ public class AgentAutoScaleController extends BaseController {
 	 * @param model  model
 	 * @return agent/auto_scale
 	 */
-
-	@RequestMapping(value = {"node_mgnt/{id}"}, method = RequestMethod.DELETE)
+	@RestAPI
+	@RequestMapping(value = "/api/{id}", params = "action=stop", method = RequestMethod.PUT)
 	public String stopNode(@PathVariable("id") String nodeId, Model model) {
 		agentAutoScaleService.stopNode(nodeId);
 		return view(model);
