@@ -106,7 +106,7 @@
 								<a href="${req.getContextPath()}/agent/"><@spring.message "navigator.dropDown.agentManagement"/></a>
 							</li>
                             <li>
-                                <a href="${req.getContextPath()}/agent/node_mgnt/"><@spring.message "navigator.dropDown.autoscaleNodeManagement"/></a>
+                                <a href="${req.getContextPath()}/agent/node_mgnt/"><@spring.message "navigator.dropDown.autoscaleManagement"/></a>
                             </li>
 							<#if clustered == false>
 								<li>
