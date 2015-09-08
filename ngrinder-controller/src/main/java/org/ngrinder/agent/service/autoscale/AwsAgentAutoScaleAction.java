@@ -8,7 +8,10 @@ import com.google.common.cache.RemovalNotification;
 import com.google.common.collect.Sets;
 import org.apache.commons.lang.builder.ToStringBuilder;
 import org.apache.commons.lang3.StringUtils;
-import org.dasein.cloud.*;
+import org.dasein.cloud.Cloud;
+import org.dasein.cloud.CloudProvider;
+import org.dasein.cloud.ContextRequirements;
+import org.dasein.cloud.ProviderContext;
 import org.dasein.cloud.aws.AWSCloud;
 import org.dasein.cloud.compute.*;
 import org.dasein.cloud.network.RawAddress;
@@ -63,66 +66,19 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	/**
 	 * Cache latest virtual machines
 	 */
-	private final Supplier<List<VirtualMachine>> vmCache = synchronizedSupplier(memoizeWithExpiration(vmSupplier(), 1, TimeUnit.MINUTES));
+	private Supplier<List<VirtualMachine>> vmCache;
 
 	/**
 	 * Cache b/w virtual machine ID and last touched timestamp
 	 */
-	private Cache<String, Long> touchCache = newBuilder().expireAfterAccess(60, TimeUnit.MINUTES).removalListener(this).build();
+	private Cache<String, Long> touchCache;
 
 
 	/**
 	 * Proxy to which the AWS calls are made.
 	 */
 	private Proxy proxy;
-
-	@Override
-	public String getDiagnosticInfo() {
-		StringBuilder builder = new StringBuilder();
-		for (VirtualMachine vm : listAllVM()) {
-			builder.append(ToStringBuilder.reflectionToString(vm)).append("\n");
-		}
-		return builder.toString();
-	}
-
-	@Override
-	public void destroy() {
-		cloudProvider.close();
-	}
-
-	@Override
-	public List<AutoScaleNode> getNodes() {
-		List<AutoScaleNode> result = newArrayList();
-		for (VirtualMachine each : listAllVM()) {
-			AutoScaleNode node = new AutoScaleNode();
-			node.setId(each.getProviderVirtualMachineId());
-			node.setName(each.getName());
-			node.setIps(getAddresses(each));
-			node.setState(each.getCurrentState().name());
-			result.add(node);
-		}
-		return result;
-	}
-
-	@Override
-	public void refresh() {
-		vmCache.invalidate();
-	}
-
-	@Override
-	public void stopNode(String nodeId) {
-		try {
-			vmCache.invalidate();
-			LOG.info("VM : Start stopping {}", nodeId);
-			virtualMachineSupport.stop(checkNotNull(nodeId));
-			LOG.info("VM : stopping {} is succeeded.", nodeId);
-		} catch (Exception e) {
-			throw processException("Error while stopping node " + nodeId, e);
-		} finally {
-
-			vmCache.invalidate();
-		}
-	}
+	private Runnable cacheCleanUp;
 
 	@Override
 	public void init(Config config, AgentManager agentManager, ScheduledTaskService scheduledTaskService) {
@@ -131,10 +87,24 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		this.scheduledTaskService = scheduledTaskService;
 		this.daemonPort = config.getAgentAutoScaleProperties().getPropertyInt(PROP_AGENT_AUTO_SCALE_DOCKER_DAEMON_PORT);
 		this.maxNodeCount = config.getAgentAutoScaleProperties().getPropertyInt(PROP_AGENT_AUTO_SCALE_MAX_NODES);
+		initCache(config);
 		initProxy(config);
 		initFilterMap(config);
 		initComputeService(config);
 	}
+
+	protected void initCache(Config config) {
+		touchCache = newBuilder().expireAfterWrite(getTouchCacheDuration(), TimeUnit.SECONDS).removalListener(this).build();
+		this.cacheCleanUp = new Runnable() {
+			@Override
+			public void run() {
+				touchCache.cleanUp();
+			}
+		};
+		scheduledTaskService.addFixedDelayedScheduledTask(cacheCleanUp, 1000);
+		vmCache = synchronizedSupplier(memoizeWithExpiration(vmSupplier(), 1, TimeUnit.MINUTES));
+	}
+
 
 	protected void initProxy(Config config) {
 		final String proxyHost = config.getProxyHost();
@@ -144,14 +114,12 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		}
 	}
 
-	protected String getTagString(Config config) {
-		return config.getControllerAdvertisedHost();
-	}
 
 	protected void initFilterMap(Config config) {
 		filterMap = new HashMap<String, String>();
 		filterMap.put(NGRINDER_AGENT_TAG_KEY, getTagString(config));
 	}
+
 
 	protected void initComputeService(Config config) {
 		try {
@@ -189,6 +157,54 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 			this.virtualMachineSupport = checkNotNull(cloudProvider.getComputeServices()).getVirtualMachineSupport();
 		} catch (Exception e) {
 			throw processException("Exception occured while setting up AWS agent auto scale", e);
+		}
+	}
+
+	@Override
+	public void destroy() {
+		cloudProvider.close();
+		scheduledTaskService.removeScheduledJob(this.cacheCleanUp);
+	}
+
+	protected String getTagString(Config config) {
+		return config.getControllerAdvertisedHost();
+	}
+
+	protected int getTouchCacheDuration() {
+		return 60 * 60;
+	}
+
+
+	@Override
+	public List<AutoScaleNode> getNodes() {
+		List<AutoScaleNode> result = newArrayList();
+		for (VirtualMachine each : listAllVM()) {
+			AutoScaleNode node = new AutoScaleNode();
+			node.setId(each.getProviderVirtualMachineId());
+			node.setName(each.getName());
+			node.setIps(getAddresses(each));
+			node.setState(each.getCurrentState().name());
+			result.add(node);
+		}
+		return result;
+	}
+
+	@Override
+	public void refresh() {
+		vmCache.invalidate();
+	}
+
+	@Override
+	public void stopNode(String nodeId) {
+		try {
+			vmCache.invalidate();
+			LOG.info("VM : Start stopping {}", nodeId);
+			virtualMachineSupport.stop(checkNotNull(nodeId));
+			LOG.info("VM : stopping {} is succeeded.", nodeId);
+		} catch (Exception e) {
+			throw processException("Error while stopping node " + nodeId, e);
+		} finally {
+			vmCache.invalidate();
 		}
 	}
 
@@ -272,13 +288,22 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	 */
 	void activateNodes(List<VirtualMachine> vms) {
 		try {
+			touchNodes(vms);
 			List<VirtualMachine> activatedNodes = startNodes(vms);
+			activatedNodes = touchNodes(activatedNodes);
 			activatedNodes = waitUntilVmState(activatedNodes, VmState.RUNNING, 3 * 1000);
 			activatedNodes = waitUntilPortAvailable(activatedNodes, daemonPort, 60 * 1000);
 			startContainers(activatedNodes);
 		} catch (Exception e) {
 			throw processException(e);
 		}
+	}
+
+	private List<VirtualMachine> touchNodes(List<VirtualMachine> vms) {
+		for (VirtualMachine vm : vms) {
+			touch(vm.getProviderVirtualMachineId());
+		}
+		return vms;
 	}
 
 
@@ -473,4 +498,15 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 			closeQuietly(dockerClient);
 		}
 	}
+
+	@Override
+	public String getDiagnosticInfo() {
+		StringBuilder builder = new StringBuilder();
+		for (VirtualMachine vm : listAllVM()) {
+			builder.append(ToStringBuilder.reflectionToString(vm)).append("\n");
+		}
+		return builder.toString();
+	}
+
+
 }

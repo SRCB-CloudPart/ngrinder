@@ -168,7 +168,7 @@ public class AgentAutoScaleDockerClient implements Closeable {
 				}
 				// to be safe
 				final List<String> cmd = containerInfo.config().cmd();
-				if (!(cmd.contains(controllerHost) && cmd.contains(controllerPort) && cmd.contains(region) && cmd.contains(machineName))) {
+				if (!(cmd.contains(controllerHost) && cmd.contains(String.valueOf(controllerPort)) && cmd.contains(region) && cmd.contains(machineName))) {
 					dockerClient.removeContainer(containerId);
 					LOG.error("Wrong configuration on {}. Create New One with", machineName);
 					createNew = true;
