@@ -3,7 +3,9 @@ package org.ngrinder.agent.controller;
 import org.ngrinder.agent.service.AgentAutoScaleService;
 import org.ngrinder.common.controller.BaseController;
 import org.ngrinder.common.controller.RestAPI;
+import org.ngrinder.infra.config.Config;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
@@ -24,6 +26,8 @@ public class AgentAutoScaleController extends BaseController {
 	@Autowired
 	private AgentAutoScaleService agentAutoScaleService;
 
+	@Autowired
+	private Config config;
 	/**
 	 * Show agent's nodes
 	 *
@@ -33,6 +37,7 @@ public class AgentAutoScaleController extends BaseController {
 
 	@RequestMapping(value = {"/", ""}, method = RequestMethod.GET)
 	public String view(Model model) {
+		model.addAttribute("advertisedHost", config.getControllerAdvertisedHost());
 		model.addAttribute("totalNodeCount", agentAutoScaleService.getTotalNodeSize());
 		model.addAttribute("activatableNodeCount", agentAutoScaleService.getActivatableNodeSize());
 		model.addAttribute("nodes", agentAutoScaleService.getNodes());
@@ -52,10 +57,22 @@ public class AgentAutoScaleController extends BaseController {
 	 */
 	@RestAPI
 	@RequestMapping(value = "/api/{id}", params = "action=stop", method = RequestMethod.PUT)
-	public String stopNode(@PathVariable("id") String nodeId, Model model) {
+	public HttpEntity<String> stopNode(@PathVariable("id") String nodeId, Model model) {
 		agentAutoScaleService.stopNode(nodeId);
-		return view(model);
+		return successJsonHttpEntity();
 	}
 
+	/**
+	 * Stop the agent's node
+	 *
+	 * @param model  model
+	 * @return agent/auto_scale
+	 */
+	@RestAPI
+	@RequestMapping(value = "/api/refresh", method = RequestMethod.GET)
+	public HttpEntity<String> refresh(Model model) {
+		agentAutoScaleService.refresh();
+		return successJsonHttpEntity();
+	}
 
 }

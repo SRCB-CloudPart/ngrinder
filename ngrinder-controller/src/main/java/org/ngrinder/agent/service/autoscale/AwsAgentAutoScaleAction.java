@@ -50,7 +50,6 @@ import static org.ngrinder.common.util.ThreadUtils.sleep;
  */
 @Qualifier("aws")
 public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements RemovalListener<String, Long> {
-
 	private static final Logger LOG = LoggerFactory.getLogger(AwsAgentAutoScaleAction.class);
 	private static final String NGRINDER_AGENT_TAG_KEY = "ngrinder-agent";
 	private Map<String, String> filterMap;
@@ -106,6 +105,11 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	}
 
 	@Override
+	public void refresh() {
+		vmCache.invalidate();
+	}
+
+	@Override
 	public void stopNode(String nodeId) {
 		try {
 			vmCache.invalidate();
@@ -115,6 +119,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		} catch (Exception e) {
 			throw processException("Error while stopping node " + nodeId, e);
 		} finally {
+
 			vmCache.invalidate();
 		}
 	}
@@ -281,8 +286,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		List<VirtualMachine> result = newArrayList();
 		for (VirtualMachine each : vms) {
 			try {
-				startNodes(each);
-				result.add(each);
+				result.add(startNodes(each));
 			} catch (Exception e) {
 				LOG.error("Failed to activate node {}", each.getProviderVirtualMachineId(), e);
 			}
@@ -351,7 +355,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		return result;
 	}
 
-	void startNodes(VirtualMachine vm) {
+	VirtualMachine startNodes(VirtualMachine vm) {
 		try {
 			VirtualMachineCapabilities capabilities = virtualMachineSupport.getCapabilities();
 			if (capabilities.canStart(vm.getCurrentState())) {
@@ -360,6 +364,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 			} else {
 				throw new NGrinderRuntimeException("VM Activation : " + vm.getProviderVirtualMachineId() + " is not the startable state. " + vm.getCurrentState());
 			}
+			return vm;
 		} catch (Exception e) {
 			LOG.error("VM Activation : can not activate {}", vm.getProviderVirtualMachineId(), e);
 			throw processException(e);

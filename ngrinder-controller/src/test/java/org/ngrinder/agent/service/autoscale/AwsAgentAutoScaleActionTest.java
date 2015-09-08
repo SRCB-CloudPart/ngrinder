@@ -55,7 +55,6 @@ public class AwsAgentAutoScaleActionTest {
 		when(agentManager.getAllFreeAgents()).thenReturn(Sets.<AgentIdentity>newHashSet(new AgentControllerIdentityImplementation("ww", "10")));
 		MockScheduledTaskService scheduledTaskService = new MockScheduledTaskService();
 		awsAgentAutoScaleAction.init(config, agentManager, scheduledTaskService);
-
 	}
 
 	@Test

@@ -52,18 +52,21 @@ public abstract class AgentAutoScaleAction {
 
 	/**
 	 * Stop the given node.
+	 *
 	 * @param nodeId node id
 	 */
 	public abstract void stopNode(String nodeId);
 
 	/**
 	 * Get the max count of node allowed
+	 *
 	 * @return the count of node
 	 */
 	public abstract int getMaxNodeCount();
 
 	/**
 	 * Get the count of activatbale node
+	 *
 	 * @return the count of node
 	 */
 	public abstract int getActivatableNodeCount();
@@ -71,6 +74,7 @@ public abstract class AgentAutoScaleAction {
 
 	/**
 	 * For diagnositc
+	 *
 	 * @return info
 	 */
 	public abstract String getDiagnosticInfo();
@@ -82,9 +86,14 @@ public abstract class AgentAutoScaleAction {
 
 	/**
 	 * Get all nodes info
+	 *
 	 * @return node info
 	 */
 	public abstract List<AutoScaleNode> getNodes();
 
 
+	/**
+	 * Refresh caches.
+	 */
+	public abstract void refresh();
 }

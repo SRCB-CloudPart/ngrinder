@@ -61,6 +61,11 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction {
 	}
 
 	@Override
+	public void refresh() {
+
+	}
+
+	@Override
 	public void stopNode(String nodeId) {
 
 	}

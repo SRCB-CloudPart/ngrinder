@@ -64,6 +64,11 @@ public class NullAgentAutoScaleAction extends AgentAutoScaleAction {
 	}
 
 	@Override
+	public void refresh() {
+
+	}
+
+	@Override
 	public void stopNode(String nodeId) {
 
 	}

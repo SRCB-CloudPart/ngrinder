@@ -11,11 +11,17 @@
     <div class="container">
         <fieldSet>
             <legend class="header">
-                <@spring.message "agent_auto_scale.list.title"/>
+			<@spring.message "agent_auto_scale.list.title"/>
             </legend>
-            <span class="pull-right"><@spring.message "agent_auto_scale.maxNodeCount"/> : ${totalNodeCount} / <@spring.message "agent_auto_scale.activatableNodeCount"/> : ${activatableNodeCount}</span>
         </fieldSet>
-
+        <div>
+            <span>Current Advertised Host : ${advertisedHost} / <@spring.message "agent_auto_scale.maxNodeCount"/>
+                : ${totalNodeCount} / <@spring.message "agent_auto_scale.activatableNodeCount"/>
+                : ${activatableNodeCount}</span>
+            <button class="btn btn-info btn-mini pull-right" id="show_node_setup"
+                    type="button"><@spring.message "agent_auto_scale.message.howToSetupNodes"/></button>
+            <span class="pull-right" style="margin-right:20px"><i class="icon-refresh pointer-cursor" id="refresh"></i></span>
+        </div>
         <table class="table table-striped table-bordered ellipsis" id="agent_table">
             <colgroup>
                 <col width="200">
@@ -40,9 +46,11 @@
                 <td>${node.id}</td>
                 <td>${node.state}</td>
                 <td><#list node.ips as each>${each}<br/></#list></td>
-                <td>
-                    <i title="<@spring.message "common.button.stop"/>"
-                       class="icon-stop node-stop pointer-cursor" sid="${node.id}" ></i>
+                <td class="center">
+					<#if node.state != "STOPPED">
+                        <i title="<@spring.message "common.button.stop"/>" class="icon-stop node-stop pointer-cursor"
+                           sid="${node.id}"></i>
+					</#if>
                 </td>
             </tr>
 			</@list>
@@ -51,11 +59,40 @@
         <!--content-->
     </div>
 </div>
+
+
+<div class="modal hide fade" id="node_setup_modal" role="dialog">
+    <div class="modal-header" style="border: none;">
+        <button type="button" class="close" data-dismiss="modal" aria-hidden="true">x</button>
+        <h4><@spring.message "agent_auto_scale.message.howToSetupNodes"/></h4>
+    </div>
+    <div class="modal-body">
+        <div class="form-horizontal" style="margin-left:20px;overflow-y:hidden">
+            <fieldset>
+			<@spring.message "agent_auto_scale.message.description"/>
+            </fieldset>
+        </div>
+    </div>
+</div>
+
 <script type="application/javascript">
-    $(document).ready(function() {
+    $(document).ready(function () {
+
+        $("#show_node_setup").click(function () {
+            $('#node_setup_modal').modal('show');
+        });
+
+        $("#refresh").click(function () {
+            var ajaxObj = new AjaxObj("/agent/node_mgnt/api/refresh");
+            ajaxObj.success = function () {
+                location.reload();
+            };
+            ajaxObj.call();
+        });
+
         $("i.node-stop").click(function () {
             var id = $(this).attr("sid");
-            bootbox.confirm("<@spring.message "agent_auto_scale.message.stop.confirm"/>" + " - "  + id, "<@spring.message "common.button.cancel"/>", "<@spring.message "common.button.ok"/>", function (result) {
+            bootbox.confirm("<@spring.message "agent_auto_scale.message.stop.confirm"/>" + " - " + id, "<@spring.message "common.button.cancel"/>", "<@spring.message "common.button.ok"/>", function (result) {
                 if (result) {
                     stopNode(id);
                 }
@@ -64,13 +101,13 @@
 
         function stopNode(id) {
             var ajaxObj = new AjaxPutObj("/agent/node_mgnt/api/" + id + "?action=stop",
-                    "<@spring.message "agent_auto_scale.message.stop.success"/>",
-                    "<@spring.message "agent_auto_scale.message.stop.error"/>");
-            ajaxObj.type = "DELETE";
+                    {},
+                    "<@spring.message "agent_auto_scale.message.stop.success"/>");
             ajaxObj.success = function () {
                 setTimeout(function () {
-                    setTimeout(location.reload, 1000);
-                }, 500);
+                            location.reload();
+                        }, 2000
+                );
             };
             ajaxObj.call();
         }

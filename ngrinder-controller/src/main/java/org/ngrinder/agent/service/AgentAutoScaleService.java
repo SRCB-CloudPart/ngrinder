@@ -162,6 +162,10 @@ public class AgentAutoScaleService {
 		this.agentAutoScaleAction.stopNode(nodeId);
 	}
 
+	public void refresh() {
+		this.agentAutoScaleAction.refresh();
+	}
+
 	/**
 	 * Exception which is occured when the count of nodes is not enough
 	 */
