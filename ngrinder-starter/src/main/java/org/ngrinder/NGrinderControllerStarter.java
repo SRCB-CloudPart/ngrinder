@@ -214,8 +214,8 @@ public class NGrinderControllerStarter {
 	@Parameter(names = {"-asc", "--auto-scale-credential"}, description = "agent auto scale - credential to login to cloud provider")
 	private String agentAutoScaleCredential = null;
 
-	@Parameter(names = {"-asppi", "--auto-scale-prefer-private-ip"}, description = "agent auto scale - true if private ip connection is prefered")
-	private String agentAutoScalePreferPrivateIP = null;
+	@Parameter(names = {"-asppi", "--auto-scale-private-ip"}, description = "agent auto scale - true if private ip is used.")
+	private Boolean agentAutoScalePrivateIP = false;
 
 	@Parameter(names = {"-asdr", "--auto-scale-docker-repo"}, description = "agent auto scale - the docker image repository")
 	private String agentAutoScaleDockerRepo = null;
@@ -350,7 +350,7 @@ public class NGrinderControllerStarter {
 		setSystemProp("agent.auto_scale.type", server.agentAutoScaleType);
 		setSystemProp("agent.auto_scale.identity", server.agentAutoScaleIdentity);
 		setSystemProp("agent.auto_scale.credential", server.agentAutoScaleCredential);
-		setSystemProp("agent.auto_scale.prefer_private_ip", server.agentAutoScalePreferPrivateIP);
+		setSystemProp("agent.auto_scale.private_ip", Boolean.valueOf(server.agentAutoScalePrivateIP));
 		setSystemProp("agent.auto_scale.docker_repo", server.agentAutoScaleDockerRepo);
 		setSystemProp("agent.auto_scale.docker_tag", server.agentAutoScaleDockerTag);
 		setSystemProp("agent.auto_sacle.region", server.agentAutoScaleRegion);
