@@ -32,6 +32,8 @@ public class AgentAutoScaleController extends BaseController {
 
 	@RequestMapping(value = {"node_mgnt/", "node_mgnt"}, method = RequestMethod.GET)
 	public String view(Model model) {
+		model.addAttribute("totalNodeCount", agentAutoScaleService.getTotalNodeSize());
+		model.addAttribute("activatableNodeCount", agentAutoScaleService.getActivatableNodeSize());
 		model.addAttribute("nodes", agentAutoScaleService.getNodes());
 		return "agent/auto_scale";
 	}

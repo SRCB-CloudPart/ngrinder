@@ -10,7 +10,10 @@
 <#include "../common/navigator.ftl">
     <div class="container">
         <fieldSet>
-            <legend class="header"> <@spring.message "agent_auto_scale.list.title"/> </legend>
+            <legend class="header">
+                <@spring.message "agent_auto_scale.list.title"/>
+            </legend>
+            <span class="pull-right"><@spring.message "agent_auto_scale.maxNodeCount"/> : ${totalNodeCount} / <@spring.message "agent_auto_scale.activatableNodeCount"/> : ${activatableNodeCount}</span>
         </fieldSet>
 
         <table class="table table-striped table-bordered ellipsis" id="agent_table">
@@ -19,7 +22,6 @@
                 <col width="200">
                 <col width="200">
                 <col width="*">
-
             </colgroup>
             <thead>
             <tr>
