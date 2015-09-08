@@ -7,22 +7,20 @@ import org.apache.commons.lang3.StringUtils;
 import org.junit.Before;
 import org.ngrinder.common.util.PropertiesWrapper;
 import org.ngrinder.infra.config.Config;
+import org.ngrinder.infra.schedule.ScheduledTaskService;
 import org.ngrinder.perftest.service.AgentManager;
 
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.ngrinder.common.constant.AgentAutoScaleConstants.*;
 
-/**
- * Created by junoyoon on 15. 9. 8.
- */
 public class BaseAwsAgentAutoScaleActionTest {
 
 
 	protected AwsAgentAutoScaleAction awsAgentAutoScaleAction;
 	private Config config;
 	private AgentManager agentManager;
-	private MockScheduledTaskService scheduledTaskService;
+	private ScheduledTaskService scheduledTaskService;
 
 	@Before
 	public void init() {
@@ -52,8 +50,12 @@ public class BaseAwsAgentAutoScaleActionTest {
 		}
 		agentManager = mock(AgentManager.class);
 		when(agentManager.getAllFreeAgents()).thenReturn(Sets.<AgentIdentity>newHashSet(new AgentControllerIdentityImplementation("ww", "10")));
-		scheduledTaskService = new MockScheduledTaskService();
+		scheduledTaskService = getScheduledTaskService();
 		awsAgentAutoScaleAction.init(config, agentManager, scheduledTaskService);
+	}
+
+	protected ScheduledTaskService getScheduledTaskService() {
+		return new MockScheduledTaskService();
 	}
 
 	protected AwsAgentAutoScaleAction createAction() {

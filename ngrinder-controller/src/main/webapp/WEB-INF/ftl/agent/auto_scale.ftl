@@ -61,7 +61,7 @@
 </div>
 
 
-<div class="modal hide fade" id="node_setup_modal" role="dialog">
+<div class="modal hide fade" id="node_setup_modal" role="dialog" style="width:700px">
     <div class="modal-header" style="border: none;">
         <button type="button" class="close" data-dismiss="modal" aria-hidden="true">x</button>
         <h4><@spring.message "agent_auto_scale.message.howToSetupNodes"/></h4>
@@ -70,6 +70,7 @@
         <div class="form-horizontal" style="margin-left:20px;overflow-y:hidden">
             <fieldset>
 			<@spring.message "agent_auto_scale.message.description"/>
+                <pre>${nodeInitScript}</pre>
             </fieldset>
         </div>
     </div>

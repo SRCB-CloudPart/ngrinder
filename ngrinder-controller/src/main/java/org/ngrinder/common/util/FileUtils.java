@@ -52,6 +52,18 @@ public abstract class FileUtils {
 			IOUtils.closeQuietly(io);
 			IOUtils.closeQuietly(fos);
 		}
+	}
 
+	public static String getResourceString(String resourcePath) {
+		InputStream io = null;
+		try {
+			io = new ClassPathResource(resourcePath).getInputStream();
+			return IOUtils.toString(io);
+		} catch (IOException e) {
+			LOGGER.error("error while writing {}", resourcePath, e);
+			return "";
+		} finally {
+			IOUtils.closeQuietly(io);
+		}
 	}
 }

@@ -11,12 +11,12 @@ public class AwsAgentAutoScaleActionTimoutTest extends BaseAwsAgentAutoScaleActi
 
 
 	protected AwsAgentAutoScaleAction createAction() {
-		return new AwsAgentAutoScaleAction() {
+		return spy(new AwsAgentAutoScaleAction() {
 			@Override
 			protected int getTouchCacheDuration() {
 				return 3;
 			}
-		};
+		});
 	}
 
 	@Test
@@ -24,6 +24,6 @@ public class AwsAgentAutoScaleActionTimoutTest extends BaseAwsAgentAutoScaleActi
 		awsAgentAutoScaleAction.touch("wow");
 		ThreadUtils.sleep(4000);
 		awsAgentAutoScaleAction.touch("wow");
-		ThreadUtils.sleep(4000);
+		verify(awsAgentAutoScaleAction).stopNode("wow");
 	}
 }
