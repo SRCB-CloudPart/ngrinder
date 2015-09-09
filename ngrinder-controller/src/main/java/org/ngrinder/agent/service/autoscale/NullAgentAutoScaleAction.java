@@ -41,7 +41,7 @@ public class NullAgentAutoScaleAction extends AgentAutoScaleAction {
 	}
 
 	@Override
-	public void activateNodes(int total, int required) throws AgentAutoScaleService.NotSufficientAvailableNodeException {
+	public void activateNodes(int total) throws AgentAutoScaleService.NotSufficientAvailableNodeException {
 
 	}
 

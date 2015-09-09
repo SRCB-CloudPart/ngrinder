@@ -123,10 +123,10 @@ public class AgentAutoScaleService {
 		this.config = config;
 	}
 
-	public void activateNodes(int total, int required) throws AutoScaleProviderNotReadyException, NotSufficientAvailableNodeException {
+	public void activateNodes(int count) throws AutoScaleProviderNotReadyException, NotSufficientAvailableNodeException {
 		lock.lock();
 		try {
-			agentAutoScaleAction.activateNodes(total, required);
+			agentAutoScaleAction.activateNodes(count);
 		} finally {
 			lock.unlock();
 		}

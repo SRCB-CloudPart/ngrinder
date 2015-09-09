@@ -51,6 +51,7 @@ import java.util.*;
 import static org.apache.commons.lang.ObjectUtils.defaultIfNull;
 import static org.ngrinder.common.constant.ClusterConstants.PROP_CLUSTER_SAFE_DIST;
 import static org.ngrinder.common.util.AccessUtils.getSafe;
+import static org.ngrinder.common.util.ThreadUtils.sleep;
 import static org.ngrinder.model.Status.*;
 
 /**
@@ -169,7 +170,8 @@ public class PerfTestRunnable implements ControllerConstants {
 			final Integer agentCount = runCandidate.getAgentCount();
 			requiredAgentCount = agentCount -
 					agentManager.getAllFreeApprovedAgentsForUser(runCandidate.getCreatedUser()).size();
-			agentAutoScaleService.activateNodes(agentCount, requiredAgentCount);
+			agentAutoScaleService.activateNodes(requiredAgentCount);
+			waitUntilAgentOn(agentCount, 1000);
 		} catch (AgentAutoScaleService.NotSufficientAvailableNodeException e) {
 			LOG.debug(e.getMessage());
 		} catch (Exception e) {
@@ -178,6 +180,18 @@ public class PerfTestRunnable implements ControllerConstants {
 		}
 	}
 
+	void waitUntilAgentOn(int count, int checkInterval) {
+		if (count == 0) {
+			return;
+		}
+		for (int i = 0; i < 100; i++) {
+			if (agentManager.getAllFreeApprovedAgents().size() < count) {
+				sleep(checkInterval);
+			} else {
+				return;
+			}
+		}
+	}
 
 	private PerfTest getRunnablePerfTest() {
 		return perfTestService.getNextRunnablePerfTestPerfTestCandidate();

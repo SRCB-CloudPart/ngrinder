@@ -262,20 +262,19 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 
 
 	@Override
-	public void activateNodes(int total, int required) throws AgentAutoScaleService.NotSufficientAvailableNodeException {
+	public void activateNodes(int count) throws AgentAutoScaleService.NotSufficientAvailableNodeException {
 		int activatableNodeCount = getActivatableNodeCount();
-		if (activatableNodeCount < required) {
+		if (activatableNodeCount < count) {
 			throw new AgentAutoScaleService.NotSufficientAvailableNodeException(
-					String.format("%d node activation is requested. But only %d stopped nodes (total %d nodes) are available. The activation is canceled.", required, activatableNodeCount, getMaxNodeCount())
+					String.format("%d node activation is requested. But only %d stopped nodes (total %d nodes) are available. The activation is canceled.", count, activatableNodeCount, getMaxNodeCount())
 			);
 		}
-		List<VirtualMachine> candidates = getActivatableNodes().subList(0, required);
+		List<VirtualMachine> candidates = getActivatableNodes().subList(0, count);
 		// To speed up
 		if (candidates.isEmpty()) {
 			return;
 		}
 		activateNodes(candidates);
-		waitUntilAgentOn(total, 1000);
 	}
 
 	private List<VirtualMachine> getActivatableNodes() {
@@ -332,18 +331,6 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 		return result;
 	}
 
-	void waitUntilAgentOn(int count, int checkInterval) {
-		if (count == 0) {
-			return;
-		}
-		for (int i = 0; i < 100; i++) {
-			if (agentManager.getAllFreeApprovedAgents().size() < count) {
-				sleep(checkInterval);
-			} else {
-				return;
-			}
-		}
-	}
 
 	List<VirtualMachine> startContainers(List<VirtualMachine> activatedNodes) {
 		List<VirtualMachine> containerStartedNode = newArrayList();

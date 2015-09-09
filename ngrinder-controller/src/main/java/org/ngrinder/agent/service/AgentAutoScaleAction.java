@@ -38,10 +38,9 @@ public abstract class AgentAutoScaleAction {
 	/**
 	 * Activate the given count of node.
 	 *
-	 * @param total    the total count of necessary agent
-	 * @param required the required count of agents which should be activated more.
+	 * @param count    the  count of nodes which should be activated.
 	 */
-	public abstract void activateNodes(int total, int required) throws AgentAutoScaleService.NotSufficientAvailableNodeException;
+	public abstract void activateNodes(int count) throws AgentAutoScaleService.NotSufficientAvailableNodeException;
 
 	/**
 	 * Touch the given node
