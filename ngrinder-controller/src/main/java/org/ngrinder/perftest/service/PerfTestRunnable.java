@@ -34,6 +34,7 @@ import org.ngrinder.infra.plugin.PluginManager;
 import org.ngrinder.infra.schedule.ScheduledTaskService;
 import org.ngrinder.model.PerfTest;
 import org.ngrinder.model.Status;
+import org.ngrinder.model.User;
 import org.ngrinder.perftest.model.NullSingleConsole;
 import org.ngrinder.perftest.service.samplinglistener.*;
 import org.ngrinder.script.handler.ScriptHandler;
@@ -164,14 +165,14 @@ public class PerfTestRunnable implements ControllerConstants {
 		doTest(runCandidate);
 	}
 
-	private void activateAgents(PerfTest runCandidate) {
+	void activateAgents(PerfTest runCandidate) {
 		int requiredAgentCount = 0;
 		try {
 			final Integer agentCount = runCandidate.getAgentCount();
 			requiredAgentCount = agentCount -
 					agentManager.getAllFreeApprovedAgentsForUser(runCandidate.getCreatedUser()).size();
 			agentAutoScaleService.activateNodes(requiredAgentCount);
-			waitUntilAgentOn(agentCount, 1000);
+			waitUntilAgentOn(runCandidate.getCreatedUser(), agentCount, 1000);
 		} catch (AgentAutoScaleService.NotSufficientAvailableNodeException e) {
 			LOG.debug(e.getMessage());
 		} catch (Exception e) {
@@ -180,12 +181,9 @@ public class PerfTestRunnable implements ControllerConstants {
 		}
 	}
 
-	void waitUntilAgentOn(int count, int checkInterval) {
-		if (count == 0) {
-			return;
-		}
+	void waitUntilAgentOn(User user, int count, int checkInterval) {
 		for (int i = 0; i < 100; i++) {
-			if (agentManager.getAllFreeApprovedAgents().size() < count) {
+			if (agentManager.getAllFreeApprovedAgentsForUser(user).size() < count) {
 				sleep(checkInterval);
 			} else {
 				return;
