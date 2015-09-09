@@ -30,15 +30,15 @@ public abstract class AgentAutoScaleAction {
 	/**
 	 * Initialize the AgentAutoScaleAction.
 	 *
-	 * @param config       config
-	 * @param agentManager agentManager for the current activated nodes.
+	 * @param config               config
+	 * @param scheduledTaskService scheduled task service
 	 */
-	public abstract void init(Config config, AgentManager agentManager, ScheduledTaskService scheduledTaskService);
+	public abstract void init(Config config, ScheduledTaskService scheduledTaskService);
 
 	/**
 	 * Activate the given count of node.
 	 *
-	 * @param count    the  count of nodes which should be activated.
+	 * @param count the  count of nodes which should be activated.
 	 */
 	public abstract void activateNodes(int count) throws AgentAutoScaleService.NotSufficientAvailableNodeException;
 

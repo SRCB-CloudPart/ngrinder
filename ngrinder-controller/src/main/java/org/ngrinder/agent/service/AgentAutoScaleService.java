@@ -17,14 +17,12 @@ import org.ngrinder.agent.model.AutoScaleNode;
 import org.ngrinder.agent.service.autoscale.NullAgentAutoScaleAction;
 import org.ngrinder.infra.config.Config;
 import org.ngrinder.infra.schedule.ScheduledTaskService;
-import org.ngrinder.perftest.service.AgentManager;
 import org.reflections.Reflections;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Profile;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 
 import javax.annotation.PostConstruct;
@@ -53,8 +51,6 @@ public class AgentAutoScaleService {
 	@Autowired
 	private Config config;
 
-	@Autowired
-	private AgentManager agentManager;
 
 	@Autowired
 	private ScheduledTaskService scheduledTaskService;
@@ -84,7 +80,7 @@ public class AgentAutoScaleService {
 	synchronized void initAgentAutoScaleService() {
 		agentAutoScaleAction.destroy();
 		agentAutoScaleAction = createAgentAutoScaleAction();
-		agentAutoScaleAction.init(config, agentManager, scheduledTaskService);
+		agentAutoScaleAction.init(config, scheduledTaskService);
 	}
 
 
@@ -150,6 +146,7 @@ public class AgentAutoScaleService {
 	 *
 	 * @return agentAutoscaleAction.
 	 */
+	@SuppressWarnings("unused")
 	public AgentAutoScaleAction getAgentAutoScaleAction() {
 		return this.agentAutoScaleAction;
 	}

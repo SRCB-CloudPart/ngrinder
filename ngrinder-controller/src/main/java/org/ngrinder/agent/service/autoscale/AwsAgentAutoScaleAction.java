@@ -35,7 +35,6 @@ import org.ngrinder.common.exception.NGrinderRuntimeException;
 import org.ngrinder.common.util.Suppliers.Supplier;
 import org.ngrinder.infra.config.Config;
 import org.ngrinder.infra.schedule.ScheduledTaskService;
-import org.ngrinder.perftest.service.AgentManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -70,7 +69,6 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	private static final String NGRINDER_AGENT_TAG_KEY = "ngrinder-agent";
 	private Map<String, String> filterMap;
 	private Config config;
-	private AgentManager agentManager;
 	private ScheduledTaskService scheduledTaskService;
 	private VirtualMachineSupport virtualMachineSupport;
 	private CloudProvider cloudProvider;
@@ -94,16 +92,15 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	private Runnable cacheCleanUp;
 
 	@Override
-	public void init(Config config, AgentManager agentManager, ScheduledTaskService scheduledTaskService) {
+	public void init(Config config, ScheduledTaskService scheduledTaskService) {
 		this.config = config;
-		this.agentManager = agentManager;
 		this.scheduledTaskService = scheduledTaskService;
 		this.daemonPort = config.getAgentAutoScaleProperties().getPropertyInt(PROP_AGENT_AUTO_SCALE_DOCKER_DAEMON_PORT);
 		this.maxNodeCount = config.getAgentAutoScaleProperties().getPropertyInt(PROP_AGENT_AUTO_SCALE_MAX_NODES);
-		initCache(config);
 		initProxy(config);
 		initFilterMap(config);
 		initComputeService(config);
+		initCache(config);
 	}
 
 	protected void initCache(Config config) {
@@ -115,6 +112,9 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 			}
 		};
 		scheduledTaskService.addFixedDelayedScheduledTask(cacheCleanUp, 1000);
+		for (VirtualMachine vm : listAllVM()) {
+			touchCache.put(vm.getProviderVirtualMachineId(), vm.getLastBootTimestamp());
+		}
 		vmCache = synchronizedSupplier(memoizeWithExpiration(vmSupplier(), 1, TimeUnit.MINUTES));
 	}
 

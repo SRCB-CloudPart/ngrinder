@@ -16,12 +16,9 @@ package org.ngrinder.agent.service.autoscale;
 import org.ngrinder.agent.model.AutoScaleNode;
 import org.ngrinder.agent.service.AgentAutoScaleAction;
 import org.ngrinder.agent.service.AgentAutoScaleService;
-import org.ngrinder.agent.service.AgentManagerService;
 import org.ngrinder.infra.config.Config;
 import org.ngrinder.infra.schedule.ScheduledTaskService;
-import org.ngrinder.perftest.service.AgentManager;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -36,7 +33,7 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction {
 
 
 	@Override
-	public void init(Config config, AgentManager agentManager, ScheduledTaskService scheduledTaskService) {
+	public void init(Config config, ScheduledTaskService scheduledTaskService) {
 	}
 
 	@Override

@@ -18,7 +18,6 @@ import org.ngrinder.agent.service.AgentAutoScaleAction;
 import org.ngrinder.agent.service.AgentAutoScaleService;
 import org.ngrinder.infra.config.Config;
 import org.ngrinder.infra.schedule.ScheduledTaskService;
-import org.ngrinder.perftest.service.AgentManager;
 import org.springframework.beans.factory.annotation.Qualifier;
 
 import java.util.ArrayList;
@@ -36,7 +35,7 @@ public class NullAgentAutoScaleAction extends AgentAutoScaleAction {
 
 
 	@Override
-	public void init(Config config, AgentManager agentManager, ScheduledTaskService scheduledTaskService) {
+	public void init(Config config, ScheduledTaskService scheduledTaskService) {
 
 	}
 

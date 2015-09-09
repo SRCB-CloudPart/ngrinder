@@ -49,9 +49,8 @@ public class BaseAwsAgentAutoScaleActionTest {
 			System.setProperty("https.proxyPort", System.getProperty("controller.proxy_port"));
 		}
 		agentManager = mock(AgentManager.class);
-		when(agentManager.getAllFreeAgents()).thenReturn(Sets.<AgentIdentity>newHashSet(new AgentControllerIdentityImplementation("ww", "10")));
 		scheduledTaskService = getScheduledTaskService();
-		awsAgentAutoScaleAction.init(config, agentManager, scheduledTaskService);
+		awsAgentAutoScaleAction.init(config, scheduledTaskService);
 	}
 
 	protected ScheduledTaskService getScheduledTaskService() {
