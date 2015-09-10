@@ -184,7 +184,7 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	}
 
 	protected int getTouchCacheDuration() {
-		return 10 * 60;
+		return 60 * 60;
 	}
 
 
