@@ -153,7 +153,6 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 				if (f.type.equals(ContextRequirements.FieldType.KEYPAIR)) {
 					String shared = checkNotEmpty(config.getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_IDENTITY),
 							"agent.auto_scale.identity option should be provided to activate the AWS agent auto scale.");
-					LOG.info("SHIHUC key: " + config.getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_CREDENTIAL));
 					String secret = checkNotEmpty(config.getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_CREDENTIAL),
 							"agent.auto_scale.credential option should be provided to activate the AWS agent auto scale.");
 					values.add(ProviderContext.Value.parseValue(f, shared, secret));
