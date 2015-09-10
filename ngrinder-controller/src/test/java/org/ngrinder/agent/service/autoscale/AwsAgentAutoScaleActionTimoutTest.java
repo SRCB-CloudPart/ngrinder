@@ -5,6 +5,7 @@ import org.ngrinder.common.util.ThreadUtils;
 
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
+import static org.ngrinder.common.util.ThreadUtils.sleep;
 
 
 public class AwsAgentAutoScaleActionTimoutTest extends BaseAwsAgentAutoScaleActionTest {
@@ -22,7 +23,7 @@ public class AwsAgentAutoScaleActionTimoutTest extends BaseAwsAgentAutoScaleActi
 	@Test
 	public void test1() {
 		awsAgentAutoScaleAction.touch("wow");
-		ThreadUtils.sleep(4000);
+		sleep(4000);
 		awsAgentAutoScaleAction.touch("wow");
 		verify(awsAgentAutoScaleAction).stopNode("wow");
 	}
