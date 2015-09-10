@@ -353,7 +353,7 @@ public class NGrinderControllerStarter {
 		setSystemProp("agent.auto_scale.private_ip", Boolean.valueOf(server.agentAutoScalePrivateIP));
 		setSystemProp("agent.auto_scale.docker_repo", server.agentAutoScaleDockerRepo);
 		setSystemProp("agent.auto_scale.docker_tag", server.agentAutoScaleDockerTag);
-		setSystemProp("agent.auto_sacle.region", server.agentAutoScaleRegion);
+		setSystemProp("agent.auto_scale.region", server.agentAutoScaleRegion);
 		setSystemProp("agent.auto_scale.max_nodes", server.agentAutoScaleMaxNodes);
 	}
 

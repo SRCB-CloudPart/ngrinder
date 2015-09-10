@@ -14,10 +14,7 @@
 package org.ngrinder.agent.service.autoscale;
 
 import com.spotify.docker.client.*;
-import com.spotify.docker.client.messages.ContainerConfig;
-import com.spotify.docker.client.messages.ContainerInfo;
-import com.spotify.docker.client.messages.HostConfig;
-import com.spotify.docker.client.messages.ProgressMessage;
+import com.spotify.docker.client.messages.*;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.ngrinder.common.exception.NGrinderRuntimeException;
@@ -181,7 +178,8 @@ public class AgentAutoScaleDockerClient implements Closeable {
 				}
 				// to be safe
 				final List<String> cmd = containerInfo.config().cmd();
-				if (!(cmd.contains(controllerHost) && cmd.contains(String.valueOf(controllerPort)) && cmd.contains(region) && cmd.contains(machineName))) {
+				if (!containerInfo.config().image().equalsIgnoreCase(image) ||
+					!(cmd.contains(controllerHost) && cmd.contains(String.valueOf(controllerPort)) && cmd.contains(region) && cmd.contains(machineName))) {
 					dockerClient.removeContainer(containerId);
 					LOG.error("Wrong configuration on {}. Create New One with", machineName);
 					createNew = true;
