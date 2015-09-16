@@ -33,12 +33,12 @@ public class BaseAwsAgentAutoScaleActionTest {
 		when(agentProperties.getProperty(PROP_AGENT_AUTO_SCALE_REGION)).thenReturn("ap-southeast-1");
 		when(agentProperties.getProperty(PROP_AGENT_AUTO_SCALE_IDENTITY)).thenReturn(System.getProperty("agent.auto_scale.identity"));
 		when(agentProperties.getProperty(PROP_AGENT_AUTO_SCALE_CREDENTIAL)).thenReturn(System.getProperty("agent.auto_scale.credential"));
-		when(config.getControllerAdvertisedHost()).thenReturn("10.251.51.115");
+		when(config.getControllerAdvertisedHost()).thenReturn("176.34.4.181");
 		when(config.getControllerPort()).thenReturn(16001);
 		when(config.getRegion()).thenReturn("NONE");
 		when(agentProperties.getPropertyInt(PROP_AGENT_AUTO_SCALE_DOCKER_DAEMON_PORT)).thenReturn(10000);
 		when(agentProperties.getProperty(PROP_AGENT_AUTO_SCALE_DOCKER_REPO)).thenReturn("ngrinder/agent");
-		when(agentProperties.getProperty(PROP_AGENT_AUTO_SCALE_DOCKER_TAG)).thenReturn("3.3-p1");
+		when(agentProperties.getProperty(PROP_AGENT_AUTO_SCALE_DOCKER_TAG)).thenReturn("3.3-p2");
 		when(agentProperties.getPropertyInt(PROP_AGENT_AUTO_SCALE_MAX_NODES)).thenReturn(2);
 		if (StringUtils.isNotBlank(System.getProperty("controller.proxy_host"))) {
 			when(config.getProxyHost()).thenReturn(System.getProperty("controller.proxy_host"));
