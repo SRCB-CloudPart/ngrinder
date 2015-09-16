@@ -44,6 +44,9 @@ import static org.ngrinder.common.util.Preconditions.checkNotNull;
 /**
  * Mesos AgentAutoScaleAction
  *
+ * @author binju
+ * @author shihuc
+ * @author JunHo Yoon
  * @since 3.3.2
  */
 @Qualifier("mesos")
