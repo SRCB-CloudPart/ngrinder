@@ -118,7 +118,6 @@ public class ScriptConsoleController extends BaseController implements Applicati
 			engine.put("config", getConfig());
 			engine.put("pluginManager", this.pluginManager);
 			engine.put("cacheManager", this.cacheManager);
-			engine.put("cacheManager", this.cacheManager);
 			engine.put("user", getCurrentUser());
 			engine.put("agentAutoScaleService", this.agentAutoScaleService);
 			final StringWriter out = new StringWriter();

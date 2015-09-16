@@ -164,7 +164,7 @@ public class AgentAutoScaleService {
 	}
 
 	/**
-	 * Exception which is occured when the count of nodes is not enough
+	 * Exception which is occurred when the count of nodes is not enough
 	 */
 	public static class NotSufficientAvailableNodeException extends Exception {
 		public NotSufficientAvailableNodeException(String message) {
@@ -173,7 +173,7 @@ public class AgentAutoScaleService {
 	}
 
 	/**
-	 * Exception which is occured when the underlying auto scale provider is not ready.
+	 * Exception which is occurred when the underlying auto scale provider is not ready.
 	 */
 	public static class AutoScaleProviderNotReadyException extends Exception {
 		public AutoScaleProviderNotReadyException(String message) {
