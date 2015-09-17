@@ -32,6 +32,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.TimeUnit;
 
@@ -68,7 +69,7 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction implements Schedu
 	/**
 	 * record latest task information
 	 */
-	private ConcurrentSkipListSet<AutoScaleNode> tasksInfo = new ConcurrentSkipListSet<AutoScaleNode>();
+	private ConcurrentLinkedDeque<AutoScaleNode> tasksInfo = new ConcurrentLinkedDeque<AutoScaleNode>();
 
 	private int maxNodeCount;
 
@@ -305,6 +306,14 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction implements Schedu
 		LOG.info("Create a new task, task id = {}", taskId.getValue());
 
 		Protos.CommandInfo.Builder commandBuilder = Protos.CommandInfo.newBuilder();
+		commandBuilder.addArguments("-ch");
+		commandBuilder.addArguments(config.getControllerAdvertisedHost());
+		commandBuilder.addArguments("-cp");
+		commandBuilder.addArguments(String.valueOf(config.getControllerPort()));
+		commandBuilder.addArguments("-r");
+		commandBuilder.addArguments(config.getRegion());
+		commandBuilder.addArguments("-hi");
+		commandBuilder.addArguments(taskId.getValue());
 		commandBuilder.setShell(false);
 
 		Protos.ContainerInfo.Builder containerInfoBuilder = Protos.ContainerInfo.newBuilder();
@@ -313,26 +322,6 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction implements Schedu
 		dockerInfoBuider.setImage( config.getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_DOCKER_REPO)
 				+ ":" + config.getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_DOCKER_TAG));
 		dockerInfoBuider.setNetwork(Protos.ContainerInfo.DockerInfo.Network.HOST);
-
-//		Protos.Parameter.Builder paramControllerHost = Protos.Parameter.newBuilder();
-//		paramControllerHost.setKey("-ch");
-//		paramControllerHost.setValue(config.getControllerAdvertisedHost());
-//		dockerInfoBuider.addParameters(paramControllerHost);
-//
-//		Protos.Parameter.Builder paramControllerPort = Protos.Parameter.newBuilder();
-//		paramControllerPort.setKey("-cp");
-//		paramControllerPort.setValue(String.valueOf(config.getControllerPort()));
-//		dockerInfoBuider.addParameters(paramControllerPort);
-//
-//		Protos.Parameter.Builder paramAgentRegion = Protos.Parameter.newBuilder();
-//		paramControllerPort.setKey("-r");
-//		paramControllerPort.setValue(config.getRegion());
-//		dockerInfoBuider.addParameters(paramAgentRegion);
-//
-//		Protos.Parameter.Builder paramHostId = Protos.Parameter.newBuilder();
-//		paramControllerPort.setKey("-hi");
-//		paramControllerPort.setValue(taskId.getValue());
-//		dockerInfoBuider.addParameters(paramHostId);
 
 		containerInfoBuilder.setDocker(dockerInfoBuider.build());
 
@@ -418,6 +407,9 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction implements Schedu
 
 	@Override
 	public void activateNodes(int count) throws AgentAutoScaleService.NotSufficientAvailableNodeException {
+
+		LOG.info("Activate node function called: {}", count);
+
 		synchronized (offeredNodes){
 
 			try {
@@ -431,18 +423,21 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction implements Schedu
 				}else{
 					int cnt=0;
 					for(Protos.Offer offer: offeredNodes){
-						Protos.TaskID taskId = createMesosTask(offer);
 						cnt++;
-						if(cnt >= count){
+						if(cnt > count){
 							//release the offers which not used
 							driver.declineOffer(offer.getId());
+						}else {
+							Protos.TaskID taskId = createMesosTask(offer);
 						}
 					}
 					activatableNodes = offeredNodes.size() - count;
 				}
 			} catch (InterruptedException e) {
 				throw processException(e);
-			}finally {
+			} catch(Exception e){
+				throw processException(e);
+			} finally {
 				offeredNodes.notifyAll();
 			}
 		}

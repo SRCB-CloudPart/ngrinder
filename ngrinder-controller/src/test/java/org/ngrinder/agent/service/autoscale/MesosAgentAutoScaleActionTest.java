@@ -40,11 +40,11 @@ public class MesosAgentAutoScaleActionTest{
 		when(agentProperties.getPropertyInt(PROP_AGENT_AUTO_SCALE_MAX_NODES)).thenReturn(2);
 
 		when(agentProperties.getProperty(PROP_AGENT_AUTO_SCALE_TYPE)).thenReturn("mesos");
-		when(config.getControllerAdvertisedHost()).thenReturn("176.34.4.181");
+		when(config.getControllerAdvertisedHost()).thenReturn("127.0.0.1");
 		when(agentProperties.getPropertyInt(PROP_AGENT_AUTO_SCALE_CONTROLLER_URL_PORT)).thenReturn(8080);
 		when(agentProperties.getProperty(PROP_AGENT_AUTO_SCALE_MESOS_FRAMEWORK_NAME)).thenReturn("nGrinder Scheduler");
 		when(agentProperties.getProperty(PROP_AGENT_AUTO_SCALE_MESOS_LIB_PATH)).thenReturn("/usr/local/mesos-0.20.0/lib/libmesos-0.20.0.so");
-		when(agentProperties.getProperty(PROP_AGENT_AUTO_SCALE_MESOS_MASTER)).thenReturn("54.179.230.7:5050");
+		when(agentProperties.getProperty(PROP_AGENT_AUTO_SCALE_MESOS_MASTER)).thenReturn("127.0.0.1:5050");
 
 		scheduledTaskService = getScheduledTaskService();
 		mesosAutoScaleAction.init(config, scheduledTaskService);
