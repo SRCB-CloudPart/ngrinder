@@ -18,6 +18,7 @@ import com.google.common.cache.RemovalCause;
 import com.google.common.cache.RemovalListener;
 import com.google.common.cache.RemovalNotification;
 import com.google.protobuf.ByteString;
+import freemarker.template.SimpleDate;
 import org.apache.commons.lang.StringUtils;
 import org.apache.mesos.*;
 import org.ngrinder.agent.model.AutoScaleNode;
@@ -26,15 +27,19 @@ import org.ngrinder.agent.service.AgentAutoScaleService;
 import org.ngrinder.common.util.PropertiesWrapper;
 import org.ngrinder.infra.config.Config;
 import org.ngrinder.infra.schedule.ScheduledTaskService;
+import org.ngrinder.monitor.share.domain.SystemInfo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 
+import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static com.google.common.cache.CacheBuilder.newBuilder;
 import static com.google.common.collect.Lists.newArrayList;
@@ -43,11 +48,12 @@ import static org.ngrinder.common.util.ExceptionUtils.processException;
 import static org.ngrinder.common.util.Preconditions.checkNotNull;
 
 /**
- * Mesos AgentAutoScaleAction
+ * Mesos AgentAutoScaleAction, initialized on July 2015
  *
  * @author binju
  * @author shihuc
  * @author JunHo Yoon
+ *
  * @since 3.3.2
  */
 @Qualifier("mesos")
@@ -85,14 +91,14 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction implements Schedu
 	 * some nodes before test. so, the activatable nodes are the rest ones of the resource offers. It is different in
 	 * different resource offer, maybe.
 	 */
-	private transient int activatableNodes = 0;
+	private AtomicInteger activatableNodes = new AtomicInteger(0);
 
 	/**
 	 * define one object list to store the offer from master, this is the sync target between two threads resourceOffer
 	 * and activateNodes ...
 	 */
 	private List<Protos.Offer> offeredNodes = newArrayList();
-
+	private AtomicBoolean hasTests = new AtomicBoolean(false);
 
 	/**
 	 * check if the ngrinder framework has been registered to mesos master
@@ -335,16 +341,32 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction implements Schedu
 		taskBuilder.setCommand(commandBuilder.build());
 		taskBuilder.setContainer(containerInfoBuilder.build());
 
-
 		List<Protos.TaskInfo> tasks = new ArrayList<Protos.TaskInfo>();
 		Protos.TaskInfo task = taskBuilder.build();
 		tasks.add(task);
 
-		tasksInfo.add(createAutoScaleNode(task));
+		addAndMaintainTaskInfo(task);
 
 		driver.launchTasks(offer.getId(), tasks);
 
 		return taskId;
+	}
+
+	private void addAndMaintainTaskInfo(Protos.TaskInfo task){
+
+		AutoScaleNode asn = createAutoScaleNode(task);
+
+		AutoScaleNode target = null;
+		for(AutoScaleNode node :  tasksInfo){
+			if(asn.getId().equalsIgnoreCase(node.getId())){
+				target = node;
+				break;
+			}
+		}
+		if(target != null){
+			tasksInfo.remove(target);
+		}
+		tasksInfo.add(asn);
 	}
 
 	private AutoScaleNode createAutoScaleNode(Protos.TaskInfo task){
@@ -371,6 +393,7 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction implements Schedu
 														  @Override
 														  public void run() {
 															  try {
+																  LOG.info("Guard timer expired for {}, release resource...", key);
 																  stopNode(key);
 															  } catch (Exception e) {
 																  LOG.error("Error while stopping task {}", key, e);
@@ -410,35 +433,38 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction implements Schedu
 
 		LOG.info("Activate node function called: {}", count);
 
-		synchronized (offeredNodes){
+		synchronized (offeredNodes) {
+			if (tasksInfo.size() < maxNodeCount) {
+				hasTests.set(true);
+				try {
+					offeredNodes.wait(2 * 60 * 1000);
 
-			try {
-				if(offeredNodes.size() < count) {
-					offeredNodes.wait(1 * 60 * 1000);
-				}
-				if(offeredNodes.size() < count){
-					throw new AgentAutoScaleService.NotSufficientAvailableNodeException(
-							String.format("%d node activation is requested. But only %d nodes are available in mesos this moment. The activation is canceled.",
-							count, offeredNodes.size()));
-				}else{
-					int cnt=0;
-					for(Protos.Offer offer: offeredNodes){
-						cnt++;
-						if(cnt > count){
-							//release the offers which not used
-							driver.declineOffer(offer.getId());
-						}else {
-							Protos.TaskID taskId = createMesosTask(offer);
+					if (offeredNodes.size() < count) {
+						LOG.warn(String.format("%d node activation is requested. But only %d nodes are available in mesos this moment. The activation is canceled.",
+								count, offeredNodes.size()));
+					} else {
+						int cnt = 0;
+						for (Protos.Offer offer : offeredNodes) {
+							cnt++;
+							if (cnt > count) {
+								//release the offers which not used
+								driver.declineOffer(offer.getId());
+							} else {
+								Protos.TaskID taskId = createMesosTask(offer);
+							}
 						}
+						activatableNodes.set(offeredNodes.size() - count);
 					}
-					activatableNodes = offeredNodes.size() - count;
+				} catch (InterruptedException e) {
+					throw processException(e);
+				} catch (Exception e) {
+					throw processException(e);
+				} finally {
+					hasTests.set(false);
+					offeredNodes.notifyAll();
 				}
-			} catch (InterruptedException e) {
-				throw processException(e);
-			} catch(Exception e){
-				throw processException(e);
-			} finally {
-				offeredNodes.notifyAll();
+			}else{
+				LOG.warn("Currently, activated tasks {} are greater than the threshold {}", tasksInfo.size(), maxNodeCount);
 			}
 		}
 	}
@@ -450,7 +476,7 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction implements Schedu
 
 	@Override
 	public int getActivatableNodeCount() {
-		return activatableNodes;
+		return activatableNodes.get();
 	}
 
 	@Override
@@ -514,6 +540,7 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction implements Schedu
 		for(AutoScaleNode task : tasksInfo){
 			if(task.getId().equalsIgnoreCase(nodeId)){
 				tasksInfo.remove(task);
+				activatableNodes.incrementAndGet();
 				break;
 			}
 		}
@@ -538,22 +565,36 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction implements Schedu
 			 */
 			offeredNodes.clear();
 			for (Protos.Offer offer : offers) {
-
 				if (matchAttributes(offer)) {
 					offeredNodes.add(offer);
+					if(!hasTests.get()) {
+						/*
+						 * if there is no performance test, the received offer should release at once.
+						 */
+						driver.declineOffer(offer.getId());
+					}
 				} else {
 					//This offer is not matched. Don't send us again in 10 mins.
 					Protos.Filters filters = Protos.Filters.newBuilder().setRefuseSeconds(10 * 60).build();
 					driver.declineOffer(offer.getId(), filters);
 				}
+
 			}
 			/*
 			 * activatable node count is dependent on the resource offer, it is changed...
+			 * if there is no perftest coming, the activatableNodes is the offered node count (suppose that each offer
+			 * (instead one slave machine) used by one agent).
 			 */
-			activatableNodes = offeredNodes.size();
+			activatableNodes.set(offeredNodes.size());
 			offeredNodes.notifyAll();
 		}
-		LOG.info("Received offers: {}, matched offers: {}", offers.size(), offeredNodes.size());
+		if(getCurrentSeconds() % 30 == 0) {
+			LOG.info("Received offers: {}, matched offers: {}", offers.size(), offeredNodes.size());
+		}
+	}
+
+	long getCurrentSeconds(){
+		return System.currentTimeMillis() / 1000;
 	}
 
 	@Override
@@ -564,6 +605,7 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction implements Schedu
 		for(AutoScaleNode task: tasksInfo){
 			if(task.getId().equalsIgnoreCase(taskId.getValue())){
 				task.setState(taskState.name());
+				break;
 			}
 		}
 
