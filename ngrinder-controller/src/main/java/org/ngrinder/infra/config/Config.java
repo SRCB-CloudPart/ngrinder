@@ -744,4 +744,13 @@ public class Config extends AbstractConfig implements ControllerConstants, Clust
 	public PropertiesWrapper getAgentAutoScaleProperties() {
 		return checkNotNull(agentAutoScaleProperties);
 	}
+
+	/**
+	 * Get the auto scale type
+	 *
+	 * @return string which indicates the type: aws or mesos
+	 */
+	public String getAgentAutoScaleType() {
+		return getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_TYPE);
+	}
 }

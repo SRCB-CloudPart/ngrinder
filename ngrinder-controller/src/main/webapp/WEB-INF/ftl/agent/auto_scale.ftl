@@ -35,7 +35,11 @@
                 <th><@spring.message "agent_auto_scale.list.name"/></th>
                 <th><@spring.message "agent_auto_scale.list.id"/></th>
                 <th><@spring.message "agent_auto_scale.list.state"/></th>
-                <th class="ellipsis"><@spring.message "agent_auto_scale.list.ips"/></th>
+                <#if autoScaleType == "aws">
+                    <th class="ellipsis"><@spring.message "agent_auto_scale.list.ips"/></th>
+                <#else>
+                    <th class="ellipsis"><@spring.message "agent_auto_scale.list.offer"/></th>
+                </#if>
                 <th class="ellipsis"><@spring.message "common.label.actions"/></th>
             </tr>
             </thead>
@@ -47,7 +51,7 @@
                 <td>${node.state}</td>
                 <td><#list node.ips as each>${each}<br/></#list></td>
                 <td class="center">
-					<#if node.state != "STOPPED">
+					<#if node.state != "STOPPED" || node.state == "TASK_STAGING" || node.state == "TASK_STARTING" || node.state == "TASK_RUNNING">
                         <i title="<@spring.message "common.button.stop"/>" class="icon-stop node-stop pointer-cursor"
                            sid="${node.id}"></i>
 					</#if>
