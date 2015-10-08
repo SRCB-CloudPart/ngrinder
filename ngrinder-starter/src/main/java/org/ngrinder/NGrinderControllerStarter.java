@@ -223,27 +223,12 @@ public class NGrinderControllerStarter {
 	@Parameter(names = {"-asdt", "--auto-scale-docker-tag"}, description = "agent auto scale - the docker image tag")
 	private String agentAutoScaleDockerTag = null;
 
-	//below are for mesos type configuration
-	@Parameter(names = {"-ascup", "--auto-scale-controller-url-port"}, description = "agent auto scale - the controller web port.")
-	private String agentAutoScaleControllerUrlPort = null;
-
 	@Parameter(names = {"-asmfn", "--auto-scale-mesos-framework-name"}, description = "agent auto scale - the mesos framework name")
 	private String agentAutoScaleMesosFrameworkName = null;
-
-	@Parameter(names = {"-asmu", "--auto-scale-mesos-user"}, description = "agent auto scale - the mesos user")
-	private String agentAutoScaleMesosUser = null;
-
-	@Parameter(names = {"-asmp", "--auto-scale-mesos-principal"}, description = "agent auto scale - the mesos principal")
-	private String agentAutoScaleMesosPrincipal = null;
-
-	@Parameter(names = {"-asms", "--auto-scale-mesos-secret"}, description = "agent auto scale - the mesos secret")
-	private String agentAutoScaleMesosSecret = null;
 
 	@Parameter(names = {"-asmm", "--auto-scale-mesos-master"}, description = "agent auto scale - the mesos master url (IP:Port)")
 	private String agentAutoScaleMesosMaster = null;
 
-	@Parameter(names = {"-asmlp", "--auto-scale-mesos-lib-path"}, description = "agent auto scale - the mesos lib path")
-	private String agentAutoScaleMesosLibPath = null;
 
 	@Parameter(names = {"-asmsa", "--auto-scale-mesos-slave-attributes"}, description = "agent auto scale - the mesos slave attributes")
 	private String agentAutoScaleMesosSlaveAttributes = null;
@@ -338,7 +323,6 @@ public class NGrinderControllerStarter {
 			if (server.port == null) {
 				server.port = 8080;
 			}
-			server.agentAutoScaleControllerUrlPort = String.valueOf(server.port);
 			validator.validate("-p / --port", server.port);
 		} catch (Exception e) {
 			System.err.println(e.getMessage());
@@ -382,13 +366,8 @@ public class NGrinderControllerStarter {
 		setSystemProp("agent.auto_scale.region", server.agentAutoScaleRegion);
 		setSystemProp("agent.auto_scale.max_nodes", server.agentAutoScaleMaxNodes);
 
-		setSystemProp("agent.auto_scale.controller_url_port", server.agentAutoScaleControllerUrlPort);
 		setSystemProp("agent.auto_scale.mesos_framework_name", server.agentAutoScaleMesosFrameworkName);
-		setSystemProp("agent.auto_scale.mesos_user", server.agentAutoScaleMesosUser);
-		setSystemProp("agent.auto_scale.mesos_principal", server.agentAutoScaleMesosPrincipal);
-		setSystemProp("agent.auto_scale.mesos_secret", server.agentAutoScaleMesosSecret);
 		setSystemProp("agent.auto_scale.mesos_master", server.agentAutoScaleMesosMaster);
-		setSystemProp("agent.auto_scale.mesos_lib_path", server.agentAutoScaleMesosLibPath);
 		setSystemProp("agent.auto_scale.mesos_slave_attributes", server.agentAutoScaleMesosSlaveAttributes);
 	}
 

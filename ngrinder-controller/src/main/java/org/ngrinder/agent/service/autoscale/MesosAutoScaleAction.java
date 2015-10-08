@@ -18,33 +18,30 @@ import com.google.common.cache.RemovalCause;
 import com.google.common.cache.RemovalListener;
 import com.google.common.cache.RemovalNotification;
 import com.google.protobuf.ByteString;
-import freemarker.template.SimpleDate;
-import org.apache.commons.lang.StringUtils;
-import org.apache.mesos.*;
+import org.apache.commons.lang3.builder.ToStringBuilder;
+import org.apache.mesos.MesosSchedulerDriver;
+import org.apache.mesos.Protos;
+import org.apache.mesos.Scheduler;
+import org.apache.mesos.SchedulerDriver;
 import org.ngrinder.agent.model.AutoScaleNode;
 import org.ngrinder.agent.service.AgentAutoScaleAction;
 import org.ngrinder.agent.service.AgentAutoScaleService;
-import org.ngrinder.common.util.PropertiesWrapper;
 import org.ngrinder.infra.config.Config;
 import org.ngrinder.infra.schedule.ScheduledTaskService;
-import org.ngrinder.monitor.share.domain.SystemInfo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 
-import java.text.SimpleDateFormat;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedDeque;
-import java.util.concurrent.ConcurrentSkipListSet;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import static com.google.common.cache.CacheBuilder.newBuilder;
-import static com.google.common.collect.Lists.newArrayList;
 import static org.ngrinder.common.constant.AgentAutoScaleConstants.*;
-import static org.ngrinder.common.util.ExceptionUtils.processException;
+import static org.ngrinder.common.util.Preconditions.checkNotEmpty;
 import static org.ngrinder.common.util.Preconditions.checkNotNull;
 
 /**
@@ -53,172 +50,147 @@ import static org.ngrinder.common.util.Preconditions.checkNotNull;
  * @author binju
  * @author shihuc
  * @author JunHo Yoon
- *
  * @since 3.3.2
  */
 @Qualifier("mesos")
 public class MesosAutoScaleAction extends AgentAutoScaleAction implements Scheduler {
 	private static final Logger LOG = LoggerFactory.getLogger(MesosAutoScaleAction.class);
 
-	private final String MESOS_TYPE = "mesos";
+	private Config config;
+	private ScheduledTaskService scheduledTaskService;
 
-	Config config;
-
-	ScheduledTaskService scheduledTaskService;
-
-	/**
-	 * Cache b/w task_ID and last touched timestamp, attention, the task ID is consisted of slave ID and "-NA"
-	 */
-	private Cache<String, Long> touchCache;
+	private Cache<String, AutoScaleNode> nodeCache;
 	private Runnable cacheCleanUp;
 
-	/**
-	 * record latest task information
-	 */
-	private ConcurrentLinkedDeque<AutoScaleNode> tasksInfo = new ConcurrentLinkedDeque<AutoScaleNode>();
-
 	private int maxNodeCount;
-
-	private boolean isMesosFrameworkStart = false;
-	private boolean nativeLibraryLoaded = false;
+	private String dockerImg;
+	private String master;
+	private String frameworkName;
 
 	private MesosSchedulerDriver driver = null;
 	private Map<String, String> slaveAttributes = null;
 
+	private CountDownLatch latch = null;
 
-	/**
-	 * under mesos environment, the nodes can be used is not static to ngrinder controller, it is impossible to reserve
-	 * some nodes before test. so, the activatable nodes are the rest ones of the resource offers. It is different in
-	 * different resource offer, maybe.
-	 */
-	private AtomicInteger activatableNodes = new AtomicInteger(0);
-
-	/**
-	 * define one object list to store the offer from master, this is the sync target between two threads resourceOffer
-	 * and activateNodes ...
-	 */
-	private List<Protos.Offer> offeredNodes = newArrayList();
-	private AtomicBoolean hasTests = new AtomicBoolean(false);
-
-	/**
-	 * check if the ngrinder framework has been registered to mesos master
-	 *
-	 * @return true or false
-	 */
-	public boolean isMesosFrameworkStarted(){
-		return isMesosFrameworkStart;
+	@Override
+	public void init(Config config, ScheduledTaskService scheduledTaskService) {
+		this.config = config;
+		this.scheduledTaskService = scheduledTaskService;
+		this.maxNodeCount = config.getAgentAutoScaleProperties().getPropertyInt(PROP_AGENT_AUTO_SCALE_MAX_NODES);
+		this.slaveAttributes = getSlaveAttributes(config);
+		this.dockerImg = config.getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_DOCKER_REPO)
+				+ ":" + config.getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_DOCKER_TAG);
+		this.master = checkNotEmpty(config.getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_MESOS_MASTER),
+				PROP_AGENT_AUTO_SCALE_MESOS_MASTER + " property should be set");
+		this.frameworkName = getTagString(config);
+		initCache();
+		scheduledTaskService.runAsync(new Runnable() {
+			@Override
+			public void run() {
+				try {
+					startFramework();
+				} catch (Exception e) {
+					LOG.error("MESOS framework is stopped.", e);
+				}
+			}
+		});
 	}
 
-	private boolean isAgentAutoScaleMesosEnabled(){
-		PropertiesWrapper pw = config.getAgentAutoScaleProperties();
-		String type = pw.getProperty(PROP_AGENT_AUTO_SCALE_TYPE);
-		String controllerIP = config.getControllerAdvertisedHost();
-		int controllerUrlIP = pw.getPropertyInt(PROP_AGENT_AUTO_SCALE_CONTROLLER_URL_PORT);
-		String dockerRepo = pw.getProperty(PROP_AGENT_AUTO_SCALE_DOCKER_REPO);
-		String dockerTag = pw.getProperty(PROP_AGENT_AUTO_SCALE_DOCKER_TAG);
-		String frameworkName = pw.getProperty(PROP_AGENT_AUTO_SCALE_MESOS_FRAMEWORK_NAME);
-		String master = pw.getProperty(PROP_AGENT_AUTO_SCALE_MESOS_MASTER);
-		String libPath = pw.getProperty(PROP_AGENT_AUTO_SCALE_MESOS_LIB_PATH);
-
-		return ((StringUtils.isNotEmpty(type) && type.equals(MESOS_TYPE))
-				&& StringUtils.isNotEmpty(controllerIP)
-				&& StringUtils.isNotEmpty(dockerRepo)
-				&& StringUtils.isNotEmpty(dockerTag)
-				&& StringUtils.isNotEmpty(frameworkName)
-				&& StringUtils.isNotEmpty(master)
-				&& StringUtils.isNotEmpty(libPath));
+	protected String getTagString(Config config) {
+		if (config.isClustered()) {
+			return config.getRegion();
+		} else {
+			return config.getControllerAdvertisedHost();
+		}
 	}
+
+
+	private void initCache() {
+		RemovalListener<String, AutoScaleNode> removalListener = new RemovalListener<String, AutoScaleNode>() {
+			@Override
+			public void onRemoval(RemovalNotification<String, AutoScaleNode> removal) {
+				final String key = checkNotNull(removal).getValue().getId();
+				RemovalCause removalCause = removal.getCause();
+				if (removalCause.equals(RemovalCause.EXPIRED)) {
+					synchronized (this) {
+						scheduledTaskService.runAsync(new Runnable() {
+							                              @Override
+							                              public void run() {
+								                              try {
+									                              LOG.info("Guard timer expired for {}, release resource...", key);
+									                              stopNode(key);
+								                              } catch (Exception e) {
+									                              LOG.error("Error while stopping task {}", key, e);
+								                              }
+							                              }
+						                              }
+						);
+					}
+				}
+			}
+		};
+		this.nodeCache = newBuilder().expireAfterWrite(10 * 60, TimeUnit.SECONDS).removalListener(removalListener).build();
+		this.cacheCleanUp = new Runnable() {
+			@Override
+			public void run() {
+				nodeCache.cleanUp();
+			}
+		};
+		this.scheduledTaskService.addFixedDelayedScheduledTask(cacheCleanUp, 1000);
+	}
+
 
 	/**
 	 * If auto_scale_mesos_slave_attributes is configured, this function is used to parse the attributes. The Framework
-	 * will select the mesos slave according to these attributes.
+	 * will select the mesos slave according to these attributes
 	 *
+	 * @param config Config.
 	 */
-	private void parseSlaveAttributes() {
+	protected Map<String, String> getSlaveAttributes(Config config) {
+		Map<String, String> slaveAttributes = new ConcurrentHashMap<String, String>();
 		String salveAttrs = config.getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_MESOS_SLAVE_ATTRIBUTES);
-		if (salveAttrs == null) {
-			return;
-		}
-
-		String [] attrs = salveAttrs.split(";");
-		for(String attr:attrs) {
-			String [] values = attr.split(":");
+		String[] attrs = salveAttrs.split(";");
+		for (String attr : attrs) {
+			String[] values = attr.split(":");
 			if (values.length == 2) {
 				slaveAttributes.put(values[0], values[1]);
 			}
 		}
-	}
-
-	/**
-	 * load the mesos Native mesos library. The mesos library is generated by making the mesos source code.
-	 */
-	private void loadNativeLibrary() {
-		if(!nativeLibraryLoaded) {
-			// we attempt to load the library from the given path.
-			try {
-				MesosNativeLibrary.load(config.getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_MESOS_LIB_PATH));
-			} catch (UnsatisfiedLinkError error) {
-				LOG.error("Failed to load native Mesos library from '{}', {}", config.getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_MESOS_LIB_PATH)
-						,error.getMessage());
-
-				throw processException("Failed to load native Mesos library", error);
-			}
-			nativeLibraryLoaded = true;
-		}
+		return slaveAttributes;
 	}
 
 	/**
 	 * Start framework: parse the configured slave attributes, load the mesos native library
 	 * and register the framework info to mesos master.
-	 *
 	 */
-	public void startFramework(){
+	public void startFramework() {
+		String principal = config.getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_IDENTITY);
+		String secret = config.getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_CREDENTIAL);
 
-		parseSlaveAttributes();
-		loadNativeLibrary();
+		Protos.FrameworkInfo frameworkInfo = Protos.FrameworkInfo.newBuilder()
+				.setName(frameworkName)
+				.setUser("ngrinder")
+				.build();
 
-		if (driver == null) {
-			String user = config.getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_MESOS_USER);
-			String frameworkName = config.getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_MESOS_FRAMEWORK_NAME);
-			String principal = config.getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_MESOS_PRINCIPAL);
-			String controllerIP = config.getControllerAdvertisedHost();
-			int controllerUrlPort = config.getAgentAutoScaleProperties().getPropertyInt(PROP_AGENT_AUTO_SCALE_CONTROLLER_URL_PORT);
-			String secret = config.getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_MESOS_SECRET);
-			String master = config.getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_MESOS_MASTER);
-
-			Protos.FrameworkInfo frameworkInfo = Protos.FrameworkInfo.newBuilder()
-					.setUser(user == null ? "" : user)
-					.setName(frameworkName)
-					.setPrincipal(principal == null ? "" : principal)
-					.setWebuiUrl("http://" + controllerIP + ":" + controllerUrlPort)
+		if (principal != null && secret != null) {
+			LOG.info("principle {} and secret {} is provided, connect to MESOS master {} with credential", new Object[]{principal, secret, master});
+			Protos.Credential credential = Protos.Credential.newBuilder()
+					.setPrincipal(principal)
+					.setSecret(ByteString.copyFromUtf8(secret))
 					.build();
 
-			LOG.info("Start register ngrinder framework to mesos master!");
-
-			isMesosFrameworkStart = true;
-			if (principal != null && secret != null) {
-				Protos.Credential credential = Protos.Credential.newBuilder()
-						.setPrincipal(principal)
-						.setSecret(ByteString.copyFromUtf8(secret))
-						.build();
-
-				driver = new MesosSchedulerDriver(this, frameworkInfo, master, credential);
-			}
-			else {
-				driver = new MesosSchedulerDriver(this, frameworkInfo, master);
-			}
-
-			Protos.Status runStatus = driver.run();
-
-			if (runStatus != Protos.Status.DRIVER_STOPPED) {
-				LOG.info("The Mesos driver was aborted! Status code: " + runStatus.getNumber());
-			}
-
-			LOG.info("nGrinder framework is stopped");
-
-			driver = null;
-			isMesosFrameworkStart = false;
+			driver = new MesosSchedulerDriver(this, frameworkInfo, master, credential);
+		} else {
+			LOG.info("principle and secret are not provided, connect to MESOS master {} without credential", master);
+			driver = new MesosSchedulerDriver(this, frameworkInfo, master);
 		}
+		Protos.Status runStatus = driver.run();
+
+		if (runStatus != Protos.Status.DRIVER_STOPPED) {
+			LOG.info("The Mesos driver was aborted! Status code: " + runStatus.getNumber());
+		}
+
+		LOG.info("nGrinder framework is stopped");
 	}
 
 	/**
@@ -227,75 +199,41 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction implements Schedu
 	 * @param offer offer
 	 * @return true or false
 	 */
-	private boolean matchAttributes(Protos.Offer offer) {
+	private boolean isMatching(Protos.Offer offer) {
 		boolean slaveTypeMatch = true;
-
 		if (slaveAttributes.size() == 0) {
-			return slaveTypeMatch;
+			return true;
 		}
-
-		//get the offer's attribute
+		// Get the offer's attribute
 		Map<String, String> attributesMap = new ConcurrentHashMap<String, String>();
-		for (Protos.Attribute attribute:offer.getAttributesList()) {
+		for (Protos.Attribute attribute : offer.getAttributesList()) {
 			attributesMap.put(attribute.getName(), attribute.getText().getValue());
 		}
 
-		Iterator iterator = slaveAttributes.keySet().iterator();
-		while (iterator.hasNext()) {
-			String key = iterator.next().toString();
+		for (Map.Entry<String, String> each : slaveAttributes.entrySet()) {
+			String key = each.getKey();
 
 			//If there is a single absent attribute then we should reject this offer.
 			if (!(attributesMap.containsKey(key)
-					&& attributesMap.get(key).equals(slaveAttributes.get(key)))) {
+					&& attributesMap.get(key).equals(each.getValue()))) {
 				slaveTypeMatch = false;
 				break;
 			}
 		}
-
 		return slaveTypeMatch;
 	}
 
-	/**
-	 * If the framework is not started and mesos is enabled, initialize and register framework to mesos master.
-	 * If framework is started and mesos is not enabled, stop the framework.
-	 * If framework is started and mesos is enabled, parse the attributes info.
-	 *
-	 */
-	public void registerNgrinderFramework() {
-
-		if (!isMesosFrameworkStarted() && isAgentAutoScaleMesosEnabled()) {
-			slaveAttributes = new ConcurrentHashMap<String, String>();
-
-			Runnable registerRunnable = new Runnable() {
-				@Override
-				public void run() {
-					startFramework();
-				}
-			};
-
-			scheduledTaskService.runAsync(registerRunnable);
-		}
-		else if (isMesosFrameworkStarted() && driver != null && !isAgentAutoScaleMesosEnabled()){
-			driver.stop();
-			driver = null;
-			isMesosFrameworkStart = false;
-		}
-		else if (isMesosFrameworkStarted()) {
-			parseSlaveAttributes();
-		}
-	}
 
 	/**
-	 * generate the task Id. It is composited by slave Id and "NA" which means "ngrinder agent"
+	 * Generate the task Id with the given prefix,
 	 *
-	 * @param offer the resource
+	 * @param prefix prefix
+	 * @param offer  the resource
 	 * @return task Id
 	 */
-	private Protos.TaskID getTaskId(Protos.Offer offer){
-
+	private Protos.TaskID getTaskId(String prefix, Protos.Offer offer) {
 		String slaveId = offer.getSlaveId().getValue();
-
-		return Protos.TaskID.newBuilder().setValue(slaveId + "-NA" ).build();
+		return Protos.TaskID.newBuilder().setValue(prefix + "-" + slaveId).build();
 	}
 
 	/**
@@ -305,191 +243,95 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction implements Schedu
 	 * @param offer offer
 	 * @return Protos.TaskID taskId
 	 */
-	private Protos.TaskID createMesosTask(Protos.Offer offer) {
-
-		Protos.TaskID taskId = getTaskId(offer);
-
-		LOG.info("Create a new task, task id = {}", taskId.getValue());
+	private List<Protos.TaskInfo> createTask(Protos.Offer offer) {
+		List<Protos.OfferID> offerIDs = new ArrayList<Protos.OfferID>();
+		List<Protos.TaskInfo> tasks = new ArrayList<Protos.TaskInfo>();
+		offerIDs.add(offer.getId());
+		Protos.TaskID taskId = getTaskId(frameworkName, offer);
+		LOG.info("Create a new task, task id '{}'", taskId.getValue());
 
 		Protos.CommandInfo.Builder commandBuilder = Protos.CommandInfo.newBuilder();
-		commandBuilder.addArguments("-ch");
-		commandBuilder.addArguments(config.getControllerAdvertisedHost());
-		commandBuilder.addArguments("-cp");
-		commandBuilder.addArguments(String.valueOf(config.getControllerPort()));
-		commandBuilder.addArguments("-r");
-		commandBuilder.addArguments(config.getRegion());
-		commandBuilder.addArguments("-hi");
-		commandBuilder.addArguments(taskId.getValue());
+		commandBuilder.addArguments("-ch").addArguments(config.getControllerAdvertisedHost());
+		commandBuilder.addArguments("-cp").addArguments(String.valueOf(config.getControllerPort()));
+		commandBuilder.addArguments("-r").addArguments(config.getRegion());
+		commandBuilder.addArguments("-hi").addArguments(taskId.getValue());
 		commandBuilder.setShell(false);
 
 		Protos.ContainerInfo.Builder containerInfoBuilder = Protos.ContainerInfo.newBuilder();
 		containerInfoBuilder.setType(Protos.ContainerInfo.Type.DOCKER);
+
 		Protos.ContainerInfo.DockerInfo.Builder dockerInfoBuider = Protos.ContainerInfo.DockerInfo.newBuilder();
-		dockerInfoBuider.setImage( config.getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_DOCKER_REPO)
-				+ ":" + config.getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_DOCKER_TAG));
+		dockerInfoBuider.setImage(dockerImg);
 		dockerInfoBuider.setNetwork(Protos.ContainerInfo.DockerInfo.Network.HOST);
 
 		containerInfoBuilder.setDocker(dockerInfoBuider.build());
 
-		Protos.TaskInfo.Builder taskBuilder = Protos.TaskInfo.newBuilder()
-				.setName("Task"+taskId.getValue())
-				.setTaskId(taskId)
-				.setSlaveId(offer.getSlaveId());
+		Protos.TaskInfo.Builder taskBuilder =
+				Protos.TaskInfo.newBuilder()
+						.setName("ngrinder-agent-" + taskId.getValue())
+						.setTaskId(taskId)
+						.setSlaveId(offer.getSlaveId());
+
 		for (int i = 0; i < offer.getResourcesCount(); i++) {
 			taskBuilder.addResources(offer.getResources(i));
 		}
+
 		taskBuilder.setCommand(commandBuilder.build());
 		taskBuilder.setContainer(containerInfoBuilder.build());
 
-		List<Protos.TaskInfo> tasks = new ArrayList<Protos.TaskInfo>();
 		Protos.TaskInfo task = taskBuilder.build();
 		tasks.add(task);
-
-		addAndMaintainTaskInfo(task);
-
-		driver.launchTasks(offer.getId(), tasks);
-
-		return taskId;
+		driver.launchTasks(offerIDs, tasks);
+		return tasks;
 	}
 
-	private void addAndMaintainTaskInfo(Protos.TaskInfo task){
 
-		AutoScaleNode asn = createAutoScaleNode(task);
-
-		AutoScaleNode target = null;
-		for(AutoScaleNode node :  tasksInfo){
-			if(asn.getId().equalsIgnoreCase(node.getId())){
-				target = node;
-				break;
-			}
-		}
-		if(target != null){
-			tasksInfo.remove(target);
-		}
-		tasksInfo.add(asn);
-	}
-
-	private AutoScaleNode createAutoScaleNode(Protos.TaskInfo task){
+	private AutoScaleNode createAutoScaleNode(Protos.TaskStatus task) {
 		AutoScaleNode node = new AutoScaleNode();
-
 		node.setId(task.getTaskId().getValue());
-		List<String> slaveId = newArrayList();
-		slaveId.add(task.getSlaveId().getValue());
-		node.setIps(slaveId);
-		node.setName(task.getName());
-
+		node.setName(task.getSlaveId().getValue());
+		node.setState(task.getState().name());
 		return node;
-	}
-
-	private void initCache(){
-		RemovalListener<String, Long> removalListener = new RemovalListener<String, Long>() {
-			@Override
-			public void onRemoval(RemovalNotification<String, Long> removal) {
-				final String key = checkNotNull(removal).getKey();
-				RemovalCause removalCause = removal.getCause();
-				if (removalCause.equals(RemovalCause.EXPIRED)) {
-					synchronized (this) {
-						scheduledTaskService.runAsync(new Runnable() {
-														  @Override
-														  public void run() {
-															  try {
-																  LOG.info("Guard timer expired for {}, release resource...", key);
-																  stopNode(key);
-															  } catch (Exception e) {
-																  LOG.error("Error while stopping task {}", key, e);
-															  }
-														  }
-													  }
-						);
-					}
-				}
-			}
-		};
-
-		touchCache = newBuilder().expireAfterWrite(60*60, TimeUnit.SECONDS).removalListener(removalListener).build();
-		this.cacheCleanUp = new Runnable() {
-			@Override
-			public void run() {
-				touchCache.cleanUp();
-			}
-		};
-		scheduledTaskService.addFixedDelayedScheduledTask(cacheCleanUp, 1000);
-	}
-
-	@Override
-	public void init(Config config, ScheduledTaskService scheduledTaskService) {
-		this.config = config;
-		this.scheduledTaskService = scheduledTaskService;
-		this.maxNodeCount = config.getAgentAutoScaleProperties().getPropertyInt(PROP_AGENT_AUTO_SCALE_MAX_NODES);
-		/*
-		 * attention, this initCache() must be called before registerNgrinderFramework.
-		 */
-		initCache();
-		registerNgrinderFramework();
 	}
 
 	@Override
 	public void activateNodes(int count) throws AgentAutoScaleService.NotSufficientAvailableNodeException {
-
 		LOG.info("Activate node function called: {}", count);
-
-		synchronized (offeredNodes) {
-			if (tasksInfo.size() < maxNodeCount) {
-				hasTests.set(true);
-				try {
-					offeredNodes.wait(2 * 60 * 1000);
-
-					if (offeredNodes.size() < count) {
-						LOG.warn(String.format("%d node activation is requested. But only %d nodes are available in mesos this moment. The activation is canceled.",
-								count, offeredNodes.size()));
-					} else {
-						int cnt = 0;
-						for (Protos.Offer offer : offeredNodes) {
-							cnt++;
-							if (cnt > count) {
-								//release the offers which not used
-								driver.declineOffer(offer.getId());
-							} else {
-								Protos.TaskID taskId = createMesosTask(offer);
-							}
-						}
-						activatableNodes.set(offeredNodes.size() - count);
-					}
-				} catch (InterruptedException e) {
-					throw processException(e);
-				} catch (Exception e) {
-					throw processException(e);
-				} finally {
-					hasTests.set(false);
-					offeredNodes.notifyAll();
-				}
-			}else{
-				LOG.warn("Currently, activated tasks {} are greater than the threshold {}", tasksInfo.size(), maxNodeCount);
-			}
+		if (getActivatableNodeCount() < count) {
+			// FIXME
+			throw new AgentAutoScaleService.NotSufficientAvailableNodeException("");
 		}
+		// reactivate offer listening.
+		driver.reviveOffers();
+		latch = new CountDownLatch(count);
+		try {
+			latch.await(1, TimeUnit.MINUTES);
+		} catch (InterruptedException e) {
+			// FIXME : we need to make the nodes to be terminated.. for this request.
+			// To prevent the lack.
+			throw new AgentAutoScaleService.NotSufficientAvailableNodeException("");
+		}
+		latch = null;
 	}
 
 	@Override
 	public int getMaxNodeCount() {
-		return Math.min(tasksInfo.size(), maxNodeCount);
+		return maxNodeCount;
 	}
 
 	@Override
 	public int getActivatableNodeCount() {
-		return activatableNodes.get();
+		return maxNodeCount - ((int) nodeCache.size());
 	}
 
 	@Override
-	public void touch(String taskId) {
+	public void touch(String slaveId) {
 		synchronized (this) {
 			try {
-				Long time = touchCache.getIfPresent(taskId);
-				if (time == null) {
-					time = System.currentTimeMillis();
-				}
-				touchCache.put(taskId, time);
+				AutoScaleNode node = nodeCache.getIfPresent(slaveId);
+				nodeCache.put(slaveId, node);
 			} catch (Exception e) {
-				LOG.error("Error while touch node {}", taskId, e);
+				LOG.error("Error while touch node {}", slaveId, e);
 			}
 		}
 	}
@@ -497,25 +339,20 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction implements Schedu
 
 	@Override
 	public String getDiagnosticInfo() {
-		return MESOS_TYPE;
+		return "";
 	}
 
 	@Override
 	public void destroy() {
 		scheduledTaskService.removeScheduledJob(this.cacheCleanUp);
-		if(driver != null){
+		if (driver != null) {
 			driver.stop(true);
 		}
 	}
 
 	@Override
 	public List<AutoScaleNode> getNodes() {
-		List<AutoScaleNode> result = newArrayList();
-		for (AutoScaleNode node: tasksInfo) {
-
-			result.add(node);
-		}
-		return result;
+		return new ArrayList<AutoScaleNode>(nodeCache.asMap().values());
 	}
 
 	@Override
@@ -524,7 +361,7 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction implements Schedu
 	}
 
 	/**
-	 * this function is to stop the specified task to release resource.
+	 * Stop the specified task to release resource.
 	 *
 	 * @param nodeId here it means the taskId
 	 */
@@ -533,17 +370,6 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction implements Schedu
 		Protos.TaskID taskId = Protos.TaskID.newBuilder().setValue(nodeId).build();
 		LOG.info("Task {} is stopped...", nodeId);
 		driver.killTask(taskId);
-
-		/*
-		 *make sure when do stop node, the activatedNodes count should be decremented.
-		 */
-		for(AutoScaleNode task : tasksInfo){
-			if(task.getId().equalsIgnoreCase(nodeId)){
-				tasksInfo.remove(task);
-				activatableNodes.incrementAndGet();
-				break;
-			}
-		}
 	}
 
 	/**
@@ -557,81 +383,64 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction implements Schedu
 	 */
 	@Override
 	public void resourceOffers(SchedulerDriver driver, List<Protos.Offer> offers) {
-
-		synchronized (offeredNodes) {
-			/*
-			 * each activateNodes call means one new test requirement is coming, the offeredNodes should
-			 * be cleared.
-			 */
-			offeredNodes.clear();
-			for (Protos.Offer offer : offers) {
-				if (matchAttributes(offer)) {
-					offeredNodes.add(offer);
-					if(!hasTests.get()) {
-						/*
-						 * if there is no performance test, the received offer should release at once.
-						 */
-						driver.declineOffer(offer.getId());
-					}
-				} else {
-					//This offer is not matched. Don't send us again in 10 mins.
-					Protos.Filters filters = Protos.Filters.newBuilder().setRefuseSeconds(10 * 60).build();
-					driver.declineOffer(offer.getId(), filters);
-				}
-
+		LOG.info("{}", ToStringBuilder.reflectionToString(offers));
+		if (latch == null) {
+			for (Protos.Offer each : offers) {
+				Protos.Filters filters = Protos.Filters.newBuilder().setRefuseSeconds(10 * 60).build();
+				driver.declineOffer(each.getId(), filters);
 			}
-			/*
-			 * activatable node count is dependent on the resource offer, it is changed...
-			 * if there is no perftest coming, the activatableNodes is the offered node count (suppose that each offer
-			 * (instead one slave machine) used by one agent).
-			 */
-			activatableNodes.set(offeredNodes.size());
-			offeredNodes.notifyAll();
+			return;
 		}
-		if(getCurrentSeconds() % 30 == 0) {
-			LOG.info("Received offers: {}, matched offers: {}", offers.size(), offeredNodes.size());
+		for (Protos.Offer each : offers) {
+			final AutoScaleNode node = nodeCache.getIfPresent(each.getSlaveId().getValue());
+			if (node == null && isMatching(each)) {
+				latch.countDown();
+				createTask(each);
+			} else {
+				//This offer is not matched. Don't send us again in 10 mins.
+				Protos.Filters filters = Protos.Filters.newBuilder().setRefuseSeconds(10 * 60).build();
+				driver.declineOffer(each.getId(), filters);
+			}
 		}
 	}
 
-	long getCurrentSeconds(){
-		return System.currentTimeMillis() / 1000;
-	}
 
 	@Override
-	public void statusUpdate(SchedulerDriver driver, Protos.TaskStatus status) {
-		Protos.TaskID taskId = status.getTaskId();
-		Protos.TaskState taskState = status.getState();
-
-		for(AutoScaleNode task: tasksInfo){
-			if(task.getId().equalsIgnoreCase(taskId.getValue())){
-				task.setState(taskState.name());
+	public void statusUpdate(SchedulerDriver driver, final Protos.TaskStatus status) {
+		final Protos.TaskState taskState = status.getState();
+		final Protos.SlaveID slaveId = status.getSlaveId();
+		switch (taskState) {
+			case TASK_LOST:
+			case TASK_ERROR:
+			case TASK_FAILED:
+			case TASK_FINISHED:
+				nodeCache.invalidate(slaveId);
 				break;
-			}
+			default:
+				nodeCache.put(status.getSlaveId().getValue(), createAutoScaleNode(status));
 		}
-
-		LOG.info("Received state update, task id = {}, task state = {}", taskId.getValue(), taskState.toString());
+		LOG.info("Received state update, task id = {}, task state = {}", status.getTaskId().getValue(), status.getState().name());
 	}
 
 	@Override
 	public void registered(SchedulerDriver driver, Protos.FrameworkID frameworkId, Protos.MasterInfo masterInfo) {
 		LOG.info("Framework registered! ID = {}", frameworkId.getValue());
-		LOG.info("isMesosFrameworkStart = {}", isMesosFrameworkStart);
 	}
 
 	@Override
 	public void reregistered(SchedulerDriver driver, Protos.MasterInfo masterInfo) {
-		LOG.info("Framework re-registered");
+		LOG.debug("Framework re-registered");
 	}
 
 	@Override
 	public void offerRescinded(SchedulerDriver driver, Protos.OfferID offerId) {
-		LOG.info("Rescinded offer {}", offerId.getValue());
+		LOG.debug("Rescinded offer {}", offerId.getValue());
 	}
 
 	@Override
 	public void frameworkMessage(SchedulerDriver driver, Protos.ExecutorID executorId,
-								 Protos.SlaveID slaveId, byte[] data) {
-		LOG.info("Received framework message from executor {} of slave {}" , executorId.getValue(), slaveId.getValue());
+	                             Protos.SlaveID slaveId, byte[] data) {
+		LOG.info("Received framework message {} from executor {} of slave {}", new Object[]{new String(data), executorId.getValue(), slaveId.getValue()});
 	}
 
 	@Override
@@ -641,13 +450,15 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction implements Schedu
 
 	@Override
 	public void slaveLost(SchedulerDriver driver, Protos.SlaveID slaveId) {
-		LOG.info("Slave {} lost!",  slaveId.getValue());
+		LOG.info("Slave {} lost!", slaveId.getValue());
+		nodeCache.invalidate(slaveId.getValue());
 	}
 
 	@Override
 	public void executorLost(SchedulerDriver driver, Protos.ExecutorID executorId,
-							 Protos.SlaveID slaveId, int status) {
+	                         Protos.SlaveID slaveId, int status) {
 		LOG.info("Executor {} of slave {} lost!", executorId.getValue(), slaveId.getValue());
+		nodeCache.invalidate(slaveId.getValue());
 	}
 
 	@Override

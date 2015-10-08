@@ -180,7 +180,11 @@ public class AwsAgentAutoScaleAction extends AgentAutoScaleAction implements Rem
 	}
 
 	protected String getTagString(Config config) {
-		return config.getControllerAdvertisedHost();
+		if (config.isClustered()) {
+			return config.getRegion();
+		} else {
+			return config.getControllerAdvertisedHost();
+		}
 	}
 
 	protected int getTouchCacheDuration() {
