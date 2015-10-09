@@ -18,6 +18,7 @@ import com.google.common.cache.RemovalCause;
 import com.google.common.cache.RemovalListener;
 import com.google.common.cache.RemovalNotification;
 import com.google.protobuf.ByteString;
+import com.google.protobuf.Descriptors;
 import org.apache.commons.lang3.builder.ToStringBuilder;
 import org.apache.mesos.MesosSchedulerDriver;
 import org.apache.mesos.Protos;
@@ -40,12 +41,18 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 import static com.google.common.cache.CacheBuilder.newBuilder;
+import static com.google.common.collect.Lists.newArrayList;
 import static org.ngrinder.common.constant.AgentAutoScaleConstants.*;
 import static org.ngrinder.common.util.Preconditions.checkNotEmpty;
 import static org.ngrinder.common.util.Preconditions.checkNotNull;
 
 /**
  * Mesos AgentAutoScaleAction, initialized on July 2015
+ *
+ * Note: Mesos framework can work normally, the native lib is a necessary. developer can load it explicitly, and also,
+ *       it can be loaded from system environment. Here, take it loaded from system environment.
+ *       MESOS_NATIVE_JAVA_LIBRARY or MESOS_NATIVE_LIBRARY should be configured before launch ngrinder controller if
+ *       this autoscale feature is enabled.
  *
  * @author binju
  * @author shihuc
@@ -59,6 +66,9 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction implements Schedu
 	private Config config;
 	private ScheduledTaskService scheduledTaskService;
 
+	/*
+	 * map like, key is the slave ID, value is the node information which used in web UI
+	 */
 	private Cache<String, AutoScaleNode> nodeCache;
 	private Runnable cacheCleanUp;
 
@@ -68,6 +78,11 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction implements Schedu
 	private String frameworkName;
 
 	private MesosSchedulerDriver driver = null;
+
+	/*
+	 * which is used as resource filter, input provided to user to specify the required resource, e.g. CPU count,
+	 * memory quantity. This feature focuses on CPU and MEM these two kinds of resources.
+	 */
 	private Map<String, String> slaveAttributes = null;
 
 	private CountDownLatch latch = null;
@@ -109,7 +124,8 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction implements Schedu
 		RemovalListener<String, AutoScaleNode> removalListener = new RemovalListener<String, AutoScaleNode>() {
 			@Override
 			public void onRemoval(RemovalNotification<String, AutoScaleNode> removal) {
-				final String key = checkNotNull(removal).getValue().getId();
+				//Attention, first to get the cached data key, but not data value. It is easy to release resource cached
+				final String key = checkNotNull(removal).getKey();
 				RemovalCause removalCause = removal.getCause();
 				if (removalCause.equals(RemovalCause.EXPIRED)) {
 					synchronized (this) {
@@ -148,8 +164,8 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction implements Schedu
 	 */
 	protected Map<String, String> getSlaveAttributes(Config config) {
 		Map<String, String> slaveAttributes = new ConcurrentHashMap<String, String>();
-		String salveAttrs = config.getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_MESOS_SLAVE_ATTRIBUTES);
-		String[] attrs = salveAttrs.split(";");
+		String slaveAttrs = config.getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_MESOS_SLAVE_ATTRIBUTES);
+		String[] attrs = slaveAttrs.split(";");
 		for (String attr : attrs) {
 			String[] values = attr.split(":");
 			if (values.length == 2) {
@@ -167,9 +183,11 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction implements Schedu
 		String principal = config.getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_IDENTITY);
 		String secret = config.getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_CREDENTIAL);
 
+		// Attention: the user should be existed in the slave system, if not, the executor in slave will throw exception. If it
+		// is not set (empty/blank), the default executor will use the current system user as the user.
 		Protos.FrameworkInfo frameworkInfo = Protos.FrameworkInfo.newBuilder()
 				.setName(frameworkName)
-				.setUser("ngrinder")
+				.setUser("")
 				.build();
 
 		if (principal != null && secret != null) {
@@ -205,19 +223,57 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction implements Schedu
 			return true;
 		}
 		// Get the offer's attribute
-		Map<String, String> attributesMap = new ConcurrentHashMap<String, String>();
-		for (Protos.Attribute attribute : offer.getAttributesList()) {
-			attributesMap.put(attribute.getName(), attribute.getText().getValue());
+		Map<String, String> offerResAttrMap = new ConcurrentHashMap<String, String>();
+		for (Protos.Resource resource : offer.getResourcesList()) {
+			String offerResAttrName = resource.getName().toString();
+			if(offerResAttrName.equals("cpus")){
+				if(resource.getType().equals(Protos.Value.Type.SCALAR)){
+					String cpus = String.valueOf(resource.getScalar().getValue());
+					offerResAttrMap.put("cpus", cpus);
+					LOG.info("CPUS: {}", cpus);
+				}
+			}else if(offerResAttrName.equals("mem")){
+				if(resource.getType().equals(Protos.Value.Type.SCALAR)){
+					String mem = String.valueOf(resource.getScalar().getValue());
+					offerResAttrMap.put("mem", mem);
+					LOG.info("MEM: {}", mem);
+				}
+			}else if(offerResAttrName.equals("disk")){
+				if(resource.getType().equals(Protos.Value.Type.SCALAR)){
+					String disk = String.valueOf(resource.getScalar().getValue());
+					offerResAttrMap.put("disk", disk);
+					LOG.info("DISK: {}", disk);
+				}
+			}else if(offerResAttrName.equals("ports")){
+				if(resource.getType().equals(Protos.Value.Type.RANGES)){
+					List<Protos.Value.Range> rawPorts = resource.getRanges().getRangeList();
+					String ports = "";
+					for(Protos.Value.Range range: rawPorts){
+						ports += range.getBegin() + ":" + range.getEnd() + ";";
+					}
+					offerResAttrMap.put("ports", ports);
+					LOG.info("PORTS: {}", ports);
+				}
+			}
 		}
 
 		for (Map.Entry<String, String> each : slaveAttributes.entrySet()) {
 			String key = each.getKey();
-
-			//If there is a single absent attribute then we should reject this offer.
-			if (!(attributesMap.containsKey(key)
-					&& attributesMap.get(key).equals(each.getValue()))) {
+			/*
+			 * If there is a single absent attribute then we should reject this offer.
+			 * Attention: here, the matching is not equal. it focus on the resource quantity. for example,
+			 * CPU, it focus's on core count.
+			 */
+			if (!offerResAttrMap.containsKey(key)) {
 				slaveTypeMatch = false;
 				break;
+			}else{
+				String offerValue = offerResAttrMap.get(key);
+				String wantedValue = slaveAttributes.get(key);
+				if(!(Double.valueOf(offerValue) >= Double.valueOf(wantedValue))){
+					slaveTypeMatch = false;
+					break;
+				}
 			}
 		}
 		return slaveTypeMatch;
@@ -228,11 +284,10 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction implements Schedu
 	 * Generate the task Id with the given prefix,
 	 *
 	 * @param prefix prefix
-	 * @param offer  the resource
+	 * @param slaveId  the Id of the mesos slave
 	 * @return task Id
 	 */
-	private Protos.TaskID getTaskId(String prefix, Protos.Offer offer) {
-		String slaveId = offer.getSlaveId().getValue();
+	private Protos.TaskID getTaskId(String prefix, String slaveId) {
 		return Protos.TaskID.newBuilder().setValue(prefix + "-" + slaveId).build();
 	}
 
@@ -247,14 +302,14 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction implements Schedu
 		List<Protos.OfferID> offerIDs = new ArrayList<Protos.OfferID>();
 		List<Protos.TaskInfo> tasks = new ArrayList<Protos.TaskInfo>();
 		offerIDs.add(offer.getId());
-		Protos.TaskID taskId = getTaskId(frameworkName, offer);
-		LOG.info("Create a new task, task id '{}'", taskId.getValue());
+		Protos.TaskID taskId = getTaskId(frameworkName, offer.getSlaveId().getValue());
+		LOG.info("Create new task, ID '{}'", taskId.getValue());
 
 		Protos.CommandInfo.Builder commandBuilder = Protos.CommandInfo.newBuilder();
 		commandBuilder.addArguments("-ch").addArguments(config.getControllerAdvertisedHost());
 		commandBuilder.addArguments("-cp").addArguments(String.valueOf(config.getControllerPort()));
 		commandBuilder.addArguments("-r").addArguments(config.getRegion());
-		commandBuilder.addArguments("-hi").addArguments(taskId.getValue());
+		commandBuilder.addArguments("-hi").addArguments(offer.getSlaveId().getValue());
 		commandBuilder.setShell(false);
 
 		Protos.ContainerInfo.Builder containerInfoBuilder = Protos.ContainerInfo.newBuilder();
@@ -272,8 +327,25 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction implements Schedu
 						.setTaskId(taskId)
 						.setSlaveId(offer.getSlaveId());
 
-		for (int i = 0; i < offer.getResourcesCount(); i++) {
-			taskBuilder.addResources(offer.getResources(i));
+		/*
+		 * Set resource configuration according slave attributes, disk and port resources are not cared here
+		 */
+		for(String rawKey: slaveAttributes.keySet()) {
+			String key = rawKey.toLowerCase();
+			Double value = Double.valueOf(slaveAttributes.get(key));
+			if(key.startsWith("cpu")) {
+				taskBuilder.addResources(Protos.Resource.newBuilder()
+						.setName("cpus")
+						.setType(Protos.Value.Type.SCALAR)
+						.setScalar(Protos.Value.Scalar.newBuilder().setValue(value)));
+			}
+			//Attention, memory unit is MB
+			if (key.startsWith("mem")) {
+				taskBuilder.addResources(Protos.Resource.newBuilder()
+						.setName("mem")
+						.setType(Protos.Value.Type.SCALAR)
+						.setScalar(Protos.Value.Scalar.newBuilder().setValue(value)));
+			}
 		}
 
 		taskBuilder.setCommand(commandBuilder.build());
@@ -281,16 +353,27 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction implements Schedu
 
 		Protos.TaskInfo task = taskBuilder.build();
 		tasks.add(task);
+
 		driver.launchTasks(offerIDs, tasks);
 		return tasks;
 	}
 
-
+	/**
+	 * This function constructs the information used in web UI, each element should not be missed.
+	 * Here, the IPs is reused with aws solution, in this mesos solution, it means the slave ID.
+	 *
+	 * @param task status of the task
+	 * @return node information
+	 */
 	private AutoScaleNode createAutoScaleNode(Protos.TaskStatus task) {
 		AutoScaleNode node = new AutoScaleNode();
 		node.setId(task.getTaskId().getValue());
-		node.setName(task.getSlaveId().getValue());
+		//Keep the content same with it on mesos master web UI
+		node.setName("ngrinder-agent-" + task.getTaskId().getValue());
 		node.setState(task.getState().name());
+		List<String> ips = newArrayList();
+		ips.add(task.getSlaveId().getValue());
+		node.setIps(ips);
 		return node;
 	}
 
@@ -298,18 +381,18 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction implements Schedu
 	public void activateNodes(int count) throws AgentAutoScaleService.NotSufficientAvailableNodeException {
 		LOG.info("Activate node function called: {}", count);
 		if (getActivatableNodeCount() < count) {
-			// FIXME
-			throw new AgentAutoScaleService.NotSufficientAvailableNodeException("");
+			//throw new AgentAutoScaleService.NotSufficientAvailableNodeException(String.format("%d node activation is requested. But only %d free nodes are available. The activation is canceled.", count, getActivatableNodeCount()));
+			LOG.warn("{} node activation is requested. But only {} free nodes are available. The activation is canceled.", count, getActivatableNodeCount());
+			return;
 		}
 		// reactivate offer listening.
 		driver.reviveOffers();
 		latch = new CountDownLatch(count);
 		try {
-			latch.await(1, TimeUnit.MINUTES);
+			//The timer can not be too shorter, else the latch will be null in resourceOffer thread..
+			latch.await(5, TimeUnit.MINUTES);
 		} catch (InterruptedException e) {
-			// FIXME : we need to make the nodes to be terminated.. for this request.
-			// To prevent the lack.
-			throw new AgentAutoScaleService.NotSufficientAvailableNodeException("");
+			LOG.warn("Activate node encounters with interruption... {}", e.getMessage());
 		}
 		latch = null;
 	}
@@ -361,14 +444,24 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction implements Schedu
 	}
 
 	/**
-	 * Stop the specified task to release resource.
+	 * Stop the specified task to release resource. use the slave Id to get task ID, then kill task to release resource.
 	 *
-	 * @param nodeId here it means the taskId
+	 * @param nodeId here it is the slaveId expected, if it start with frameworkName, which means it is triggered from web
 	 */
 	@Override
 	public void stopNode(String nodeId) {
-		Protos.TaskID taskId = Protos.TaskID.newBuilder().setValue(nodeId).build();
-		LOG.info("Task {} is stopped...", nodeId);
+		Protos.TaskID taskId = null;
+		if(nodeId.startsWith(frameworkName)){
+			taskId = Protos.TaskID.newBuilder().setValue(nodeId).build();
+
+			//below code is MUST when stop node from web UI
+			String slaveId = nodeId.substring(nodeId.indexOf('-') + 1);
+			nodeCache.invalidate(slaveId);
+		}else {
+			taskId = getTaskId(frameworkName, nodeId);
+		}
+		LOG.info("Task {} is stopped...", taskId.getValue());
+
 		driver.killTask(taskId);
 	}
 
@@ -383,23 +476,34 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction implements Schedu
 	 */
 	@Override
 	public void resourceOffers(SchedulerDriver driver, List<Protos.Offer> offers) {
-		LOG.info("{}", ToStringBuilder.reflectionToString(offers));
+		//Below log comes too much... no need...
+		//LOG.info("{}", ToStringBuilder.reflectionToString(offers));
 		if (latch == null) {
+			/*
+			 * if the latch is null, which means when framework receives offer, there is no perf test coming, this moment,
+			 * framework should decline the received offers without any filters. else, it may impact the mesos cluster.
+			 */
+
 			for (Protos.Offer each : offers) {
-				Protos.Filters filters = Protos.Filters.newBuilder().setRefuseSeconds(10 * 60).build();
-				driver.declineOffer(each.getId(), filters);
+				//Protos.Filters filters = Protos.Filters.newBuilder().setRefuseSeconds(10 * 60).build();
+				driver.declineOffer(each.getId());
 			}
 			return;
 		}
 		for (Protos.Offer each : offers) {
 			final AutoScaleNode node = nodeCache.getIfPresent(each.getSlaveId().getValue());
-			if (node == null && isMatching(each)) {
-				latch.countDown();
+			/*
+			 *Attention: the required offer count maybe less than the received available offers, after create one task,
+			 *the latch should execute count down, if it is null, which means the left offer is more than required.
+			 */
+			if (node == null && isMatching(each) && latch != null) {
 				createTask(each);
+				latch.countDown();
 			} else {
-				//This offer is not matched. Don't send us again in 10 mins.
+				//This slave machine is running one agent already, or this offer is not matched. Don't send us again in 10 mins.
 				Protos.Filters filters = Protos.Filters.newBuilder().setRefuseSeconds(10 * 60).build();
 				driver.declineOffer(each.getId(), filters);
+				LOG.info("Decline the not matching offer {}", each.getSlaveId());
 			}
 		}
 	}

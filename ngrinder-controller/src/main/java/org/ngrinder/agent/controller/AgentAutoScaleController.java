@@ -75,14 +75,18 @@ public class AgentAutoScaleController extends BaseController {
 	private AgentAutoScaleService service;
 
 	/**
-	 * Stop the agent's node
+	 * Stop the agent's node.
+	 * Note: the value part in request mapping should add ":.+" to "id", if not, the content of "id" may lose
+	 * 		 some information if it contains some dot.
+	 * 		 e.g. if "id" content is "10.148.15.220-20151008-093050-83070474-5050-27333-0", then application
+	 * 		 will get "10.148.15" if not add ":.+" to "id" in the request mapping.
 	 *
 	 * @param nodeId node id
 	 * @param model  model
 	 * @return agent/auto_scale
 	 */
 	@RestAPI
-	@RequestMapping(value = "/api/{id}", params = "action=stop", method = RequestMethod.PUT)
+	@RequestMapping(value = "/api/{id:.+}", params = "action=stop", method = RequestMethod.PUT)
 	public HttpEntity<String> stopNode(@PathVariable("id") String nodeId, Model model) {
 		agentAutoScaleService.stopNode(nodeId);
 		return successJsonHttpEntity();

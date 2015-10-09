@@ -51,7 +51,8 @@
                 <td>${node.state}</td>
                 <td><#list node.ips as each>${each}<br/></#list></td>
                 <td class="center">
-					<#if node.state != "STOPPED" || node.state == "TASK_STAGING" || node.state == "TASK_STARTING" || node.state == "TASK_RUNNING">
+                    <#if (autoScaleType == "aws" && node.state != "STOPPED")
+                        || (autoScaleType == "mesos" && (node.state == "TASK_STAGING" || node.state == "TASK_STARTING" || node.state == "TASK_RUNNING")) >
                         <i title="<@spring.message "common.button.stop"/>" class="icon-stop node-stop pointer-cursor"
                            sid="${node.id}"></i>
 					</#if>
