@@ -455,8 +455,8 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction implements Schedu
 			taskId = Protos.TaskID.newBuilder().setValue(nodeId).build();
 
 			//below code is MUST when stop node from web UI
-			String slaveId = nodeId.substring(nodeId.indexOf('-') + 1);
-			nodeCache.invalidate(slaveId);
+			//String slaveId = nodeId.substring(nodeId.indexOf('-') + 1);
+			//nodeCache.invalidate(slaveId);
 		}else {
 			taskId = getTaskId(frameworkName, nodeId);
 		}
@@ -519,7 +519,7 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction implements Schedu
 			case TASK_FAILED:
 			case TASK_FINISHED:
 			case TASK_KILLED:
-				nodeCache.invalidate(slaveId);
+				nodeCache.invalidate(slaveId.getValue());
 				break;
 			default:
 				nodeCache.put(status.getSlaveId().getValue(), createAutoScaleNode(status));
