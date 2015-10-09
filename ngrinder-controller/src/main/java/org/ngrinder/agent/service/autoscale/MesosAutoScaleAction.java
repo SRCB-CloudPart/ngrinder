@@ -518,6 +518,7 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction implements Schedu
 			case TASK_ERROR:
 			case TASK_FAILED:
 			case TASK_FINISHED:
+			case TASK_KILLED:
 				nodeCache.invalidate(slaveId);
 				break;
 			default:
