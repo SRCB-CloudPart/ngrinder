@@ -330,21 +330,27 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction implements Schedu
 		/*
 		 * Set resource configuration according slave attributes, disk and port resources are not cared here
 		 */
-		for(String rawKey: slaveAttributes.keySet()) {
-			String key = rawKey.toLowerCase();
-			Double value = Double.valueOf(slaveAttributes.get(key));
-			if(key.startsWith("cpu")) {
-				taskBuilder.addResources(Protos.Resource.newBuilder()
-						.setName("cpus")
-						.setType(Protos.Value.Type.SCALAR)
-						.setScalar(Protos.Value.Scalar.newBuilder().setValue(value)));
+		if(slaveAttributes.size() == 0){
+			for(Protos.Resource resource: offer.getResourcesList()) {
+				taskBuilder.addResources(resource);
 			}
-			//Attention, memory unit is MB
-			if (key.startsWith("mem")) {
-				taskBuilder.addResources(Protos.Resource.newBuilder()
-						.setName("mem")
-						.setType(Protos.Value.Type.SCALAR)
-						.setScalar(Protos.Value.Scalar.newBuilder().setValue(value)));
+		}else {
+			for (String rawKey : slaveAttributes.keySet()) {
+				String key = rawKey.toLowerCase();
+				Double value = Double.valueOf(slaveAttributes.get(key));
+				if (key.startsWith("cpu")) {
+					taskBuilder.addResources(Protos.Resource.newBuilder()
+							.setName("cpus")
+							.setType(Protos.Value.Type.SCALAR)
+							.setScalar(Protos.Value.Scalar.newBuilder().setValue(value)));
+				}
+				//Attention, memory unit is MB
+				if (key.startsWith("mem")) {
+					taskBuilder.addResources(Protos.Resource.newBuilder()
+							.setName("mem")
+							.setType(Protos.Value.Type.SCALAR)
+							.setScalar(Protos.Value.Scalar.newBuilder().setValue(value)));
+				}
 			}
 		}
 
