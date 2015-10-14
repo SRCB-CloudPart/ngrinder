@@ -18,8 +18,6 @@ import com.google.common.cache.RemovalCause;
 import com.google.common.cache.RemovalListener;
 import com.google.common.cache.RemovalNotification;
 import com.google.protobuf.ByteString;
-import com.google.protobuf.Descriptors;
-import org.apache.commons.lang3.builder.ToStringBuilder;
 import org.apache.mesos.MesosSchedulerDriver;
 import org.apache.mesos.Protos;
 import org.apache.mesos.Scheduler;
@@ -39,6 +37,8 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static com.google.common.cache.CacheBuilder.newBuilder;
 import static com.google.common.collect.Lists.newArrayList;
@@ -83,7 +83,7 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction implements Schedu
      * which is used as resource filter, input provided to user to specify the required resource, e.g. CPU count,
      * memory quantity. This feature focuses on CPU and MEM these two kinds of resources.
      */
-    private Map<String, String> slaveAttributes = null;
+    private Map<String, String> resourceAttributes = null;
 
     private CountDownLatch latch = null;
 
@@ -92,7 +92,7 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction implements Schedu
         this.config = config;
         this.scheduledTaskService = scheduledTaskService;
         this.maxNodeCount = config.getAgentAutoScaleProperties().getPropertyInt(PROP_AGENT_AUTO_SCALE_MAX_NODES);
-        this.slaveAttributes = getSlaveAttributes(config);
+        this.resourceAttributes = getResourceAttributes(config);
         this.dockerImg = config.getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_DOCKER_REPO)
                 + ":" + config.getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_DOCKER_TAG);
         this.master = checkNotEmpty(config.getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_MESOS_MASTER),
@@ -157,22 +157,37 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction implements Schedu
 
 
     /**
-     * If auto_scale_mesos_slave_attributes is configured, this function is used to parse the attributes. The Framework
+     * If auto_scale.mesos_resource_attributes is configured, this function is used to parse the attributes. The Framework
      * will select the mesos slave according to these attributes
+     *
+     * And, this function should do some filter or input parse. In this feature, just focus on CPU and memory. the format
+     * required is cpus:xx;mem:xxxx, if user provides like CPU:xx;MEM:xxxxMB, we should parse it.
      *
      * @param config Config.
      */
-    protected Map<String, String> getSlaveAttributes(Config config) {
-        Map<String, String> slaveAttributes = new ConcurrentHashMap<String, String>();
-        String slaveAttrs = config.getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_MESOS_SLAVE_ATTRIBUTES);
-        String[] attrs = slaveAttrs.split(";");
+    protected Map<String, String> getResourceAttributes(Config config) {
+        Map<String, String> resourceAttributes = new ConcurrentHashMap<String, String>();
+        String resourceAttrs = config.getAgentAutoScaleProperties().getProperty(PROP_AGENT_AUTO_SCALE_MESOS_RESOURCE_ATTRIBUTES);
+        String[] attrs = resourceAttrs.split(";");
         for (String attr : attrs) {
             String[] values = attr.split(":");
             if (values.length == 2) {
-                slaveAttributes.put(values[0], values[1]);
+                String key = values[0].toLowerCase().trim();
+                String val = values[1].toLowerCase().trim();
+                if(key.startsWith("cpu")){
+                    key = "cpus";
+                }else if(key.startsWith("mem")){
+                    key = "mem";
+                }
+                Pattern pattern = Pattern.compile("(^\\d+)");
+                Matcher matcher = pattern.matcher(val);
+                if(matcher.find()){
+                    val = matcher.group(1);
+                    resourceAttributes.put(key, val);
+                }
             }
         }
-        return slaveAttributes;
+        return resourceAttributes;
     }
 
     /**
@@ -212,14 +227,14 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction implements Schedu
     }
 
     /**
-     * Match the offer's attributes and configured slaveAttributes in system config.
+     * Match the offer's attributes and configured resourceAttributes in system config.
      *
      * @param offer offer
      * @return true or false
      */
     private boolean isMatching(Protos.Offer offer) {
         boolean slaveTypeMatch = true;
-        if (slaveAttributes.size() == 0) {
+        if (resourceAttributes.size() == 0) {
             return true;
         }
         // Get the offer's attribute
@@ -241,7 +256,7 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction implements Schedu
             }
         }
 
-        for (Map.Entry<String, String> each : slaveAttributes.entrySet()) {
+        for (Map.Entry<String, String> each : resourceAttributes.entrySet()) {
             String key = each.getKey();
             /*
              * If there is a single absent attribute then we should reject this offer.
@@ -253,7 +268,7 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction implements Schedu
                 break;
             } else {
                 String offerValue = offerResAttrMap.get(key);
-                String wantedValue = slaveAttributes.get(key);
+                String wantedValue = resourceAttributes.get(key);
                 if (!(Double.valueOf(offerValue) >= Double.valueOf(wantedValue))) {
                     slaveTypeMatch = false;
                     break;
@@ -314,22 +329,21 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction implements Schedu
 		/*
 		 * Set resource configuration according slave attributes, disk and port resources are not cared here
 		 */
-        if (slaveAttributes.size() == 0) {
+        if (resourceAttributes.size() == 0) {
             for (Protos.Resource resource : offer.getResourcesList()) {
                 taskBuilder.addResources(resource);
             }
         } else {
-            for (String rawKey : slaveAttributes.keySet()) {
-                String key = rawKey.toLowerCase();
-                Double value = Double.valueOf(slaveAttributes.get(key));
-                if (key.startsWith("cpu")) {
+            for (String key : resourceAttributes.keySet()) {
+                Double value = Double.valueOf(resourceAttributes.get(key));
+                if (key.equals("cpus")) {
                     taskBuilder.addResources(Protos.Resource.newBuilder()
                             .setName("cpus")
                             .setType(Protos.Value.Type.SCALAR)
                             .setScalar(Protos.Value.Scalar.newBuilder().setValue(value)));
                 }
                 //Attention, memory unit is MB
-                if (key.startsWith("mem")) {
+                if (key.equals("mem")) {
                     taskBuilder.addResources(Protos.Resource.newBuilder()
                             .setName("mem")
                             .setType(Protos.Value.Type.SCALAR)
@@ -457,7 +471,7 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction implements Schedu
 
     /**
      * The main process in this function includes:
-     * 1. match the attributes. If offers' attributes include the configuring slaveAttributes, the offer can be used.
+     * 1. match the attributes. If offers' attributes include the configuring resourceAttributes, the offer can be used.
      * 2. read the first request from the requests. create the task. store the task ID into results.
      * 3. calculate mesosMaxAgentCount. It means all matched offers except being used.
      *

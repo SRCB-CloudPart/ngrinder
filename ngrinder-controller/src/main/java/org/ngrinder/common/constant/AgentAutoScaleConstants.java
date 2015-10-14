@@ -16,7 +16,7 @@ package org.ngrinder.common.constant;
 /**
  * Clustering related Constants.
  *
- * @since 3.4
+ * @since 3.3.2
  */
 public interface AgentAutoScaleConstants {
 	String PROP_AGENT_AUTO_SCALE_TYPE = "agent.auto_scale.type";
@@ -29,5 +29,5 @@ public interface AgentAutoScaleConstants {
 	String PROP_AGENT_AUTO_SCALE_REGION = "agent.auto_scale.region";
 	String PROP_AGENT_AUTO_SCALE_MAX_NODES = "agent.auto_scale.max_nodes";
 	String PROP_AGENT_AUTO_SCALE_MESOS_MASTER = "agent.auto_scale.mesos_master";
-	String PROP_AGENT_AUTO_SCALE_MESOS_SLAVE_ATTRIBUTES = "agent.auto_scale.mesos_slave_attributes";
+	String PROP_AGENT_AUTO_SCALE_MESOS_RESOURCE_ATTRIBUTES = "agent.auto_scale.mesos_resource_attributes";
 }

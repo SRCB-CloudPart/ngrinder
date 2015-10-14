@@ -30,7 +30,7 @@ public class MesosAgentAutoScaleActionTest {
 		when(agentProperties.getProperty(PROP_AGENT_AUTO_SCALE_DOCKER_REPO)).thenReturn("ngrinder/agent");
 		when(agentProperties.getProperty(PROP_AGENT_AUTO_SCALE_DOCKER_TAG)).thenReturn("3.3-p2");
 		when(agentProperties.getPropertyInt(PROP_AGENT_AUTO_SCALE_MAX_NODES)).thenReturn(2);
-		when(agentProperties.getProperty(PROP_AGENT_AUTO_SCALE_MESOS_SLAVE_ATTRIBUTES)).thenReturn("");
+		when(agentProperties.getProperty(PROP_AGENT_AUTO_SCALE_MESOS_RESOURCE_ATTRIBUTES)).thenReturn("");
 		when(agentProperties.getProperty(PROP_AGENT_AUTO_SCALE_TYPE)).thenReturn("mesos");
 		when(config.getControllerAdvertisedHost()).thenReturn("127.0.0.1");
 		when(agentProperties.getProperty(PROP_AGENT_AUTO_SCALE_MESOS_MASTER)).thenReturn("172.16.36.71:5050");

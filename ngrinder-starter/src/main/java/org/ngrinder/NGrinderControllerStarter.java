@@ -223,15 +223,11 @@ public class NGrinderControllerStarter {
 	@Parameter(names = {"-asdt", "--auto-scale-docker-tag"}, description = "agent auto scale - the docker image tag")
 	private String agentAutoScaleDockerTag = null;
 
-	@Parameter(names = {"-asmfn", "--auto-scale-mesos-framework-name"}, description = "agent auto scale - the mesos framework name")
-	private String agentAutoScaleMesosFrameworkName = null;
-
 	@Parameter(names = {"-asmm", "--auto-scale-mesos-master"}, description = "agent auto scale - the mesos master url (IP:Port)")
 	private String agentAutoScaleMesosMaster = null;
 
-
-	@Parameter(names = {"-asmsa", "--auto-scale-mesos-slave-attributes"}, description = "agent auto scale - the mesos slave attributes")
-	private String agentAutoScaleMesosSlaveAttributes = null;
+	@Parameter(names = {"-asmra", "--auto-scale-mesos-resource-attributes"}, description = "agent auto scale - the mesos resource attributes")
+	private String agentAutoScaleMesosResourceAttributes = null;
 
 	public static boolean isEmpty(String str) {
 		return str == null || str.length() == 0;
@@ -366,9 +362,8 @@ public class NGrinderControllerStarter {
 		setSystemProp("agent.auto_scale.region", server.agentAutoScaleRegion);
 		setSystemProp("agent.auto_scale.max_nodes", server.agentAutoScaleMaxNodes);
 
-		setSystemProp("agent.auto_scale.mesos_framework_name", server.agentAutoScaleMesosFrameworkName);
 		setSystemProp("agent.auto_scale.mesos_master", server.agentAutoScaleMesosMaster);
-		setSystemProp("agent.auto_scale.mesos_slave_attributes", server.agentAutoScaleMesosSlaveAttributes);
+		setSystemProp("agent.auto_scale.mesos_resource_attributes", server.agentAutoScaleMesosResourceAttributes);
 	}
 
 	private static void setSystemProp(String key, Object value) {
