@@ -37,6 +37,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -87,6 +88,8 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction implements Schedu
 
     private CountDownLatch latch = null;
 
+    private ReentrantLock lock = new ReentrantLock();
+
     @Override
     public void init(Config config, ScheduledTaskService scheduledTaskService) {
         this.config = config;
@@ -118,7 +121,6 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction implements Schedu
             return config.getControllerAdvertisedHost();
         }
     }
-
 
     private void initCache() {
         RemovalListener<String, AutoScaleNode> removalListener = new RemovalListener<String, AutoScaleNode>() {
@@ -385,8 +387,8 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction implements Schedu
     public void activateNodes(int count) throws AgentAutoScaleService.NotSufficientAvailableNodeException {
         LOG.info("Activate node function called: {}", count);
         if (getActivatableNodeCount() < count) {
-            //throw new AgentAutoScaleService.NotSufficientAvailableNodeException(String.format("%d node activation is requested. But only %d free nodes are available. The activation is canceled.", count, getActivatableNodeCount()));
-            LOG.warn("{} node activation is requested. But only {} free nodes are available. The activation is canceled.", count, getActivatableNodeCount());
+            LOG.warn("{} node activation is requested. But only {} free nodes are available now. The activation is canceled.",
+                    count, getActivatableNodeCount());
             return;
         }
         // reactivate offer listening.
@@ -395,10 +397,16 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction implements Schedu
         try {
             //The timer can not be too shorter, else the latch will be null in resourceOffer thread..
             latch.await(5, TimeUnit.MINUTES);
+            //If during the given duration, there is no agent task created, treat this condition as there is no resource can be used.
+            if(latch.getCount() == count){
+                throw new AgentAutoScaleService.NotSufficientAvailableNodeException(
+                        String.format("%d node activation is requested. But no nodes are available.", count));
+            }
         } catch (InterruptedException e) {
             LOG.warn("Activate node encounters with interruption... {}", e.getMessage());
+        }finally {
+            latch = null;
         }
-        latch = null;
     }
 
     @Override
@@ -480,38 +488,23 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction implements Schedu
      */
     @Override
     public void resourceOffers(SchedulerDriver driver, List<Protos.Offer> offers) {
-        //Below log comes too much... no need...
-        //LOG.info("{}", ToStringBuilder.reflectionToString(offers));
-        if (latch == null) {
-			/*
-			 * if the latch is null, which means when framework receives offer, there is no perf test coming, this moment,
-			 * framework should decline the received offers without any filters. else, it may impact the mesos cluster.
-			 */
-
-            for (Protos.Offer each : offers) {
-                //Protos.Filters filters = Protos.Filters.newBuilder().setRefuseSeconds(10 * 60).build();
-                driver.declineOffer(each.getId());
-            }
-            return;
-        }
         for (Protos.Offer each : offers) {
             final AutoScaleNode node = nodeCache.getIfPresent(each.getSlaveId().getValue());
 			/*
 			 *Attention: the required offer count maybe less than the received available offers, after create one task,
 			 *the latch should execute count down, if it is null, which means the left offer is more than required.
 			 */
-            if (node == null && isMatching(each) && latch != null) {
+            if (node == null && isMatching(each) && latch != null && latch.getCount() != 0) {
                 createTask(each);
                 latch.countDown();
             } else {
                 //This slave machine is running one agent already, or this offer is not matched. Don't send us again in 10 mins.
                 Protos.Filters filters = Protos.Filters.newBuilder().setRefuseSeconds(10 * 60).build();
                 driver.declineOffer(each.getId(), filters);
-                LOG.info("Decline the not matching offer {}", each.getSlaveId());
+                LOG.info("Decline the not matching (required) offer {}", each.getSlaveId());
             }
         }
     }
-
 
     @Override
     public void statusUpdate(SchedulerDriver driver, final Protos.TaskStatus status) {
