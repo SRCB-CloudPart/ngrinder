@@ -88,8 +88,6 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction implements Schedu
 
     private CountDownLatch latch = null;
 
-    private ReentrantLock lock = new ReentrantLock();
-
     @Override
     public void init(Config config, ScheduledTaskService scheduledTaskService) {
         this.config = config;
