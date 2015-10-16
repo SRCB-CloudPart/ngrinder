@@ -15,7 +15,7 @@
             </legend>
         </fieldSet>
         <div>
-            <span>Current Advertised Host : ${advertisedHost} / <@spring.message "agent_auto_scale.maxNodeCount"/>
+            <span><@spring.message "agent_auto_scale.currentAdvertisedHost"/> : ${advertisedHost} / <@spring.message "agent_auto_scale.maxNodeCount"/>
                 : ${totalNodeCount} / <@spring.message "agent_auto_scale.activatableNodeCount"/>
                 : ${activatableNodeCount}</span>
             <button class="btn btn-info btn-mini pull-right" id="show_node_setup"
@@ -55,10 +55,10 @@
                         || (autoScaleType == "mesos" && (node.state == "TASK_STAGING" || node.state == "TASK_STARTING" || node.state == "TASK_RUNNING")) >
                         <i title="<@spring.message "common.button.stop"/>" class="icon-stop node-stop pointer-cursor"
                            sid="${node.id}"></i>
-					</#if>
+                    </#if>
                 </td>
             </tr>
-			</@list>
+            </@list>
             </tbody>
         </table>
         <!--content-->
@@ -72,10 +72,14 @@
         <h4><@spring.message "agent_auto_scale.message.howToSetupNodes"/></h4>
     </div>
     <div class="modal-body">
-        <div class="form-horizontal" style="margin-left:20px;overflow-y:hidden">
+        <div class="form-horizontal" style="overflow-y:hidden">
             <fieldset>
-			<@spring.message "agent_auto_scale.message.description"/>
-                <pre>${nodeInitScript}</pre>
+            <#if autoScaleType == "aws">
+                <@spring.message "agent_auto_scale.message.description"/>
+            <#else>
+                <@spring.message "agent_auto_scale.message.mesosReadme"/>
+            </#if>
+                <pre>${notesNodeSetup}</pre>
             </fieldset>
         </div>
     </div>

@@ -19,7 +19,6 @@ import org.ngrinder.common.controller.RestAPI;
 import org.ngrinder.common.util.FileUtils;
 import org.ngrinder.infra.config.Config;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.HttpEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Controller;
@@ -46,11 +45,12 @@ public class AgentAutoScaleController extends BaseController {
 	@Autowired
 	private Config config;
 
-	private String nodeInitScript;
+	private String notesNodeSetup[] = new String[2];
 
 	@PostConstruct
 	public void init() {
-		nodeInitScript = FileUtils.getResourceString("agent_autoscale_script/docker-init.sh");
+		notesNodeSetup[0] = FileUtils.getResourceString("agent_autoscale_script/docker-init.sh");
+		notesNodeSetup[1] = FileUtils.getResourceString("agent_autoscale_script/mesos-readme.txt");
 	}
 
 	/**
@@ -66,7 +66,11 @@ public class AgentAutoScaleController extends BaseController {
 		model.addAttribute("totalNodeCount", agentAutoScaleService.getTotalNodeSize());
 		model.addAttribute("activatableNodeCount", agentAutoScaleService.getActivatableNodeSize());
 		model.addAttribute("nodes", agentAutoScaleService.getNodes());
-		model.addAttribute("nodeInitScript", nodeInitScript);
+		if(config.getAgentAutoScaleType().equals("aws"))
+			model.addAttribute("notesNodeSetup", notesNodeSetup[0]);
+		else{
+			model.addAttribute("notesNodeSetup", notesNodeSetup[1]);
+		}
 		return "agent/auto_scale";
 	}
 
