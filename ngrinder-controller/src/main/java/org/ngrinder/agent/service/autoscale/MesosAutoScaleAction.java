@@ -394,9 +394,8 @@ public class MesosAutoScaleAction extends AgentAutoScaleAction implements Schedu
         latch = new CountDownLatch(count);
         try {
             //The timer can not be too shorter, else the latch will be null in resourceOffer thread..
-            latch.await(5, TimeUnit.MINUTES);
             //If during the given duration, there is no agent task created, treat this condition as there is no resource can be used.
-            if(latch.getCount() == count){
+            if(!latch.await(5, TimeUnit.MINUTES)){
                 throw new AgentAutoScaleService.NotSufficientAvailableNodeException(
                         String.format("%d node activation is requested. But no nodes are available.", count));
             }
