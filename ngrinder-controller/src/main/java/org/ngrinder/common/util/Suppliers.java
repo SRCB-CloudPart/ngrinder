@@ -96,6 +96,9 @@ public final class Suppliers {
 
 		@Override
 		public boolean equals(@Nullable Object obj) {
+			if (obj == null) {
+				return false;
+			}
 			if (obj instanceof SupplierComposition) {
 				SupplierComposition<?, ?> that = (SupplierComposition<?, ?>) obj;
 				return function.equals(that.function) && supplier.equals(that.supplier);
@@ -284,7 +287,7 @@ public final class Suppliers {
 
 		@Override
 		public boolean equals(@Nullable Object obj) {
-			if (obj instanceof SupplierOfInstance) {
+			if (obj != null && obj instanceof SupplierOfInstance) {
 				SupplierOfInstance<?> that = (SupplierOfInstance<?>) obj;
 				return Objects.equal(instance, that.instance);
 			}
@@ -360,6 +363,9 @@ public final class Suppliers {
 
 		@Override
 		public Object apply(Supplier<?> input) {
+			if (input == null) {
+				return null;
+			}
 			return input.get();
 		}
 
