@@ -310,6 +310,9 @@ public class FileEntryController extends BaseController {
 				new Predicate<FileEntry>() {
 					@Override
 					public boolean apply(@Nullable FileEntry input) {
+						if (input == null) {
+							return false;
+						}
 						return input.getFileType() != FileType.DIR &&
 								StringUtils.containsIgnoreCase(new File(input.getPath()).getName(),
 										trimmedQuery);

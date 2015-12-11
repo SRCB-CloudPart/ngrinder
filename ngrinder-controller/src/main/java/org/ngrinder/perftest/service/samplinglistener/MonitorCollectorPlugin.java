@@ -88,10 +88,10 @@ public class MonitorCollectorPlugin implements OnTestSamplingRunnable, Runnable,
 					if (client.isConnected()) {
 						File testReportDir = singleConsole.getReportPath();
 						File dataFile = null;
+						BufferedWriter bw = null;
 						try {
 							dataFile = new File(testReportDir, MONITOR_FILE_PREFIX + target + ".data");
-							FileWriter fileWriter = new FileWriter(dataFile, false);
-							BufferedWriter bw = new BufferedWriter(fileWriter);
+							bw = new BufferedWriter(new FileWriter(dataFile, false));
 							// write header info
 							bw.write(SystemInfo.HEADER);
 							bw.newLine();
@@ -99,6 +99,8 @@ public class MonitorCollectorPlugin implements OnTestSamplingRunnable, Runnable,
 							clientMap.put(client, bw);
 						} catch (IOException e) {
 							LOGGER.error("Error to write to file:{}, Error:{}", dataFile.getPath(), e.getMessage());
+						} finally {
+							IOUtils.closeQuietly(bw);
 						}
 					}
 				}

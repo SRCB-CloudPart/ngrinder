@@ -312,7 +312,7 @@ public class ClusteredAgentManagerService extends AgentManagerService {
 
 	private Integer getActivatableNodeCount(String region) {
 		ValueWrapper activatableNodeCount = this.activatableNodeCount.get(region);
-		return activatableNodeCount == null ? 0 : (Integer) activatableNodeCount.get();
+		return activatableNodeCount == null ? Integer.valueOf(0) : (Integer) activatableNodeCount.get();
 	}
 
 	protected Set<String> getRegions() {

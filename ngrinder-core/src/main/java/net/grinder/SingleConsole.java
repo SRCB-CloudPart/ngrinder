@@ -890,9 +890,9 @@ public class SingleConsole extends AbstractSingleConsole implements Listener, Sa
 
 	private static Object getRealDoubleValue(Double doubleValue) {
 		if (doubleValue == null) {
-			return 0;
+			return (double) 0L;
 		}
-		return (doubleValue.isInfinite() || doubleValue.isNaN()) ? 0 : doubleValue;
+		return (doubleValue.isInfinite() || doubleValue.isNaN()) ? Double.valueOf(0) : doubleValue;
 	}
 
 	/**

@@ -259,7 +259,6 @@ public class PerfTestRunnable implements ControllerConstants {
 	 */
 	void touchAgent(SingleConsole singleConsole) {
 		List<AgentIdentity> allAttachedAgents = singleConsole.getAllAttachedAgents();
-		List<String> names = new ArrayList<String>(allAttachedAgents.size());
 		for (AgentIdentity each : allAttachedAgents) {
 			agentAutoScaleService.touchNode(each.getName());
 		}

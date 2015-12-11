@@ -69,8 +69,6 @@ public class UserController extends BaseController {
 	@Autowired
 	protected Config config;
 
-	private ServletContext servletContext;
-
 
 	/**
 	 * Get user list on the given role.
